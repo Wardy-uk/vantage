@@ -1,5 +1,66 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { api, setPin } from '../api.js';
+
+/**
+ * Changing the PIN also updates the one this browser sends.
+ *
+ * Without that, a successful change immediately 401s every subsequent request
+ * and looks exactly like a failure — the user would reasonably conclude the
+ * change had not worked and try again with a PIN that is now wrong.
+ */
+function ChangePin() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [state, setState] = useState(null);
+
+  const submit = async e => {
+    e.preventDefault();
+    if (next !== confirm) { setState({ ok: false, message: 'The two new PINs do not match.' }); return; }
+    setState({ running: true });
+    try {
+      await api.changePin(current, next);
+      setPin(next);
+      setState({ ok: true, message: 'PIN changed. This browser is already using the new one.' });
+      setCurrent(''); setNext(''); setConfirm('');
+    } catch (err) {
+      setState({ ok: false, message: err.message });
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>Change PIN</h2>
+      <p className="sub">
+        Takes effect immediately, on this device and every other. Stored in the server's
+        <code> .env</code>, because it is read at startup to decide whether the service may run at all.
+      </p>
+      <form onSubmit={submit}>
+        <div style={{ marginBottom: 8 }}>
+          <input type="password" value={current} placeholder="Current PIN"
+            onChange={e => setCurrent(e.target.value)} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <input type="password" value={next} placeholder="New PIN (6+ characters)"
+            onChange={e => setNext(e.target.value)} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <input type="password" value={confirm} placeholder="New PIN again"
+            onChange={e => setConfirm(e.target.value)} />
+        </div>
+        <button className="primary" type="submit"
+          disabled={!current || !next || !confirm || state?.running}>
+          {state?.running ? 'Changing…' : 'Change PIN'}
+        </button>
+        {state && !state.running && (
+          <span className="small" style={{ marginLeft: 10, color: state.ok ? 'var(--good)' : 'var(--bad)' }}>
+            {state.ok ? '✓ ' : '✗ '}{state.message}
+          </span>
+        )}
+      </form>
+    </div>
+  );
+}
 
 /**
  * Configuration, editable here rather than over SSH.
@@ -120,6 +181,8 @@ export default function Admin() {
           </div>
         ))}
       </div>
+
+      <ChangePin />
     </div>
   );
 }

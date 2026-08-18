@@ -2,34 +2,21 @@
 #
 # Tailscale Funnel cannot serve a custom domain — it only answers on *.ts.net —
 # so the static build goes here at vantage.nickward.co.uk and calls back to the
-# Pi's Funnel URL. Same split as sara.nickward.co.uk already uses.
+# Pi's Funnel URL. Same split sara.nickward.co.uk already uses.
 #
-# VANTAGE_BASE=/ because Netlify serves from a host root, unlike the Pi where the
-# app sits under /vantage.
+# Redirects and headers deliberately live in frontend/public/_redirects and
+# _headers rather than here. Those files travel INTO the build output, so a CLI
+# deploy of a prebuilt directory carries them too — declaring them here as well
+# would give two sources that drift apart silently.
 
 [build]
   base    = "frontend"
   command = "npm install && npm run build"
-  publish = "frontend/dist"
+  publish = "dist"
 
 [build.environment]
-  NODE_VERSION  = "22"
-  VANTAGE_BASE  = "/"
+  NODE_VERSION = "22"
+  # Netlify serves from a host root; the Pi serves the same app under /vantage.
+  VANTAGE_BASE = "/"
+  # The API is not here. It is on the Pi, reachable over Tailscale Funnel.
   VITE_API_BASE = "https://pi5.tailecb90f.ts.net/vantage/api"
-
-# Single-page app: every path renders index.html and React routes it. Without
-# this a refresh on any view returns Netlify's 404 rather than the app.
-[[redirects]]
-  from   = "/*"
-  to     = "/index.html"
-  status = 200
-
-# The app holds the coaching layer behind a PIN, but the PIN is the only gate —
-# so keep the site out of search results entirely.
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Robots-Tag           = "noindex, nofollow"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "no-referrer"
-    X-Frame-Options        = "DENY"

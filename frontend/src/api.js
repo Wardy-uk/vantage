@@ -66,6 +66,7 @@ export const api = {
 
   settings: () => call('/settings'),
   saveSettings: patch => call('/settings', { method: 'PUT', body: patch }),
+  changePin: (current, next) => call('/settings/pin', { method: 'POST', body: { current, next } }),
   testSetting: what => call(`/settings/test/${what}`, { method: 'POST' }),
 
   observations: kind => call(`/observations${kind ? `?kind=${kind}` : ''}`),

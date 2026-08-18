@@ -103,4 +103,44 @@ function save(patch = {}) {
   return describe();
 }
 
-module.exports = { FIELDS, get, save, describe, apply };
+/**
+ * Change the PIN.
+ *
+ * Written to `.env` rather than the store, because the PIN is read at STARTUP to
+ * decide whether the service may run at all — and that check happens before the
+ * store is open. Keeping it in one place stops a saved PIN and an env PIN
+ * disagreeing, which would lock Nick out of the only thing that can fix it.
+ *
+ * Requires the current PIN. The endpoint is already behind PIN auth, so this is
+ * belt-and-braces — but the browser holds the PIN in localStorage, and a stale
+ * open tab on a shared machine should not be able to silently reassign it.
+ *
+ * Rewrites the line in place, preserving everything else in the file.
+ */
+function changePin({ current, next }) {
+  const fs = require('fs');
+  const path = require('path');
+
+  if (!current || !next) throw new Error('Both the current and new PIN are required.');
+  if (current !== process.env.VANTAGE_PIN) throw new Error('Current PIN is incorrect.');
+  const trimmed = String(next).trim();
+  if (trimmed.length < 6) throw new Error('New PIN must be at least 6 characters.');
+  if (trimmed === current) throw new Error('That is already the PIN.');
+
+  const envPath = path.join(__dirname, '..', '.env');
+  let contents = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+
+  contents = /^VANTAGE_PIN=.*$/m.test(contents)
+    ? contents.replace(/^VANTAGE_PIN=.*$/m, `VANTAGE_PIN=${trimmed}`)
+    : `VANTAGE_PIN=${trimmed}\n${contents}`;
+
+  fs.writeFileSync(envPath, contents, { mode: 0o600 });
+  // Applied to the running process too, so the change takes effect immediately
+  // rather than at the next restart — which is when Nick would otherwise
+  // discover the old PIN still worked.
+  process.env.VANTAGE_PIN = trimmed;
+
+  return { changed: true };
+}
+
+module.exports = { FIELDS, get, save, describe, apply, changePin };

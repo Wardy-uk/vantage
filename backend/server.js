@@ -113,6 +113,7 @@ const wrap = fn => async (req, res) => {
 
 app.get('/api/settings', wrap(() => settings.describe()));
 app.put('/api/settings', wrap(req => settings.save(req.body || {})));
+app.post('/api/settings/pin', wrap(req => settings.changePin(req.body || {})));
 
 /**
  * Prove a setting actually works, rather than accepting it and failing later in

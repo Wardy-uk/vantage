@@ -1,0 +1,7 @@
+# The PIN is the only gate on this app, and it holds the coaching layer.
+# Keeping it out of search indexes is the cheapest meaningful protection.
+/*
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
