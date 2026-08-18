@@ -20,8 +20,18 @@ class ApiError extends Error {
 }
 export { ApiError };
 
+/**
+ * API calls carry the same base path the app is served under.
+ *
+ * Under Tailscale's /vantage path the browser must request /vantage/api/…; a
+ * bare /api would hit NEURO, which is what sits at the root of this host. Vite
+ * substitutes BASE_URL at build time, so one build works at a path and another
+ * at a host root without a code change.
+ */
+const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+
 async function call(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -38,7 +48,7 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 
 export const api = {
-  health: () => fetch('/api/health').then(r => r.json()),
+  health: () => fetch(`\/health`).then(r => r.json()),
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
 
   modes: () => call('/coach/modes'),
