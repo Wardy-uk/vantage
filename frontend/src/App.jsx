@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api, getPin, setPin } from './api.js';
-import Today from './views/Today.jsx';
+import Radar from './views/Radar.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
 import Admin from './views/Admin.jsx';
@@ -59,7 +59,7 @@ function Gate({ onDone }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [tab, setTab] = useState('today');
+  const [tab, setTab] = useState('radar');
 
   useEffect(() => {
     if (!getPin()) { setChecking(false); return; }
@@ -77,7 +77,7 @@ export default function App() {
       <header className="top">
         <div className="brand">VANT<span>AGE</span></div>
         <nav>
-          {[['today', 'Today'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['admin', 'Admin']].map(([k, label]) => (
+          {[['radar', 'Radar'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['admin', 'Admin']].map(([k, label]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
           ))}
         </nav>
@@ -89,7 +89,7 @@ export default function App() {
       </header>
 
       <main>
-        {tab === 'today' && <Today />}
+        {tab === 'radar' && <Radar />}
         {tab === 'coach' && <Coach />}
         {tab === 'patterns' && <Patterns />}
         {tab === 'admin' && <Admin />}

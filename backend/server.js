@@ -16,6 +16,7 @@ const coach = require('./services/coach');
 const signals = require('./services/signals');
 const openrouter = require('./services/openrouter');
 const settings = require('./services/settings');
+const radar = require('./services/radar');
 
 const PORT = parseInt(process.env.PORT ?? '3006', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -150,6 +151,7 @@ app.post('/api/settings/test/:what', wrap(async req => {
 // ── Signals ──────────────────────────────────────────────────────────────────
 
 app.get('/api/signals', wrap(req => signals.current({ force: req.query.refresh === '1' })));
+app.get('/api/radar', wrap(req => radar.build({ force: req.query.refresh === '1' })));
 
 // ── Coaching ─────────────────────────────────────────────────────────────────
 
