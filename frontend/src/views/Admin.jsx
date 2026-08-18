@@ -41,7 +41,10 @@ export default function Admin() {
   const runTest = async what => {
     setTests(t => ({ ...t, [what]: { running: true } }));
     try {
-      setTests(t => ({ ...t, [what]: await api.testSetting(what) }));
+      // Resolved BEFORE the state update — the updater callback is synchronous
+      // and cannot await. The NOVA test in particular takes 60–110 seconds.
+      const result = await api.testSetting(what);
+      setTests(t => ({ ...t, [what]: result }));
     } catch (err) {
       setTests(t => ({ ...t, [what]: { ok: false, message: err.message } }));
     }
