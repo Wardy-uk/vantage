@@ -23,23 +23,50 @@ const TIMEOUT_MS = 20_000;
 /** Meeting notes are read from the vault; there is no meetings endpoint. */
 const MEETINGS_DIR = 'Meetings';
 
+/**
+ * Token preferred, PIN accepted.
+ *
+ * NEURO takes either `X-Neuro-Api-Token` or `X-Neuro-Pin`. The token is the
+ * machine credential and the one to use: the PIN is what Nick types into NEURO
+ * himself, so borrowing it here would mean rotating his interactive login every
+ * time this service's credential needed changing. The PIN is supported only as a
+ * fallback for a box where no token has been issued yet.
+ */
 function config() {
   return {
     url: (process.env.NEURO_URL || 'http://127.0.0.1:3001').replace(/\/$/, ''),
     token: process.env.NEURO_API_TOKEN || '',
+    pin: process.env.NEURO_PIN || '',
+    // `/api/vault/*` has its OWN gate — `X-Api-Key` against VAULT_API_KEY —
+    // layered under the global one. The API token opens every other route and
+    // is refused here, which is a deliberate choice on NEURO's side: the vault
+    // is the whole second brain, not just service-desk data.
+    vaultKey: process.env.NEURO_VAULT_API_KEY || '',
   };
 }
 
+/** Is this a vault path, which needs the second credential? */
+const isVaultPath = path => path.startsWith('/api/vault/');
+
 function isConfigured() {
-  return Boolean(config().token);
+  const c = config();
+  return Boolean(c.token || c.pin);
 }
 
 async function call(path, { timeoutMs = TIMEOUT_MS } = {}) {
   const c = config();
-  if (!c.token) throw new Error('NEURO_API_TOKEN is not set');
+  if (!c.token && !c.pin) throw new Error('No NEURO credential set (NEURO_API_TOKEN preferred, NEURO_PIN accepted)');
+
+  const headers = c.token ? { 'X-Neuro-Api-Token': c.token } : { 'X-Neuro-Pin': c.pin };
+  if (isVaultPath(path)) {
+    if (!c.vaultKey) {
+      throw new Error('NEURO_VAULT_API_KEY is not set — vault reads need their own key (VAULT_API_KEY in NEURO)');
+    }
+    headers['X-Api-Key'] = c.vaultKey;
+  }
 
   const res = await fetch(`${c.url}${path}`, {
-    headers: { 'X-Neuro-Api-Token': c.token },
+    headers,
     signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await res.json().catch(() => ({}));

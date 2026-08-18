@@ -26,7 +26,8 @@ const FIELDS = {
   NOVA_BRIDGE_URL: { secret: false, label: 'NOVA bridge URL', hint: 'Base URL of NOVA. Same value NEURO uses.' },
   NOVA_BRIDGE_SECRET: { secret: true, label: 'NOVA bridge secret', hint: 'Shared secret for /api/neuro-bridge. Same value NEURO uses.' },
   NEURO_URL: { secret: false, label: 'NEURO URL', hint: 'Base URL of NEURO. On the Pi this is http://127.0.0.1:3001.', default: 'http://127.0.0.1:3001' },
-  NEURO_API_TOKEN: { secret: true, label: 'NEURO API token', hint: 'NEURO_API_TOKEN from NEURO .env. Machine-to-machine; supplies people, commitments and meeting signals.' },
+  NEURO_API_TOKEN: { secret: true, label: 'NEURO API token', hint: 'NEURO_API_TOKEN from NEURO .env. Machine-to-machine; supplies people, commitments and task signals.' },
+  NEURO_VAULT_API_KEY: { secret: true, label: 'NEURO vault API key', hint: 'VAULT_API_KEY from NEURO .env. Separate gate on /api/vault — needed to read meeting notes.' },
 };
 
 function stored() {
