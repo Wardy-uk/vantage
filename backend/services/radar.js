@@ -155,15 +155,30 @@ function fromNeuro({ health, actions, waiting, tasks }) {
     const undated = items.filter(i => !i.dueDate);
 
     if (overdue.length) {
+      // Sorted most-recently-due first: a commitment that slipped last week is
+      // still recoverable, one from March is history. The count includes both
+      // because the total is honest, but the examples shown are the live ones.
+      const recent = [...overdue].sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
       out.push(item('happened', 'high',
         `${overdue.length} commitments are past their due date`,
-        `${overdue.slice(0, 3).map(i => `"${(i.text || '').slice(0, 60)}"`).join('; ')}. These were written down and the date has gone.`,
+        `Most recent: ${recent.slice(0, 3).map(i => `"${(i.text || '').slice(0, 55)}" (due ${i.dueDate})`).join('; ')}. These were written down and the date has gone.`,
         { source: 'NEURO' }));
     }
-    if (undated.length > 5) {
+    // Deliberately NOT reported as a count.
+    //
+    // The first run returned 2,890 undated open commitments — every unticked
+    // checkbox in the vault, going back years. That is not a signal, it is the
+    // shape of how notes get written, and putting it on a risk radar trains you
+    // to ignore the radar. Only recent undated commitments are worth surfacing,
+    // because those are the ones still live enough to chase.
+    const recentUndated = undated.filter(i => {
+      const d = (i.file || '').match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      return d && (daysSince(`${d}T00:00:00Z`) ?? 999) <= DROPPED_COMMITMENT_DAYS;
+    });
+    if (recentUndated.length > 3) {
       out.push(item('could', 'medium',
-        `${undated.length} open commitments carry no due date`,
-        'An action with no date cannot be chased and cannot be evidenced as met. This is the population that quietly becomes "nothing was done about it".',
+        `${recentUndated.length} commitments from the last ${DROPPED_COMMITMENT_DAYS} days have no due date`,
+        `${recentUndated.slice(0, 3).map(i => `"${(i.text || '').slice(0, 50)}"`).join('; ')}. An action with no date cannot be chased and cannot be evidenced as met.`,
         { source: 'NEURO' }));
     }
   }
@@ -239,13 +254,21 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
 
   const reply = await openrouter.complete(
     [{ role: 'system', content: system }, { role: 'user', content: corpus }],
-    { temperature: 0.2, maxTokens: 1600 },
+    // 4000, not 1600. The first run was truncated mid-JSON — "Unterminated
+    // string at position 6289" — which failed the whole source. Six meetings of
+    // genuine risk does not fit in 1600 tokens, and a cap that silently
+    // decapitates the answer is worse than a slower call.
+    { temperature: 0.2, maxTokens: 4000 },
   );
 
   // The model is asked for JSON but is not guaranteed to obey. A parse failure
   // is reported as a failed source rather than swallowed — an analyst that
   // silently returns nothing is indistinguishable from a quiet week.
-  const text = reply.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  let text = reply.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  // Tolerate trailing prose after the object, which some models add.
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) text = text.slice(start, end + 1);
   const parsed = JSON.parse(text);
   return (parsed.items || []).map(i => item(
     ['happened', 'happening', 'could'].includes(i.tense) ? i.tense : 'could',

@@ -134,8 +134,13 @@ async function recentMeetings(limit = 6) {
     }
   }
 
-  // Newest first by the date in the filename.
+  // Newest first by the date in the filename, and only files that HAVE a date.
+  //
+  // The first run surfaced a note called "Meetings" and one from April, because
+  // the listing includes undated notes and they sort arbitrarily. A meeting
+  // radar reading a five-month-old agenda is worse than reading five meetings.
   const newest = files
+    .filter(p => /\d{4}-\d{2}-\d{2}/.test(p.split('/').pop()))
     .sort((a, b) => b.split('/').pop().localeCompare(a.split('/').pop()))
     .slice(0, limit);
 
