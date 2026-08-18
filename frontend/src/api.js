@@ -48,7 +48,7 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 
 export const api = {
-  health: () => fetch(`\/health`).then(r => r.json()),
+  health: () => fetch(`${API_BASE}/health`).then(r => r.json()),
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
 
   modes: () => call('/coach/modes'),
