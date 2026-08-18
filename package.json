@@ -1,0 +1,16 @@
+{
+  "name": "vantage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Leadership coaching and Service Desk continual improvement",
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w frontend",
+    "start": "node backend/server.js",
+    "test": "node --test backend/**/*.test.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
