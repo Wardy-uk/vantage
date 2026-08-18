@@ -31,8 +31,7 @@ const IS_PROD = process.env.NODE_ENV === 'production';
  *
  * So there is no dev exception: no PIN, no start.
  */
-const PIN = process.env.VANTAGE_PIN;
-if (!PIN) {
+if (!process.env.VANTAGE_PIN) {
   console.error(
     '\n[VANTAGE] Refusing to start: VANTAGE_PIN is not set.\n'
     + '  This service holds the private coaching layer and must never be open.\n'
@@ -90,8 +89,16 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api', (req, res, next) => {
   if (req.path === '/health') return next();
+  // Read PER REQUEST, not captured at startup.
+  //
+  // The first version held it in a const, so changing the PIN through the admin
+  // page updated the .env and the process env but not the comparison — the new
+  // PIN was rejected until a restart, which looked exactly like the change
+  // having failed. A value that can be changed at runtime must be read at
+  // runtime.
+  const expected = process.env.VANTAGE_PIN;
   const provided = req.headers['x-vantage-pin'] || req.query.pin;
-  if (provided !== PIN) {
+  if (!expected || provided !== expected) {
     res.status(401).json({ ok: false, error: 'Unauthorized' });
     return;
   }
