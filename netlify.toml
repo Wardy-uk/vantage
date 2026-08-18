@@ -1,0 +1,35 @@
+# Netlify hosts the FRONTEND ONLY. The API stays on the Pi.
+#
+# Tailscale Funnel cannot serve a custom domain — it only answers on *.ts.net —
+# so the static build goes here at vantage.nickward.co.uk and calls back to the
+# Pi's Funnel URL. Same split as sara.nickward.co.uk already uses.
+#
+# VANTAGE_BASE=/ because Netlify serves from a host root, unlike the Pi where the
+# app sits under /vantage.
+
+[build]
+  base    = "frontend"
+  command = "npm install && npm run build"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION  = "22"
+  VANTAGE_BASE  = "/"
+  VITE_API_BASE = "https://pi5.tailecb90f.ts.net/vantage/api"
+
+# Single-page app: every path renders index.html and React routes it. Without
+# this a refresh on any view returns Netlify's 404 rather than the app.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# The app holds the coaching layer behind a PIN, but the PIN is the only gate —
+# so keep the site out of search results entirely.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag           = "noindex, nofollow"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "no-referrer"
+    X-Frame-Options        = "DENY"

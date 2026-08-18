@@ -44,6 +44,40 @@ if (!PIN) {
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+/**
+ * CORS, for the Netlify-hosted frontend.
+ *
+ * The app is served two ways: from this process at /vantage on the Pi (same
+ * origin, no CORS needed), and from Netlify at vantage.nickward.co.uk calling
+ * back to the Pi's Funnel URL (cross-origin, CORS required).
+ *
+ * An allowlist, never `*`. The PIN travels in a request header, and a wildcard
+ * origin on an API that holds the coaching layer would let any page on the
+ * internet make authenticated-looking requests once it had that PIN.
+ *
+ * The custom `X-Vantage-Pin` header makes every request preflighted, so OPTIONS
+ * has to be answered explicitly or the browser never sends the real call.
+ */
+const ALLOWED_ORIGINS = (process.env.VANTAGE_ALLOWED_ORIGINS
+  || 'https://vantage.nickward.co.uk')
+  .split(',').map(o => o.trim()).filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Vantage-Pin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(origin && ALLOWED_ORIGINS.includes(origin) ? 204 : 403);
+    return;
+  }
+  next();
+});
+
 /** Health is deliberately unauthenticated — it reveals nothing. */
 app.get('/api/health', (_req, res) => {
   res.json({

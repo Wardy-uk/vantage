@@ -21,14 +21,20 @@ class ApiError extends Error {
 export { ApiError };
 
 /**
- * API calls carry the same base path the app is served under.
+ * Where the API lives, decided at build time.
  *
- * Under Tailscale's /vantage path the browser must request /vantage/api/…; a
- * bare /api would hit NEURO, which is what sits at the root of this host. Vite
- * substitutes BASE_URL at build time, so one build works at a path and another
- * at a host root without a code change.
+ * Two deployments, two answers:
+ *
+ * - Served BY the Pi at /vantage — same origin, so a relative path. It must
+ *   carry the base path: a bare /api would hit NEURO, which sits at the root of
+ *   that host.
+ * - Served by NETLIFY at vantage.nickward.co.uk — the API is still on the Pi, so
+ *   VITE_API_BASE is set to the absolute Funnel URL. That makes every call
+ *   cross-origin, which is why the backend keeps an origin allowlist.
  */
-const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+const API_BASE = import.meta.env.VITE_API_BASE
+  ? import.meta.env.VITE_API_BASE.replace(/\/$/, '')
+  : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
 
 async function call(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
