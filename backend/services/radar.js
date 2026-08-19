@@ -231,6 +231,56 @@ function fromNeuro({ health, actions, waiting, tasks }) {
  * so when it finds nothing. An analyst that always produces three risks will be
  * inventing them by the third week.
  */
+/**
+ * Pull every COMPLETE object out of a model's JSON, tolerating a broken tail.
+ *
+ * Three runs failed on malformed output — truncated, then an unescaped
+ * character, then again at position 6228 despite asking OpenRouter for
+ * `response_format: json_object`, which Claude models appear to ignore. Three
+ * strikes is enough: the answer is to stop requiring the whole response to be
+ * valid and salvage what is.
+ *
+ * Scans for balanced braces at depth 1 (string- and escape-aware, so a `}` in a
+ * quoted meeting excerpt does not end an object early), parses each candidate
+ * independently, and discards any that fail. A truncated final object costs one
+ * finding instead of all of them.
+ */
+function extractItems(text) {
+  const out = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+
+    if (ch === '{') {
+      depth += 1;
+      // Depth 1 is the wrapper object; the items sit at depth 2.
+      if (depth === 2) start = i;
+    } else if (ch === '}') {
+      if (depth === 2 && start >= 0) {
+        try {
+          const obj = JSON.parse(text.slice(start, i + 1));
+          if (obj && obj.title) out.push(obj);
+        } catch { /* an unparseable item costs that item, not the run */ }
+        start = -1;
+      }
+      depth -= 1;
+    }
+  }
+  return out;
+}
+
 async function fromMeetings(notes, schedule = []) {
   if (!notes?.length) return [];
   if (!openrouter.isConfigured()) return [];
@@ -293,15 +343,7 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
     { temperature: 0.2, maxTokens: 4000, json: true },
   );
 
-  // The model is asked for JSON but is not guaranteed to obey. A parse failure
-  // is reported as a failed source rather than swallowed — an analyst that
-  // silently returns nothing is indistinguishable from a quiet week.
-  let text = reply.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-  // Tolerate trailing prose after the object, which some models add.
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) text = text.slice(start, end + 1);
-  const parsed = JSON.parse(text);
+  const parsed = { items: extractItems(reply.text) };
   return (parsed.items || []).map(i => item(
     ['happened', 'happening', 'could'].includes(i.tense) ? i.tense : 'could',
     ['high', 'medium', 'low'].includes(i.severity) ? i.severity : 'medium',
@@ -373,4 +415,4 @@ async function build({ force = false } = {}) {
   return data;
 }
 
-module.exports = { build, fromNova, fromNeuro, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };
+module.exports = { build, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };
