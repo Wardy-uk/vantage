@@ -126,6 +126,37 @@ function doneBehaviour() {
   };
 }
 
+/**
+ * The standing numbers — always on, no commentary.
+ *
+ * Deliberately separate from the brief, because the brief names a pattern once
+ * and then stops. The FACT must not disappear with the diagnosis: Nick needs to
+ * see where things stand every time he opens the app, both because it is the
+ * evidence he is assessed on and because out of sight genuinely is out of mind.
+ *
+ * So: numbers, permanently, with no judgement attached. The interpretation is
+ * the brief's job and it says it once. This just refuses to let the position go
+ * quiet.
+ *
+ * Local reads only — no network — so it can render immediately on every screen.
+ */
+function quick() {
+  const f = findingsBehaviour();
+  const p = planBehaviour();
+  const d = doneBehaviour();
+  return {
+    findings: {
+      total: f.total,
+      unraised: f.unraised,
+      highUnraised: f.highUnraised,
+      oldestUnraisedDays: f.ageingUnraised[0]?.ageDays ?? null,
+      oldestUnraisedTitle: f.ageingUnraised[0]?.title ?? null,
+    },
+    plan: { mineTotal: p.mineTotal, mineMoving: p.mineMoving },
+    done: d,
+  };
+}
+
 async function snapshot() {
   const out = {
     findings: findingsBehaviour(),
@@ -183,4 +214,4 @@ async function snapshot() {
   return out;
 }
 
-module.exports = { snapshot, findingsBehaviour, planBehaviour, observationBehaviour, doneBehaviour };
+module.exports = { snapshot, quick, findingsBehaviour, planBehaviour, observationBehaviour, doneBehaviour };

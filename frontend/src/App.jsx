@@ -3,6 +3,7 @@ import { api, getPin, setPin } from './api.js';
 import Radar from './views/Radar.jsx';
 import Findings from './views/Findings.jsx';
 import Plan from './views/Plan.jsx';
+import Standing from './Standing.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
 import Admin from './views/Admin.jsx';
@@ -89,6 +90,8 @@ export default function App() {
           PIP ends in {toEnd}d
         </div>
       </header>
+
+      <Standing onGoTo={setTab} />
 
       <main>
         {tab === 'radar' && <Radar />}

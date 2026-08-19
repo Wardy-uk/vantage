@@ -72,6 +72,7 @@ export const api = {
   brief: (refresh = false) => call(`/coach/brief${refresh ? '?refresh=1' : ''}`),
   startFromTheme: theme => call('/coach/brief/start', { method: 'POST', body: theme }),
   self: () => call('/self'),
+  selfQuick: () => call('/self/quick'),
   sessions: () => call('/coach/sessions'),
   session: id => call(`/coach/sessions/${id}`),
   createSession: (title, mode) => call('/coach/sessions', { method: 'POST', body: { title, mode } }),

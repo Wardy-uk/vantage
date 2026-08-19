@@ -205,6 +205,7 @@ app.post('/api/coach/sessions/:id/messages', wrap(async req => {
 app.get('/api/coach/brief', wrap(req => brief.generate({ force: req.query.refresh === '1' })));
 app.post('/api/coach/brief/start', wrap(req => brief.startFrom(req.body || {})));
 app.get('/api/self', wrap(() => self.snapshot()));
+app.get('/api/self/quick', wrap(() => self.quick()));
 
 // ── Observations ─────────────────────────────────────────────────────────────
 
