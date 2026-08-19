@@ -137,12 +137,24 @@ async function snapshot() {
     const actions = await neuro.vaultActions(30);
     const items = actions.items || actions.data?.items || [];
     const fromMeetings = items.filter(i => /^Meetings\//i.test(i.file || ''));
+    // ATTRIBUTION IS NOT AVAILABLE.
+    //
+    // NEURO's action-item parser leaves `assignee` empty on every row — all
+    // 2,063 of them. So these cannot be called "his commitments" without
+    // inventing the part that matters. The first cut labelled them exactly that
+    // and would have had the coach telling him he had 607 undated promises,
+    // when the truth is that nobody knows whose they are.
+    //
+    // Reported as what it is: open action items across the vault, with the
+    // attribution gap stated so the model cannot quietly assume ownership.
+    const attributed = items.filter(i => (i.assignee || '').trim()).length;
     out.commitments = {
+      scope: 'ALL open action items in the vault, not only Nick\'s — NEURO does not populate assignee, so ownership is unknown.',
       openLast30: items.length,
       madeInMeetings: fromMeetings.length,
-      // Whether he gives his own commitments dates. An undated action cannot be
-      // chased, and cannot be evidenced as met either.
       meetingsUndated: fromMeetings.filter(i => !i.dueDate).length,
+      attributed,
+      attributionAvailable: attributed > 0,
     };
   } catch (err) {
     out.unavailable.push({ name: 'vault-actions', reason: err.message });

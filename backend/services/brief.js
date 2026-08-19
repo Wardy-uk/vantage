@@ -95,14 +95,26 @@ function buildEvidence(radarData, selfData) {
 
   if (selfData.oneToOnes) {
     lines.push('\n## 1:1 cadence');
-    lines.push(`- ${selfData.oneToOnes.totalReschedules} reschedules across ${selfData.oneToOnes.peopleWithReschedules} people.`);
-    for (const w of selfData.oneToOnes.worst) lines.push(`- ${w.person}: moved ${w.moveCount} times.`);
+    if (selfData.oneToOnes.totalReschedules === 0) {
+      // Zero reschedules is NOT evidence of good cadence — NEURO may simply not
+      // be recording them. Absence of a record is not a record of absence, and
+      // the coach must not congratulate him for a gap in the data.
+      lines.push('- No reschedules recorded. This may mean none happened, or that they are not being captured. Do not treat it as evidence either way.');
+    } else {
+      lines.push(`- ${selfData.oneToOnes.totalReschedules} reschedules across ${selfData.oneToOnes.peopleWithReschedules} people.`);
+      for (const w of selfData.oneToOnes.worst) lines.push(`- ${w.person}: moved ${w.moveCount} times.`);
+    }
   }
 
   if (selfData.commitments) {
     const c = selfData.commitments;
-    lines.push('\n## His own commitments');
-    lines.push(`- ${c.openLast30} open from the last 30 days; ${c.madeInMeetings} made in meetings, of which ${c.meetingsUndated} carry no date.`);
+    lines.push('\n## Open action items in the vault');
+    lines.push(`- ${c.openLast30} open from the last 30 days; ${c.madeInMeetings} in meeting notes, of which ${c.meetingsUndated} carry no date.`);
+    if (!c.attributionAvailable) {
+      lines.push('- IMPORTANT: none of these carry an assignee. They are NOT known to be Nick\'s.');
+      lines.push('  Do not describe them as his commitments or imply he has promised anything.');
+      lines.push('  The absence of dates is a note-keeping observation, not a personal one.');
+    }
   }
 
   const o = selfData.observations;
