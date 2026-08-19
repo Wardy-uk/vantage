@@ -1,30 +1,35 @@
 'use strict';
 
 /**
- * The coaching brief — the coach speaking first.
+ * The coaching brief — designed around how Nick's attention actually works.
  *
- * The coaching screen was reactive: it waited to be asked. That is the wrong
- * shape for the problem it exists to help with, because the failure mode being
- * coached is *not noticing*, and a tool you have to remember to consult cannot
- * help with not remembering.
+ * The first version was reactive, then confronting. Both were wrong for the same
+ * reason: Nick is neurodivergent (ADHD, disclosed, OH report received) and his
+ * difficulty is INITIATION, not knowledge. The PIP says so in as many words —
+ * "difficulty initiating and prioritising management tasks without external
+ * structure or support". A tool that repeatedly tells him what he already knows
+ * he should do is not support; it is the problem restated more loudly.
  *
- * So this reads what is actually happening — the department radar AND the
- * behavioural signals about Nick — and proposes two or three things worth
- * working on, unprompted.
+ * Worse, a growing register of undone things is not motivating for this brain.
+ * It is the thing that produces the avoidance it is measuring. The earlier
+ * version accurately described the problem while quietly making it worse.
  *
- * Three rules that keep it useful rather than motivational:
+ * So the design rules changed:
  *
- * 1. **Every theme must cite its evidence.** "You seem stretched" is worthless.
- *    "You have logged six findings and raised one, and the oldest is nine days"
- *    is a conversation.
- * 2. **It ends with a question, not a task list.** Nick does not have a shortage
- *    of tasks; the tool's value is asking the thing he is working around.
- * 3. **It is allowed to say there is nothing.** A brief that always finds three
- *    development areas is a horoscope, and will be treated as one by week three.
+ * 1. **Name a pattern ONCE.** Every theme surfaced is remembered. The prompt is
+ *    given that history and told not to re-diagnose. A hard truth said weekly
+ *    stops being insight and becomes background shame.
+ * 2. **Lead with the smallest possible next action**, and DO the preparatory
+ *    part — the actual first sentence, the drafted message. "Raise it with
+ *    Chris" is a task. A message he can read and send is not.
+ * 3. **One thing.** Not a list. A list is a working-memory tax and an invitation
+ *    to pick nothing.
+ * 4. **Credit what moved.** ADHD brains systematically under-register
+ *    completion, and a tool that only ever shows the outstanding column is
+ *    lying by omission.
  *
- * The brief is generated on demand and cached for the day. It is deliberately
- * not scheduled or pushed: a coaching prompt that arrives unbidden every morning
- * becomes wallpaper.
+ * It remains honest. It will still say a difficult thing. It will just say it
+ * once, and then spend its effort making the next step smaller.
  */
 
 const openrouter = require('./openrouter');
@@ -34,102 +39,133 @@ const coachSvc = require('./coach');
 const db = require('./../db');
 
 const CACHE_MS = 6 * 60 * 60 * 1000;
+/** A pattern named within this many days is not named again. */
+const RENAME_AFTER_DAYS = 21;
+
 let cache = { at: 0, key: null, data: null };
 
-const SYSTEM = `You are Nick Ward's leadership coach, writing him a short brief without being asked.
+const SYSTEM = `You are Nick Ward's leadership coach, writing a short brief without being asked.
 
 ${coachSvc.SITUATION}
 
-YOUR TASK
-Read the evidence below and identify AT MOST THREE things worth his attention as a
-leader this week. Fewer is better. Zero is a legitimate answer if nothing stands out.
+HOW HE WORKS — this changes what is useful
+Nick is neurodivergent (ADHD, disclosed; occupational health report received).
+His difficulty is INITIATION, not knowledge. He almost always knows what should
+be done. What stops him is starting, particularly on interpersonal tasks that
+have no clear first move. His PIP names this directly: "difficulty initiating and
+prioritising management tasks without external structure or support."
 
-For each one:
-- Name the pattern plainly, in a sentence.
-- Cite the specific evidence. Numbers, ticket keys, names, dates — whatever is in
-  the data. Never a general impression.
-- Say why it matters for him specifically, not in the abstract.
-- End with ONE question for him to sit with. Not a task, not advice. A question
-  he cannot answer without thinking.
+Consequences you must respect:
+- Telling him what he ought to do is nearly worthless. He knows.
+- A list of outstanding items produces avoidance, not action. Give him ONE thing.
+- The most useful thing you can do is REMOVE THE FIRST STEP. Draft the message.
+  Write the opening sentence. Name the person and the time. Do the part that
+  requires starting from nothing, so what is left is editing rather than
+  initiating.
+- Repeating a criticism he has already accepted turns into shame, and shame
+  produces more avoidance. Say a hard thing once, then help.
+- He under-registers what he has finished. If something real moved, say so
+  plainly — not as encouragement, as accurate reporting.
 
-WHAT TO LOOK FOR, in rough priority order:
-1. Gaps between what he has NOTICED and what he has SAID. The register records
-   both dates. An unraised high-severity finding is the single most relevant
-   pattern available, because "he did not surface it" is the doubt on record.
-2. Displacement. What gets dropped when the week is busy — rescheduled 1:1s,
-   commitments made without dates, his own actions going overdue while the
-   department's improve.
-3. Where he is doing the department's work instead of leading it. Building
-   instruments is genuinely valuable and also a comfortable place to hide.
-4. Things going wrong that he has not connected to each other.
-5. Something going WELL that he is discounting. He under-credits delivery, and a
-   brief that only ever finds problems will be avoided.
+YOUR OUTPUT
+At most TWO themes, and one is usually better. Zero is legitimate.
 
-RULES
-- Be direct. He is senior and technical. Do not cushion.
-- Do NOT invent evidence. If the data does not support a theme, drop the theme.
-- Do NOT restate the radar back to him. He can read it. Say what it MEANS.
-- Never more than one question per theme.
-- If the honest answer is "nothing this week stands out", say exactly that and stop.
+For each theme:
+- "title": short and plain.
+- "evidence": the specific facts. Numbers, names, dates, ticket keys.
+- "why": why it matters for him. ONE sentence. Skip entirely if it has been
+  named before — see ALREADY NAMED below.
+- "question": one question, only if genuinely useful. Otherwise leave empty.
+- "nextStep": THE MOST IMPORTANT FIELD. The smallest concrete action, already
+  started for him. If it is a message, write the message. If it is a
+  conversation, write the opening sentence. Never "consider", "reflect on" or
+  "make time for".
+
+ALREADY NAMED
+Patterns listed as already named must NOT be re-diagnosed. You may reference one
+in a single clause if the next step depends on it, but do not restate the
+analysis, do not add fresh commentary on his character, and do not say it again
+in different words. Move to what makes it easier.
+
+ALSO
+- Never invent evidence. Drop a theme rather than pad it.
+- Do not restate the radar. He can read it.
+- If something meaningful got finished, include it as "done" — one line, factual.
 
 Respond ONLY with JSON:
-{"themes":[{"title":"short","evidence":"the specific facts","why":"why it matters for him","question":"one question"}],"note":"optional one-line framing, or empty"}`;
+{"themes":[{"title":"","evidence":"","why":"","question":"","nextStep":""}],"done":"one line on what actually moved, or empty"}`;
 
-/** Compact the evidence so the model sees signal rather than a data dump. */
-function buildEvidence(radarData, selfData) {
+// ── Theme memory ─────────────────────────────────────────────────────────────
+
+function namedThemes() {
+  const cutoff = new Date(Date.now() - RENAME_AFTER_DAYS * 86_400_000).toISOString();
+  return db.find('brief_themes', t => (t.named_at || '') >= cutoff);
+}
+
+function rememberThemes(themes) {
+  const now = new Date().toISOString();
+  const known = new Set(namedThemes().map(t => (t.title || '').toLowerCase()));
+  for (const t of themes) {
+    const key = (t.title || '').toLowerCase();
+    if (!key || known.has(key)) continue;
+    db.insert('brief_themes', { title: t.title, named_at: now });
+  }
+}
+
+// ── Evidence ─────────────────────────────────────────────────────────────────
+
+function buildEvidence(radarData, selfData, alreadyNamed) {
   const lines = [];
 
-  lines.push('## What he has found, and whether he said anything');
+  if (alreadyNamed.length) {
+    lines.push('## ALREADY NAMED — do not re-diagnose these');
+    for (const t of alreadyNamed) lines.push(`- "${t.title}" (first raised ${t.named_at.slice(0, 10)})`);
+    lines.push('');
+  }
+
+  lines.push('## What moved recently');
+  const d = selfData.done;
+  lines.push(`- ${d.findingsRaised} finding(s) raised in the last 7 days.`);
+  lines.push(`- ${d.findingsWithAction} finding(s) now carry a recorded action.`);
+  lines.push(`- ${d.planMoved} improvement-plan action(s) of his are in progress or done.`);
+
+  lines.push('\n## Found versus said');
   const f = selfData.findings;
-  lines.push(`- ${f.total} findings logged, ${f.raised} raised with anyone, ${f.unraised} not.`);
-  if (f.medianDaysToRaise !== null) lines.push(`- Median days from finding to raising: ${f.medianDaysToRaise}.`);
-  if (f.highUnraised) lines.push(`- ${f.highUnraised} HIGH severity findings have never been raised.`);
-  for (const a of f.ageingUnraised) {
-    lines.push(`- Unraised ${a.ageDays} days (${a.severity}): "${a.title}"`);
+  lines.push(`- ${f.total} findings logged, ${f.raised} raised, ${f.unraised} not.`);
+  if (f.highUnraised) lines.push(`- ${f.highUnraised} are HIGH severity and unraised.`);
+  for (const a of f.ageingUnraised.slice(0, 3)) {
+    lines.push(`- Unraised ${a.ageDays}d (${a.severity}): "${a.title}"`);
   }
 
   lines.push('\n## The improvement plan');
   const p = selfData.plan;
-  lines.push(`- Of ${p.mineTotal} actions that are HIS: ${p.mineMoving} moving or done, ${p.mineNotStarted} not started.`);
-  lines.push(`- Of the actions that are not his: ${p.notMineEscalated} escalated, ${p.notMineUntouched} untouched.`);
+  lines.push(`- Of ${p.mineTotal} actions that are his: ${p.mineMoving} moving, ${p.mineNotStarted} not started.`);
 
   if (selfData.oneToOnes) {
     lines.push('\n## 1:1 cadence');
-    if (selfData.oneToOnes.totalReschedules === 0) {
-      // Zero reschedules is NOT evidence of good cadence — NEURO may simply not
-      // be recording them. Absence of a record is not a record of absence, and
-      // the coach must not congratulate him for a gap in the data.
-      lines.push('- No reschedules recorded. This may mean none happened, or that they are not being captured. Do not treat it as evidence either way.');
-    } else {
-      lines.push(`- ${selfData.oneToOnes.totalReschedules} reschedules across ${selfData.oneToOnes.peopleWithReschedules} people.`);
-      for (const w of selfData.oneToOnes.worst) lines.push(`- ${w.person}: moved ${w.moveCount} times.`);
-    }
+    lines.push(selfData.oneToOnes.totalReschedules === 0
+      ? '- No reschedules recorded. May mean none happened, or that they are not captured. Evidence of nothing either way.'
+      : `- ${selfData.oneToOnes.totalReschedules} reschedules across ${selfData.oneToOnes.peopleWithReschedules} people.`);
   }
 
-  if (selfData.commitments) {
-    const c = selfData.commitments;
-    lines.push('\n## Open action items in the vault');
-    lines.push(`- ${c.openLast30} open from the last 30 days; ${c.madeInMeetings} in meeting notes, of which ${c.meetingsUndated} carry no date.`);
-    if (!c.attributionAvailable) {
-      lines.push('- IMPORTANT: none of these carry an assignee. They are NOT known to be Nick\'s.');
-      lines.push('  Do not describe them as his commitments or imply he has promised anything.');
-      lines.push('  The absence of dates is a note-keeping observation, not a personal one.');
-    }
+  if (selfData.commitments && !selfData.commitments.attributionAvailable) {
+    lines.push('\n## Vault action items');
+    lines.push(`- ${selfData.commitments.openLast30} open in 30 days, none carrying an assignee.`);
+    lines.push('- NOT known to be his. Do not describe them as his commitments.');
   }
 
   const o = selfData.observations;
   if (o.total) {
     lines.push('\n## What he has noticed about himself');
-    lines.push(`- ${JSON.stringify(o.byKind)}`);
-    for (const r of o.recent) lines.push(`- [${r.kind}, ${r.when}] ${r.note}`);
+    for (const r of o.recent.slice(0, 3)) lines.push(`- [${r.kind}] ${r.note}`);
   }
 
   lines.push('\n## The department right now');
-  for (const i of (radarData?.items || []).slice(0, 14)) {
-    lines.push(`- [${i.tense}/${i.severity}] ${i.source}: ${i.title} — ${(i.detail || '').slice(0, 160)}`);
+  for (const i of (radarData?.items || []).slice(0, 10)) {
+    lines.push(`- [${i.tense}/${i.severity}] ${i.source}: ${i.title}`);
   }
   if (radarData?.blind?.length) {
-    lines.push(`- NOTE: ${radarData.blind.length} signal source(s) could not be read, so the picture is incomplete.`);
+    lines.push(`- NOTE: ${radarData.blind.length} source(s) unreadable; picture incomplete.`);
   }
 
   return lines.join('\n');
@@ -144,8 +180,9 @@ async function generate({ force = false } = {}) {
   if (!selfData) throw new Error('Could not read the behavioural signals');
   if (!openrouter.isConfigured()) throw new Error('No OpenRouter key — the brief needs a model');
 
-  const evidence = buildEvidence(radarData, selfData);
-  const key = `${selfData.findings.total}:${selfData.findings.raised}:${(radarData?.items || []).length}`;
+  const alreadyNamed = namedThemes();
+  const evidence = buildEvidence(radarData, selfData, alreadyNamed);
+  const key = `${selfData.findings.total}:${selfData.findings.raised}:${(radarData?.items || []).length}:${alreadyNamed.length}`;
 
   if (!force && cache.data && cache.key === key && Date.now() - cache.at < CACHE_MS) {
     return { ...cache.data, cached: true };
@@ -156,18 +193,24 @@ async function generate({ force = false } = {}) {
     { temperature: 0.4, maxTokens: 2500, json: true },
   );
 
-  // Same tolerant extraction the meeting analyser uses — a malformed tail costs
-  // one theme, not the brief.
-  const themes = radar.extractItems(reply.text).filter(t => t.title && t.question);
+  const themes = radar.extractItems(reply.text).filter(t => t.title);
+  rememberThemes(themes);
+
+  // `done` sits outside the items array, so the tolerant extractor does not see
+  // it. Pulled separately, and its absence is not an error.
+  let done = '';
+  const m = reply.text.match(/"done"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (m) { try { done = JSON.parse(`"${m[1]}"`); } catch { done = m[1]; } }
 
   const data = {
     generatedAt: new Date().toISOString(),
     themes,
+    done,
+    previouslyNamed: alreadyNamed.map(t => t.title),
     evidenceUsed: {
       findings: selfData.findings,
       plan: selfData.plan,
-      oneToOnes: selfData.oneToOnes,
-      commitments: selfData.commitments,
+      done: selfData.done,
       radarItems: (radarData?.items || []).length,
     },
     unavailable: [
@@ -180,22 +223,16 @@ async function generate({ force = false } = {}) {
   return data;
 }
 
-/**
- * Turn a theme into a coaching conversation, pre-loaded with its own question.
- *
- * The brief's value collapses if reading it is where it ends. This is the step
- * from "that is a fair point" to actually working it through.
- */
+/** Open a coaching conversation from a theme, carrying its next step. */
 function startFrom(theme) {
   if (!theme?.title) throw new Error('A theme is required');
   const session = coachSvc.createSession({ title: theme.title.slice(0, 60), mode: 'reflect' });
+  const body = [theme.evidence, theme.why, theme.nextStep ? `**Next step:** ${theme.nextStep}` : '', theme.question ? `**${theme.question}**` : '']
+    .filter(Boolean).join('\n\n');
   db.insert('messages', {
-    session_id: session.id,
-    role: 'assistant',
-    content: `${theme.evidence || ''}\n\n${theme.why || ''}\n\n**${theme.question}**`.trim(),
-    created_at: new Date().toISOString(),
+    session_id: session.id, role: 'assistant', content: body, created_at: new Date().toISOString(),
   });
   return coachSvc.getSession(session.id);
 }
 
-module.exports = { generate, startFrom, buildEvidence };
+module.exports = { generate, startFrom, buildEvidence, namedThemes };

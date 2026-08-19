@@ -13,6 +13,17 @@ import { api } from '../api.js';
 const SEV = { high: 'var(--bad)', medium: 'var(--warn)', low: 'var(--muted)' };
 
 function Row({ f, onChange, onDelete }) {
+  const [draft, setDraft] = useState(null);
+  const [drafting, setDrafting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const onDraft = async () => {
+    setDrafting(true);
+    try { setDraft((await api.draftRaise(f.id, 'Chris')).draft); }
+    catch (e) { setDraft('Could not draft: ' + e.message); }
+    finally { setDrafting(false); }
+  };
+
   const [editing, setEditing] = useState(false);
   const [raisedWith, setRaisedWith] = useState(f.raised_with || '');
   const [raisedOn, setRaisedOn] = useState(f.raised_on || new Date().toISOString().slice(0, 10));
@@ -44,11 +55,45 @@ function Row({ f, onChange, onDelete }) {
           )
           : <span className="small" style={{ color: 'var(--warn)' }}>Not yet raised with anyone</span>}
         {' '}
+        {/* The barrier to raising a finding is a blank page, not the decision.
+            This removes the blank page — what is left is editing and sending,
+            which is a different kind of task entirely. */}
+        {!f.raised_on && (
+          <button className="ghost small" style={{ border: 'none', padding: '0 6px', color: 'var(--accent)' }}
+            onClick={onDraft} disabled={drafting}>
+            {drafting ? 'writing…' : 'draft the message'}
+          </button>
+        )}
         <button className="ghost small" style={{ border: 'none', padding: '0 6px' }}
           onClick={() => setEditing(!editing)}>{editing ? 'cancel' : 'edit'}</button>
         <button className="ghost danger small" style={{ border: 'none', padding: '0 6px' }}
           onClick={() => onDelete(f.id)}>delete</button>
       </div>
+
+      {draft && (
+        <div style={{ paddingLeft: 15, marginTop: 8 }}>
+          <div className="small muted" style={{ marginBottom: 4 }}>
+            Draft — read it, change what is wrong, send it. Then mark it raised.
+          </div>
+          <textarea rows={6} value={draft} onChange={e => setDraft(e.target.value)}
+            style={{ fontSize: 13 }} />
+          <div className="row" style={{ gap: 6, marginTop: 6 }}>
+            <button onClick={() => { navigator.clipboard?.writeText(draft); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+            <button className="primary" onClick={async () => {
+              await onChange(f.id, {
+                raised_with: raisedWith || 'Chris',
+                raised_on: new Date().toISOString().slice(0, 10),
+              });
+              setDraft(null);
+            }}>
+              Sent it — mark raised
+            </button>
+            <button className="ghost" onClick={() => setDraft(null)}>Discard</button>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div style={{ paddingLeft: 15, marginTop: 8 }}>

@@ -163,6 +163,7 @@ app.get('/api/findings', wrap(req => findings.list({ status: req.query.status, s
 app.post('/api/findings', wrap(req => findings.add(req.body || {})));
 app.put('/api/findings/:id', wrap(req => findings.update(Number(req.params.id), req.body || {})));
 app.delete('/api/findings/:id', wrap(req => { findings.remove(Number(req.params.id)); return { deleted: true }; }));
+app.post('/api/findings/:id/draft', wrap(req => findings.draftRaise(Number(req.params.id), req.body || {})));
 app.get('/api/findings/markdown', wrap(req => ({ markdown: findings.markdown({ since: req.query.since }) })));
 
 // ── Improvement plan ─────────────────────────────────────────────────────────

@@ -80,18 +80,32 @@ function Brief({ onStarted, mode }) {
         </div>
       )}
 
+      {data?.done && (
+        <div className="banner info small" style={{ marginBottom: 12 }}>
+          <strong>Moved:</strong> {data.done}
+        </div>
+      )}
+
       {data?.themes?.map((t, i) => (
         <div className="card" key={i}>
           <h2 style={{ fontSize: 14 }}>{t.title}</h2>
           {t.evidence && <p className="small" style={{ color: 'var(--muted)', margin: '0 0 8px' }}>{t.evidence}</p>}
           {t.why && <p className="small" style={{ margin: '0 0 10px' }}>{t.why}</p>}
+
+          {t.nextStep && (
+            <div style={{ background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', margin: '0 0 10px' }}>
+              <div className="small muted" style={{ marginBottom: 4 }}>Next step — already started for you</div>
+              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.nextStep}</div>
+            </div>
+          )}
+
           {t.question && (
             <p style={{ fontSize: 14, fontWeight: 600, borderLeft: '2px solid var(--accent)', paddingLeft: 10, margin: '0 0 10px' }}>
               {t.question}
             </p>
           )}
           <button onClick={() => start(t)} disabled={starting === t.title}>
-            {starting === t.title ? 'Opening…' : 'Talk it through'}
+            {starting === t.title ? 'Opening...' : 'Talk it through'}
           </button>
         </div>
       ))}

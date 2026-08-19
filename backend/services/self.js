@@ -107,11 +107,31 @@ function observationBehaviour() {
  *
  * Returns a shape meant to be READ by a model, not rendered as a scorecard.
  */
+/**
+ * What actually moved recently.
+ *
+ * Included because an ADHD brain systematically under-registers completion, and
+ * a tool that only ever shows the outstanding column is lying by omission. This
+ * is not encouragement — it is the other half of an accurate report.
+ */
+function doneBehaviour() {
+  const weekAgo = new Date(Date.now() - 7 * DAY).toISOString().slice(0, 10);
+  const all = findings.list({ limit: 500 });
+  const p = plan.list();
+  return {
+    findingsRaised: all.filter(f => f.raised_on && f.raised_on >= weekAgo).length,
+    findingsWithAction: all.filter(f => (f.action || '').trim()).length,
+    findingsLogged: all.filter(f => (f.found_on || '') >= weekAgo).length,
+    planMoved: p.items.filter(i => i.owner === 'mine' && ['in-progress', 'done'].includes(i.status)).length,
+  };
+}
+
 async function snapshot() {
   const out = {
     findings: findingsBehaviour(),
     plan: planBehaviour(),
     observations: observationBehaviour(),
+    done: doneBehaviour(),
     oneToOnes: null,
     commitments: null,
     unavailable: [],
@@ -163,4 +183,4 @@ async function snapshot() {
   return out;
 }
 
-module.exports = { snapshot, findingsBehaviour, planBehaviour, observationBehaviour };
+module.exports = { snapshot, findingsBehaviour, planBehaviour, observationBehaviour, doneBehaviour };

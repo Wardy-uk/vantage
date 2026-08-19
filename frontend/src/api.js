@@ -65,6 +65,7 @@ export const api = {
   addFinding: f => call('/findings', { method: 'POST', body: f }),
   updateFinding: (id, patch) => call(`/findings/${id}`, { method: 'PUT', body: patch }),
   deleteFinding: id => call(`/findings/${id}`, { method: 'DELETE' }),
+  draftRaise: (id, to) => call(`/findings/${id}/draft`, { method: 'POST', body: { to } }),
   findingsMarkdown: since => call(`/findings/markdown${since ? '?since=' + since : ''}`),
 
   modes: () => call('/coach/modes'),

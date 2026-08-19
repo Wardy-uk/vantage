@@ -112,4 +112,49 @@ function markdown({ since } = {}) {
   return lines.join('\n');
 }
 
-module.exports = { list, add, update, remove, markdown, SEVERITIES, STATUSES };
+/**
+ * Draft the message that raises a finding.
+ *
+ * This is the whole point of the register's second half. "Raise it with Chris"
+ * is a task, and tasks that start from a blank page are exactly the ones that
+ * do not get started — the PIP names that difficulty explicitly. A message he
+ * can read, adjust and send is not a task; it is a decision, and decisions he
+ * makes fine.
+ *
+ * Written in his voice and kept short. It states what was found, what it means,
+ * and what has been done — no apology, no preamble, no self-criticism. A
+ * finding raised defensively reads worse than one raised plainly, and this is
+ * evidence going to the person assessing him.
+ */
+async function draftRaise(id, { to = 'Chris' } = {}) {
+  const openrouter = require('./openrouter');
+  const f = db.findOne('findings', x => x.id === id);
+  if (!f) throw new Error(`No finding ${id}`);
+  if (!openrouter.isConfigured()) throw new Error('No OpenRouter key — cannot draft');
+
+  const reply = await openrouter.complete([
+    {
+      role: 'system',
+      content: `Write a short message from Nick Ward (Head of Service Delivery) to ${to}, raising something he has found.
+
+RULES
+- His voice: direct, British, unfussy. No corporate padding.
+- Four things, in order: what he found, why it matters, what he has already done, what he needs from ${to} (if anything).
+- Under 120 words.
+- NO apologising. No "sorry to bother you", no "I may have missed something".
+- No self-criticism and no defensiveness. If the finding is about a system he
+  owns, state it as a fact rather than a confession — he found it, which is the
+  point.
+- If nothing is needed from ${to}, say it is for visibility and say so plainly.
+- Plain text. No subject line, no sign-off, no markdown.`,
+    },
+    {
+      role: 'user',
+      content: `FINDING: ${f.title}\n\nDETAIL: ${f.detail}\n\nSEVERITY: ${f.severity}\nFOUND: ${f.found_on}\nACTION ALREADY TAKEN: ${f.action || 'none recorded'}`,
+    },
+  ], { temperature: 0.5, maxTokens: 400 });
+
+  return { findingId: id, to, draft: reply.text.trim() };
+}
+
+module.exports = { list, add, update, remove, markdown, draftRaise, SEVERITIES, STATUSES };
