@@ -68,6 +68,9 @@ export const api = {
   findingsMarkdown: since => call(`/findings/markdown${since ? '?since=' + since : ''}`),
 
   modes: () => call('/coach/modes'),
+  brief: (refresh = false) => call(`/coach/brief${refresh ? '?refresh=1' : ''}`),
+  startFromTheme: theme => call('/coach/brief/start', { method: 'POST', body: theme }),
+  self: () => call('/self'),
   sessions: () => call('/coach/sessions'),
   session: id => call(`/coach/sessions/${id}`),
   createSession: (title, mode) => call('/coach/sessions', { method: 'POST', body: { title, mode } }),

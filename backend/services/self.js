@@ -1,0 +1,154 @@
+'use strict';
+
+/**
+ * Signals about NICK, not about the department.
+ *
+ * Everything else in VANTAGE describes the service desk. This describes the
+ * person running it — and for coaching, that is the half that matters. A coach
+ * handed a queue summary can only ever discuss the queue.
+ *
+ * The measures here are chosen because they are behavioural and because they
+ * are, uncomfortably, the ones the PIP is actually about:
+ *
+ *   - The gap between FINDING something and RAISING it. The findings register
+ *     records both dates, so this is measurable rather than impressionistic —
+ *     and "he did not surface it" is the specific doubt on record.
+ *   - How often 1:1s are rescheduled. Invisible everywhere else, because the
+ *     meeting eventually happens. It shows what gets displaced under pressure.
+ *   - Whether commitments made in front of people acquire dates.
+ *   - Whether the actions that are HIS on the improvement plan move, separately
+ *     from the ones that are not.
+ *   - What he has noticed about himself, especially under `avoidance`.
+ *
+ * None of this is scored or graded. It is assembled so a coach can ask a better
+ * question, and a tool that turned it into a performance number would be doing
+ * the opposite of the job.
+ */
+
+const findings = require('./findings');
+const coach = require('./coach');
+const plan = require('./plan');
+const neuro = require('./neuro');
+
+const DAY = 86_400_000;
+const days = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / DAY);
+
+function median(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+/**
+ * Found versus raised.
+ *
+ * The register's whole point. Spotting something privately is not the behaviour
+ * in question — telling someone is.
+ */
+function findingsBehaviour() {
+  const all = findings.list({ limit: 500 });
+  const raised = all.filter(f => f.raised_on);
+  const unraised = all.filter(f => !f.raised_on);
+  const lags = raised
+    .map(f => days(f.found_on, f.raised_on))
+    .filter(n => Number.isFinite(n) && n >= 0);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const ageingUnraised = unraised
+    .map(f => ({ ...f, ageDays: days(f.found_on, today) }))
+    .filter(f => f.ageDays >= 3)
+    .sort((a, b) => b.ageDays - a.ageDays);
+
+  return {
+    total: all.length,
+    raised: raised.length,
+    unraised: unraised.length,
+    medianDaysToRaise: median(lags),
+    // High-severity things found and still not said out loud. The most direct
+    // measure available of the behaviour the PIP questions.
+    ageingUnraised: ageingUnraised.slice(0, 5).map(f => ({
+      title: f.title, severity: f.severity, ageDays: f.ageDays,
+    })),
+    highUnraised: unraised.filter(f => f.severity === 'high').length,
+  };
+}
+
+/** Progress on what is HIS, kept apart from what is not. */
+function planBehaviour() {
+  const p = plan.list();
+  const mine = p.items.filter(i => i.owner === 'mine');
+  const notMine = p.items.filter(i => i.owner !== 'mine');
+  return {
+    mineTotal: mine.length,
+    mineMoving: mine.filter(i => ['in-progress', 'done'].includes(i.status)).length,
+    mineNotStarted: mine.filter(i => i.status === 'not-started').length,
+    notMineEscalated: notMine.filter(i => i.status === 'escalated').length,
+    // An `above` item left "not started" is ambiguous: it may be blocked, or it
+    // may simply never have been raised with whoever owns it.
+    notMineUntouched: notMine.filter(i => i.status === 'not-started').length,
+  };
+}
+
+/** What he has noticed about himself. `avoidance` is the one that matters. */
+function observationBehaviour() {
+  const all = coach.listObservations({ limit: 500 });
+  const byKind = {};
+  for (const o of all) byKind[o.kind] = (byKind[o.kind] || 0) + 1;
+  return {
+    total: all.length,
+    byKind,
+    recent: all.slice(0, 5).map(o => ({ kind: o.kind, note: o.note.slice(0, 140), when: o.created_at.slice(0, 10) })),
+  };
+}
+
+/**
+ * Assemble everything. Each external source degrades on its own.
+ *
+ * Returns a shape meant to be READ by a model, not rendered as a scorecard.
+ */
+async function snapshot() {
+  const out = {
+    findings: findingsBehaviour(),
+    plan: planBehaviour(),
+    observations: observationBehaviour(),
+    oneToOnes: null,
+    commitments: null,
+    unavailable: [],
+  };
+
+  if (!neuro.isConfigured()) {
+    out.unavailable.push({ name: 'neuro', reason: 'no NEURO credential' });
+    return out;
+  }
+
+  try {
+    const moves = await neuro.oneToOneMoves();
+    out.oneToOnes = {
+      peopleWithReschedules: moves.length,
+      totalReschedules: moves.reduce((s, m) => s + m.moveCount, 0),
+      worst: moves.slice(0, 5).map(m => ({ person: m.person, moveCount: m.moveCount })),
+    };
+  } catch (err) {
+    out.unavailable.push({ name: '1to1-moves', reason: err.message });
+  }
+
+  try {
+    const actions = await neuro.vaultActions(30);
+    const items = actions.items || actions.data?.items || [];
+    const fromMeetings = items.filter(i => /^Meetings\//i.test(i.file || ''));
+    out.commitments = {
+      openLast30: items.length,
+      madeInMeetings: fromMeetings.length,
+      // Whether he gives his own commitments dates. An undated action cannot be
+      // chased, and cannot be evidenced as met either.
+      meetingsUndated: fromMeetings.filter(i => !i.dueDate).length,
+    };
+  } catch (err) {
+    out.unavailable.push({ name: 'vault-actions', reason: err.message });
+  }
+
+  return out;
+}
+
+module.exports = { snapshot, findingsBehaviour, planBehaviour, observationBehaviour };

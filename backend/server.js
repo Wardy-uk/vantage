@@ -19,6 +19,8 @@ const settings = require('./services/settings');
 const radar = require('./services/radar');
 const findings = require('./services/findings');
 const plan = require('./services/plan');
+const self = require('./services/self');
+const brief = require('./services/brief');
 
 const PORT = parseInt(process.env.PORT ?? '3006', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -196,6 +198,12 @@ app.post('/api/coach/sessions/:id/messages', wrap(async req => {
     model: req.body?.model,
   });
 }));
+
+// ── Coaching brief ───────────────────────────────────────────────────────────
+
+app.get('/api/coach/brief', wrap(req => brief.generate({ force: req.query.refresh === '1' })));
+app.post('/api/coach/brief/start', wrap(req => brief.startFrom(req.body || {})));
+app.get('/api/self', wrap(() => self.snapshot()));
 
 // ── Observations ─────────────────────────────────────────────────────────────
 

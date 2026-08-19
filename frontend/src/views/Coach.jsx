@@ -10,6 +10,99 @@ import { api } from '../api.js';
  * of the thing depends on Nick believing it.
  */
 
+/**
+ * The brief — the coach speaking first.
+ *
+ * This replaced an empty box and a hint. The failure mode being coached is *not
+ * noticing*, and a tool you have to remember to consult cannot help with not
+ * remembering. So the screen opens with what the evidence suggests is worth his
+ * attention, and each theme can be opened as a conversation carrying its own
+ * question.
+ */
+function Brief({ onStarted, mode }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [starting, setStarting] = useState(null);
+
+  const load = async (force = false) => {
+    setLoading(true);
+    try { setData(await api.brief(force)); setError(null); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const start = async theme => {
+    setStarting(theme.title);
+    try { onStarted(await api.startFromTheme(theme)); }
+    catch (e) { setError(e.message); }
+    finally { setStarting(null); }
+  };
+
+  if (loading) {
+    return (
+      <div className="empty">
+        Reading the signals and your own record…
+        <div className="small" style={{ marginTop: 8 }}>This takes a minute or two the first time each day.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      {error && <div className="banner bad">{error}</div>}
+
+      <div className="row" style={{ marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Worth your attention</div>
+          <div className="small muted">
+            Unprompted, from the radar and your own record. Private — nothing here leaves this app.
+          </div>
+        </div>
+        <button className="ghost small" onClick={() => load(true)}>Regenerate</button>
+      </div>
+
+      {data?.unavailable?.length > 0 && (
+        <div className="banner warn small">
+          {data.unavailable.length} source(s) unreadable, so this is drawn from an incomplete picture:{' '}
+          {data.unavailable.map(u => u.name).join(', ')}
+        </div>
+      )}
+
+      {data?.themes?.length === 0 && (
+        <div className="card">
+          <p className="small">
+            Nothing stands out this week. That is a real answer rather than a gap —
+            a brief that always finds three things to work on is a horoscope.
+          </p>
+          <p className="small muted">Start a conversation below if something is on your mind.</p>
+        </div>
+      )}
+
+      {data?.themes?.map((t, i) => (
+        <div className="card" key={i}>
+          <h2 style={{ fontSize: 14 }}>{t.title}</h2>
+          {t.evidence && <p className="small" style={{ color: 'var(--muted)', margin: '0 0 8px' }}>{t.evidence}</p>}
+          {t.why && <p className="small" style={{ margin: '0 0 10px' }}>{t.why}</p>}
+          {t.question && (
+            <p style={{ fontSize: 14, fontWeight: 600, borderLeft: '2px solid var(--accent)', paddingLeft: 10, margin: '0 0 10px' }}>
+              {t.question}
+            </p>
+          )}
+          <button onClick={() => start(t)} disabled={starting === t.title}>
+            {starting === t.title ? 'Opening…' : 'Talk it through'}
+          </button>
+        </div>
+      ))}
+
+      <p className="small muted" style={{ textAlign: 'center', marginTop: 18 }}>
+        {MODE_HINT[mode]} — or just start typing below.
+      </p>
+    </div>
+  );
+}
+
 const MODE_HINT = {
   coach: 'Open thinking partner. Expect to be asked what the problem actually is before getting an answer.',
   prep: 'A conversation is coming. It will play the other person properly, including their strongest objection.',
@@ -117,13 +210,7 @@ export default function Coach() {
 
       <section className="thread">
         <div className="messages">
-          {!current && (
-            <div className="empty">
-              <p><strong>Private.</strong> Nothing here reaches the weekly report, the vault, or anyone else.</p>
-              <p className="small">{MODE_HINT[mode]}</p>
-              <p className="small">Start typing below, or pick a past conversation.</p>
-            </div>
-          )}
+          {!current && <Brief onStarted={s => { setCurrent(s); loadSessions(); }} mode={mode} />}
 
           {current?.messages?.map((m, i) => (
             <div key={m.id ?? i} className={`msg ${m.role}`}>

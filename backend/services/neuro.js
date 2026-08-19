@@ -187,7 +187,37 @@ async function bookedOneToOnes() {
   return out;
 }
 
+/**
+ * How often each 1:1 has been RESCHEDULED.
+ *
+ * The most directly coachable signal in the estate, and nothing was reading it.
+ * A held 1:1 says the cadence works. A 1:1 that has moved four times says
+ * something quite different about what gets displaced when the week gets busy —
+ * and it is invisible in every other measure, because the meeting did
+ * eventually happen.
+ */
+async function oneToOneMoves() {
+  const roster = await call('/api/team-health/roster');
+  const people = (roster.people || roster.data?.people || []).map(p => p.name).filter(Boolean);
+
+  const out = [];
+  for (const person of people) {
+    try {
+      const r = await call(`/api/1to1/moves/${encodeURIComponent(person)}`);
+      const moveCount = r.moveCount ?? r.data?.moveCount ?? 0;
+      if (moveCount > 0) out.push({ person, moveCount, moves: r.moves || r.data?.moves || [] });
+    } catch { /* one unreadable person must not lose the rest */ }
+  }
+  return out.sort((a, b) => b.moveCount - a.moveCount);
+}
+
+/** NEURO's own assessment of what is wrong across the system. */
+const stateOfPlay = () => call('/api/state-of-play');
+
+/** Knowledge the team keeps asking for and the KB does not answer. */
+const knowledgeGaps = (daysBack = 90) => call(`/api/knowledge-gaps?daysBack=${daysBack}`);
+
 module.exports = {
   isConfigured, call, teamHealth, vaultActions, waitingOn, tasks,
-  recentMeetings, bookedOneToOnes,
+  recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
 };
