@@ -171,14 +171,21 @@ function fromNeuro({ health, actions, waiting, tasks }) {
     // shape of how notes get written, and putting it on a risk radar trains you
     // to ignore the radar. Only recent undated commitments are worth surfacing,
     // because those are the ones still live enough to chase.
+    // Scoped to MEETINGS, and recent.
+    //
+    // Dating by file alone still returned 1,092 — every unticked line in every
+    // daily note. The commitments that matter are the ones made in front of
+    // someone: those carry an implicit promise, and those are the ones whose
+    // absence gets noticed. A checkbox in a personal daily note is a to-do.
     const recentUndated = undated.filter(i => {
+      if (!/^Meetings\//i.test(i.file || '')) return false;
       const d = (i.file || '').match(/(\d{4}-\d{2}-\d{2})/)?.[1];
       return d && (daysSince(`${d}T00:00:00Z`) ?? 999) <= DROPPED_COMMITMENT_DAYS;
     });
     if (recentUndated.length > 3) {
       out.push(item('could', 'medium',
-        `${recentUndated.length} commitments from the last ${DROPPED_COMMITMENT_DAYS} days have no due date`,
-        `${recentUndated.slice(0, 3).map(i => `"${(i.text || '').slice(0, 50)}"`).join('; ')}. An action with no date cannot be chased and cannot be evidenced as met.`,
+        `${recentUndated.length} commitments made in meetings have no due date`,
+        `From the last ${DROPPED_COMMITMENT_DAYS} days: ${recentUndated.slice(0, 3).map(i => `"${(i.text || '').slice(0, 50)}"`).join('; ')}. Said in front of someone, so someone is expecting them.`,
         { source: 'NEURO' }));
     }
   }
@@ -282,7 +289,7 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
     // string at position 6289" — which failed the whole source. Six meetings of
     // genuine risk does not fit in 1600 tokens, and a cap that silently
     // decapitates the answer is worse than a slower call.
-    { temperature: 0.2, maxTokens: 4000 },
+    { temperature: 0.2, maxTokens: 4000, json: true },
   );
 
   // The model is asked for JSON but is not guaranteed to obey. A parse failure

@@ -24,7 +24,15 @@ function isConfigured() {
  * reach the model, the key is rejected" is more useful than one that says
  * nothing and looks thoughtful.
  */
-async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000 } = {}) {
+/**
+ * `json: true` asks the provider to constrain the output to valid JSON.
+ *
+ * The meeting analyser failed twice on malformed output — truncated once, then
+ * an unescaped character at position 6748. Prompting for JSON and hoping is not
+ * a contract; this is. Where a provider ignores the hint the caller still has to
+ * parse defensively, but the failure rate drops from routine to rare.
+ */
+async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false } = {}) {
   if (!isConfigured()) {
     throw new Error('OPENROUTER_API_KEY is not set — add it to backend/.env');
   }
@@ -38,7 +46,10 @@ async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, ma
       'HTTP-Referer': 'https://vantage.nickward.co.uk',
       'X-Title': 'VANTAGE',
     },
-    body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+    body: JSON.stringify({
+      model, messages, temperature, max_tokens: maxTokens,
+      ...(json ? { response_format: { type: 'json_object' } } : {}),
+    }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
