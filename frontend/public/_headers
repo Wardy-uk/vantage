@@ -5,3 +5,14 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY
+
+# Netlify serves .webmanifest as application/octet-stream, which some browsers
+# refuse to treat as installable. With nosniff set above, the wrong type is not
+# something the browser will quietly correct.
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+
+# Never let a stale worker pin the app to an old shell. The worker itself must
+# always come from the network, or a bad deploy becomes permanent on the device.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate

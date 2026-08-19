@@ -207,7 +207,21 @@ if (fs.existsSync(dist)) {
   app.use('/assets', express.static(path.join(dist, 'assets'), {
     maxAge: '1y', immutable: true,
   }));
-  app.use(express.static(dist, { maxAge: 0 }));
+  app.use(express.static(dist, {
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+      // Express does not know this extension, and a manifest served as
+      // octet-stream is not reliably installable.
+      if (filePath.endsWith('.webmanifest')) {
+        res.setHeader('Content-Type', 'application/manifest+json');
+      }
+      // A cached service worker can pin the app to an old shell permanently.
+      // The worker itself must always be revalidated.
+      if (filePath.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/')) return next();
     res.sendFile(path.join(dist, 'index.html'));
