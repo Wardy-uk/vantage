@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api, getPin, setPin } from './api.js';
 import Radar from './views/Radar.jsx';
 import Findings from './views/Findings.jsx';
+import Plan from './views/Plan.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
 import Admin from './views/Admin.jsx';
@@ -78,7 +79,7 @@ export default function App() {
       <header className="top">
         <div className="brand">VANT<span>AGE</span></div>
         <nav>
-          {[['radar', 'Radar'], ['findings', 'Findings'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['admin', 'Admin']].map(([k, label]) => (
+          {[['radar', 'Radar'], ['findings', 'Findings'], ['plan', 'Plan'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['admin', 'Admin']].map(([k, label]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
           ))}
         </nav>
@@ -92,6 +93,7 @@ export default function App() {
       <main>
         {tab === 'radar' && <Radar />}
         {tab === 'findings' && <Findings />}
+        {tab === 'plan' && <Plan />}
         {tab === 'coach' && <Coach />}
         {tab === 'patterns' && <Patterns />}
         {tab === 'admin' && <Admin />}

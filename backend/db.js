@@ -64,7 +64,7 @@ function migrateFromJson(jsonPath) {
     const insert = db.prepare('INSERT INTO docs (collection, json) VALUES (?, ?)');
     let count = 0;
     db.transaction(() => {
-      for (const collection of ['sessions', 'messages', 'observations', 'settings']) {
+      for (const collection of ['sessions', 'messages', 'observations', 'settings', 'findings', 'plan']) {
         for (const row of old[collection] || []) {
           insert.run(collection, JSON.stringify(row));
           count += 1;

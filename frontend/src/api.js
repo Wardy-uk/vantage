@@ -58,6 +58,9 @@ export const api = {
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
   radar: (refresh = false) => call(`/radar${refresh ? '?refresh=1' : ''}`),
 
+  plan: () => call('/plan'),
+  setPlanStatus: (id, patch) => call(`/plan/${id}`, { method: 'PUT', body: patch }),
+
   findings: (status) => call(`/findings${status ? '?status=' + status : ''}`),
   addFinding: f => call('/findings', { method: 'POST', body: f }),
   updateFinding: (id, patch) => call(`/findings/${id}`, { method: 'PUT', body: patch }),

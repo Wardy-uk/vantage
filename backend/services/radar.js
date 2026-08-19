@@ -31,6 +31,7 @@
 const nova = require('./signals');
 const neuro = require('./neuro');
 const openrouter = require('./openrouter');
+const sentiment = require('./sentiment');
 
 const CACHE_MS = 10 * 60 * 1000;
 /** Untouched longer than this and it is not queued, it is forgotten. */
@@ -318,6 +319,7 @@ async function build({ force = false } = {}) {
   if (!force && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   const signals = await nova.current({ force });
+  const mood = await sentiment.current({ force });
 
   const neuroReady = neuro.isConfigured();
   const [health, actions, waiting, tasks, meetings, booked] = neuroReady
@@ -338,6 +340,7 @@ async function build({ force = false } = {}) {
 
   const items = [
     ...fromNova(signals),
+    ...sentiment.toRadarItems(mood),
     ...fromNeuro({ health, actions, waiting, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
@@ -346,6 +349,7 @@ async function build({ force = false } = {}) {
 
   const sources = [
     { name: 'nova-flow', ok: Boolean(signals?.available), error: signals?.available ? null : signals?.reason },
+    { name: 'sentiment', ok: Boolean(mood?.available), error: mood?.available ? null : mood?.reason },
     health, actions, waiting, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
@@ -362,6 +366,7 @@ async function build({ force = false } = {}) {
       could: items.filter(i => i.tense === 'could').length,
     },
     meetingsRead: (meetings.data || []).map(m => m.title),
+    sentiment: mood?.available ? mood.raw : null,
   };
 
   cache = { at: Date.now(), data };

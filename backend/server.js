@@ -18,6 +18,7 @@ const openrouter = require('./services/openrouter');
 const settings = require('./services/settings');
 const radar = require('./services/radar');
 const findings = require('./services/findings');
+const plan = require('./services/plan');
 
 const PORT = parseInt(process.env.PORT ?? '3006', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -161,6 +162,11 @@ app.post('/api/findings', wrap(req => findings.add(req.body || {})));
 app.put('/api/findings/:id', wrap(req => findings.update(Number(req.params.id), req.body || {})));
 app.delete('/api/findings/:id', wrap(req => { findings.remove(Number(req.params.id)); return { deleted: true }; }));
 app.get('/api/findings/markdown', wrap(req => ({ markdown: findings.markdown({ since: req.query.since }) })));
+
+// ── Improvement plan ─────────────────────────────────────────────────────────
+
+app.get('/api/plan', wrap(() => plan.list()));
+app.put('/api/plan/:id', wrap(req => plan.setStatus(req.params.id, req.body || {})));
 
 // ── Coaching ─────────────────────────────────────────────────────────────────
 
