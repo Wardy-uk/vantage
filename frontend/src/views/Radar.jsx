@@ -108,11 +108,20 @@ export default function Radar() {
       <div className="empty">
         Reading NOVA, NEURO and your recent meetings…
         <div className="small" style={{ marginTop: 8 }}>
-          The NOVA half runs sequentially against a busy database and takes a minute or two.
+          First run only — after this it is kept warm in the background and opens instantly.
         </div>
       </div>
     );
   }
+
+  // How old the picture is, said plainly. The radar is served from cache so it
+  // can open immediately; the honest trade is that the reader is told the age
+  // rather than being made to wait for freshness they may not need.
+  const ageMin = data?.asOf ? Math.round((Date.now() - Date.parse(data.asOf)) / 60_000) : null;
+  const freshness = ageMin === null ? null
+    : ageMin < 1 ? 'just now'
+      : ageMin < 60 ? `${ageMin} min ago`
+        : `${Math.round(ageMin / 60)}h ago`;
 
   return (
     <div className="wrap">
@@ -138,10 +147,12 @@ export default function Radar() {
             {data?.meetingsRead?.length > 0 && (
               <> · read {data.meetingsRead.length} recent meeting{data.meetingsRead.length === 1 ? '' : 's'}</>
             )}
+            {freshness && <> · as at <strong>{freshness}</strong></>}
+            {data?.refreshing && <> · refreshing in the background</>}
           </div>
         </div>
         <button className="ghost" onClick={() => load(true)} disabled={refreshing}>
-          {refreshing ? 'Re-reading…' : 'Refresh'}
+          {refreshing ? 'Re-reading…' : 'Refresh now'}
         </button>
       </div>
 

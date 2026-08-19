@@ -32,6 +32,7 @@ const nova = require('./signals');
 const neuro = require('./neuro');
 const openrouter = require('./openrouter');
 const sentiment = require('./sentiment');
+const cache = require('./cache');
 
 const CACHE_MS = 10 * 60 * 1000;
 /** Untouched longer than this and it is not queued, it is forgotten. */
@@ -39,7 +40,6 @@ const STALE_TICKET_DAYS = 14;
 /** A vault commitment older than this with no due date has probably been dropped. */
 const DROPPED_COMMITMENT_DAYS = 21;
 
-let cache = { at: 0, data: null };
 
 const nowIso = () => new Date().toISOString();
 const daysSince = iso => (iso ? Math.floor((Date.now() - Date.parse(iso)) / 86_400_000) : null);
@@ -357,9 +357,10 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
 const TENSE_ORDER = { happened: 0, happening: 1, could: 2 };
 const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
 
-async function build({ force = false } = {}) {
-  if (!force && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
-
+/**
+ * Build the radar, ignoring any cache. Slow by design — see `build()`.
+ */
+async function compute({ force = false } = {}) {
   const signals = await nova.current({ force });
   const mood = await sentiment.current({ force });
 
@@ -411,8 +412,20 @@ async function build({ force = false } = {}) {
     sentiment: mood?.available ? mood.raw : null,
   };
 
-  cache = { at: Date.now(), data };
   return data;
 }
 
-module.exports = { build, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };
+/**
+ * The radar, served from cache.
+ *
+ * `compute()` takes 60-110 seconds. Nobody waits for that: a stored value comes
+ * back immediately with its timestamp, and a refresh runs behind it when stale.
+ * The value survives restarts, so a deploy does not hand the next visitor a cold
+ * two-minute load.
+ */
+async function build({ force = false } = {}) {
+  const hit = await cache.get('radar', () => compute({ force }), { maxAgeMs: CACHE_MS, force });
+  return { ...hit.value, asOf: hit.at, stale: hit.stale, refreshing: hit.refreshing };
+}
+
+module.exports = { build, compute, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };

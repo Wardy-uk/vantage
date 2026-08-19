@@ -1,65 +1,133 @@
-# Service Desk Continual Improvement
+# VANTAGE
 
-A coaching and continual-improvement workspace for Nick Ward — Head of Service Delivery, Nurtur Limited.
+Leadership coaching and Service Desk continual improvement, for Nick Ward
+(Head of Service Delivery, Nurtur Limited).
 
-It exists to do two things at once:
+**Live:** https://vantage.nickward.co.uk · also https://pi5.tailecb90f.ts.net/vantage/
+**Repo:** `Wardy-uk/vantage`
 
-1. **Build a better Service Desk** — turn the Support Review (w/c 3 Aug 2026) from a document into tracked delivery.
-2. **Build a better leader** — make proactive oversight structural rather than effortful, and produce the evidence trail that proves it.
+---
+
+## What it is for
+
+Two jobs, one system:
+
+1. Turn the Support Review (w/c 3 Aug 2026) into tracked, owned delivery.
+2. Make proactive oversight **structural** — so problems surface here first, and
+   keep surfacing when nobody is checking.
+
+The second is the point. The doubt on record is not "can Nick complete a plan"
+but "can he demonstrate leadership that survives the removal of scrutiny". A
+mechanism answers that in a way a promise cannot.
+
+**Read [context/situation.md](context/situation.md) before working on this.** It
+holds the framing everything else depends on.
+
+## The design principle everything follows
+
+> A source that did not answer renders as **absent**, never as a healthy zero.
+
+Inherited from NEURO's `weekly-risk.js` and non-negotiable, because the audience
+for this work includes the person assessing Nick's PIP. Every signal carries
+whether it answered. Nothing may show a number it did not measure.
+
+This has been violated four times during the build and caught each time by one
+question: **does the data actually say this, or is it just not saying otherwise?**
+See `.claude/memory/mistakes.md`.
+
+## The three-way split (added 19 Aug, after a correction)
+
+Nick is neurodivergent (ADHD, disclosed; OH report received). His difficulty is
+**initiation**, not knowledge — the PIP says so directly. A tool that measures
+what he has not done and reports it is not support; it is the demand restated.
+But removing the measurement loses the evidence he is assessed on.
+
+So the three are kept separate:
+
+| | Where | How often |
+|---|---|---|
+| **The fact** | Standing bar, every screen | Always, no commentary |
+| **The diagnosis** | The coaching brief | **Once**, then quiet for 21 days |
+| **The next step** | Wherever the fact appears | Always — pre-drafted |
+
+Anything that raises awareness without lowering the barrier is the wrong shape
+for this tool.
+
+## Screens
+
+- **Radar** — what has gone wrong, is going wrong, or could. Three tenses,
+  because each demands a different response. Combines NOVA (tickets), NEURO
+  (people), meeting notes (what was said and never became either) and sentiment.
+- **Findings** — a dated register of what Nick spotted, when, and whether he
+  raised it. `found_on` and `raised_on` are separate: spotting and telling are
+  different acts and only the second is proactive escalation. Each unraised
+  finding can be **drafted into a message** in one click.
+- **Plan** — the Support Review's 35 actions with honest ownership (mine /
+  shared / above), plus its 13 measures of success and whether each is
+  measurable. Four are.
+- **Coach** — private AI coaching. Opens with an unprompted brief; three modes
+  (coach, conversation prep, reflect).
+- **Patterns** — durable observations, including an `avoidance` category.
+- **Admin** — configuration, connection tests, PIN change.
 
 ## Where it sits
 
-| System | Role | Stays authoritative for |
-|---|---|---|
-| **NOVA** (`../windows automation/daypilot`) | Support platform + KPI engine | Ticket, SLA, queue, escalation, KB and overtime-approval data |
-| **NEURO** (`../nuero`) | Second brain + system of record | The Weekly Risk & Anomaly Summary, management log, evidence register, vault |
-| **VANTAGE** (this repo) | Coaching + improvement brain | Improvement-plan delivery, coaching practice, signal definitions |
+| System | Authoritative for |
+|---|---|
+| **NOVA** (`../windows automation/daypilot`) | Tickets, SLA, queues, escalation, sentiment, surveys |
+| **NEURO** (`../nuero`) | Weekly Risk Summary, management log, the vault, people |
+| **VANTAGE** (here) | Findings, plan delivery, coaching, signal interpretation |
+
+VANTAGE **reads**; it does not recompute. If a number exists in NOVA, it crosses
+the bridge — a second implementation would drift from the one feeding the weekly
+report that goes to Nick's manager.
 
 ## Hosting
 
-Deployed on the Pi 5 alongside NEURO and SARA, following the **SARA pattern**:
+Pi 5, alongside NEURO and SARA.
 
 - **Backend** — Node 22.22.2, Express, PM2 app `vantage-backend`, repo at
-  `/mnt/data/vantage`, listening on **port 3006** (3001 NEURO, 3002 Pi 4 worker,
-  3005 SARA are taken). Exposed via Tailscale Funnel on the Pi's `.ts.net` host.
-- **Frontend** — React + Vite, static build deployed to Netlify at
-  **`vantage.nickward.co.uk`**, calling the Funnel URL for its API.
-- **TLS** — Tailscale for the API, Netlify for the site. No nginx, no cloudflared.
-- **Auth** — app-level PIN/token, same shape as NEURO but it **hard-fails on
-  startup if unset**. NEURO defaults to open when its PIN env var is missing;
-  VANTAGE must not, because it holds the coaching layer.
+  `/mnt/data/vantage`, port **3006**, SQLite at `/mnt/data/vantage-data/vantage.db`.
+- **Exposed** at `/vantage` on the Pi's Tailscale Funnel. Funnel only permits
+  ports 443, 8443 and 10000 and all three were taken, hence the path.
+- **Frontend** also on **Netlify** at `vantage.nickward.co.uk`, calling the Pi's
+  Funnel URL for its API. Funnel cannot serve a custom domain.
+- **Auth** — app-level PIN, read per request. **Hard-fails on startup if unset**,
+  unlike NEURO which defaults open.
 
-Node 22.22.2 is a hard pin — Node 20 segfaults `better-sqlite3`. After any
-`pm2 start`, run `pm2 save` immediately or the app disappears on next reload.
+## Deploying
 
-The Weekly Risk & Anomaly Summary is generated by NEURO's
-[weekly-risk.js](../nuero/backend/services/weekly-risk.js) and published to
-`Projects/PIP/Weekly Risk Summaries/` in the vault. **That does not move here.**
-This workspace feeds it better signals.
-
-## Layout
-
-```
-context/       The situation. Read these first — they are the distilled source documents.
-signals/       Signal definitions: what we watch, why, and the threshold that makes it a finding.
-improvement/   Delivery tracking for the Support Review improvement plan.
-coaching/      Private layer. Reflection, patterns, conversation prep. Never leaves this machine.
-scripts/       Small Node scripts that call the NOVA and NEURO APIs.
+```bash
+# Pi (backend + the /vantage frontend)
+ssh nickw@100.100.28.58
+export PATH=/home/nickw/.nvm/versions/node/v22.22.2/bin:$PATH
+cd /mnt/data/vantage
+git checkout -- package-lock.json     # npm install rewrites it; blocks --ff-only
+git pull --ff-only
+npm run build
+pm2 restart vantage-backend --update-env
 ```
 
-## The separation rule
+Netlify deploys itself on push to `main` — a GitHub webhook fires a Netlify build
+hook. Linking the repo alone does **not** do this; it took a separate webhook,
+and until it existed the site silently sat several commits behind.
 
-`coaching/` is private and stays private. Nothing in it is quoted, exported or
-summarised into anything that goes to Chris, Ricky or HR unless Nick explicitly
-moves it. Everything else in this repo is written on the assumption it could be
-read by them — which is a useful discipline, not a constraint.
+## Getting started fresh
 
-## Key dates
+```bash
+npm install
+cp backend/.env.example backend/.env    # set VANTAGE_PIN at minimum
+npm run dev
+```
 
-| Date | What |
-|---|---|
-| 27 Jul 2026 | PIP starts |
-| 12 Aug 2026 | First formal review (done) |
-| **24 Aug 2026** | **Next formal review** |
-| 11 Sep 2026 | 60-day checkpoint — overdue management actions must be zero |
-| 11 Oct 2026 | PIP ends |
+Everything else is configurable from the **Admin** screen: OpenRouter key and
+model, NOVA bridge URL and secret, NEURO URL, API token and vault key.
+
+## Tests
+
+```bash
+cd backend && node --test services/*.test.js
+```
+
+Store tests skip cleanly where `better-sqlite3` will not build; the prompt and
+parser tests run everywhere and are the ones that matter.

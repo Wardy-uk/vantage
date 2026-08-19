@@ -251,8 +251,49 @@ db.init();
 // survives a restart and is not silently overridden by a stale .env on the box.
 settings.apply();
 
+/**
+ * Keep the radar warm.
+ *
+ * Building it takes 60–110 seconds, so the goal is that nobody ever triggers a
+ * build by visiting. A refresh runs on a timer, and the result is persisted, so
+ * opening the app reads a stored value with a timestamp on it.
+ *
+ * Working hours only. Each pass costs a set of heavy queries against a database
+ * that is also serving the live service desk, plus a model call for the meeting
+ * analysis — running that through the night would spend real money and DTUs to
+ * keep a screen fresh for nobody.
+ *
+ * The first warm is delayed: the boot path already has a database to open and a
+ * frontend to serve, and racing a two-minute query against startup helps no one.
+ */
+const WARM_EVERY_MS = 25 * 60 * 1000;
+const WARM_FROM_HOUR = 6;
+const WARM_UNTIL_HOUR = 20;
+
+async function warm(reason) {
+  const hour = new Date().getHours();
+  if (reason !== 'startup' && (hour < WARM_FROM_HOUR || hour >= WARM_UNTIL_HOUR)) return;
+  try {
+    const started = Date.now();
+    await radar.build({ force: true });
+    console.log(`[VANTAGE] radar warmed (${reason}) in ${Math.round((Date.now() - started) / 1000)}s`);
+  } catch (err) {
+    // A failed warm is not fatal — the last good value is still on disk, and the
+    // app will report its age honestly.
+    console.warn(`[VANTAGE] radar warm failed (${reason}):`, err.message);
+  }
+}
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[VANTAGE] running on 0.0.0.0:${PORT}`);
   if (!openrouter.isConfigured()) console.warn('[VANTAGE] No OpenRouter key — set one on the Admin page. Coaching will fail until then.');
   if (!signals.isConfigured()) console.warn('[VANTAGE] No NOVA bridge config — set it on the Admin page. Signals render as unavailable until then.');
+
+  // Warm on boot only if there is nothing stored — a redeploy should not cost a
+  // fresh two-minute run when yesterday's value is perfectly serviceable and
+  // the timer will replace it shortly anyway.
+  const stored = require('./services/cache').read('radar');
+  if (!stored) setTimeout(() => warm('startup'), 20_000);
+  else console.log(`[VANTAGE] radar cache restored from ${stored.at}`);
+  setInterval(() => warm('timer'), WARM_EVERY_MS);
 });
