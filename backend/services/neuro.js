@@ -162,4 +162,32 @@ async function recentMeetings(limit = 6) {
   return notes;
 }
 
-module.exports = { isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, recentMeetings };
+/**
+ * Booked 1:1s, from each person's vault note frontmatter (`1-2-1-booked`).
+ *
+ * This is the ground truth the meeting analyser needs. It exists in NEURO
+ * already — the person card shows "Booked 2026-08-25" — but nothing was reading
+ * it, so the analyser inferred scheduling from transcripts and got it wrong.
+ *
+ * Best-effort per person: one unreadable note must not cost the whole schedule.
+ */
+async function bookedOneToOnes() {
+  const roster = await call('/api/team-health/roster');
+  const people = (roster.people || roster.data?.people || []).map(p => p.name).filter(Boolean);
+
+  const out = [];
+  for (const person of people) {
+    try {
+      const detail = await call(`/api/person/${encodeURIComponent(person)}`);
+      const fm = detail?.vaultNote?.frontmatter || detail?.data?.vaultNote?.frontmatter || {};
+      const booked = fm['1-2-1-booked'];
+      if (booked) out.push({ person, booked: String(booked).slice(0, 10), cadence: fm.cadence || null });
+    } catch { /* skip */ }
+  }
+  return out;
+}
+
+module.exports = {
+  isConfigured, call, teamHealth, vaultActions, waitingOn, tasks,
+  recentMeetings, bookedOneToOnes,
+};

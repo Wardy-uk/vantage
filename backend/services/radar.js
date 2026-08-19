@@ -223,11 +223,24 @@ function fromNeuro({ health, actions, waiting, tasks }) {
  * so when it finds nothing. An analyst that always produces three risks will be
  * inventing them by the third week.
  */
-async function fromMeetings(notes) {
+async function fromMeetings(notes, schedule = []) {
   if (!notes?.length) return [];
   if (!openrouter.isConfigured()) return [];
 
-  const corpus = notes.map(n => `### ${n.title}\n${n.content}${n.truncated ? '\n[truncated]' : ''}`).join('\n\n---\n\n');
+  // What IS booked, handed to the model as ground truth.
+  //
+  // Without this it read "a nice big uptick by the next one-to-one" out of a
+  // transcript and asserted the next 1:1 was the following day, when it was
+  // booked for a week later — and separately reported a risk assessment as
+  // having "no date set" when a date existed in the person's note. Both are the
+  // same mistake this codebase keeps making in different clothes: treating the
+  // absence of a mention as the absence of a fact.
+  const known = schedule.length
+    ? `\n\nKNOWN SCHEDULE (authoritative — these ARE booked):\n${schedule.map(s => `- 1:1 with ${s.person}: ${s.booked}`).join('\n')}`
+    : '\n\nKNOWN SCHEDULE: not available. Do not assert that anything is unscheduled.';
+
+  const corpus = notes.map(n => `### ${n.title}\n${n.content}${n.truncated ? '\n[truncated]' : ''}`).join('\n\n---\n\n')
+    + known;
 
   const system = `You are reading recent meeting notes belonging to Nick Ward, Head of Service Delivery at a proptech SaaS company, to find OPERATIONAL RISK he may not have registered.
 
@@ -249,6 +262,17 @@ Rules:
 - Do NOT restate things that are plainly already being handled.
 - Do NOT invent risk to fill a quota. Returning an empty list is a valid and useful answer.
 - Ignore anything purely personal or pastoral.
+
+DATES AND SCHEDULING — read this carefully:
+- A meeting note is NOT the system of record for what is scheduled. Diaries,
+  calendars and people notes are. If a note does not mention a date, that means
+  it was not mentioned, NOT that nothing is booked.
+- NEVER infer or state a date that is not explicitly written in the note. Do not
+  reason that "the next one-to-one" means the following day.
+- The KNOWN SCHEDULE section below is authoritative. If something is listed
+  there, it IS booked — do not raise it as unscheduled, undated or deferred.
+- If you believe something needs a date and none appears anywhere, say "no date
+  is mentioned in the note" rather than "no date has been set".
 
 Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity":"high|medium|low","title":"short","detail":"what was said and why it matters","meeting":"note title"}]}`;
 
@@ -289,19 +313,20 @@ async function build({ force = false } = {}) {
   const signals = await nova.current({ force });
 
   const neuroReady = neuro.isConfigured();
-  const [health, actions, waiting, tasks, meetings] = neuroReady
+  const [health, actions, waiting, tasks, meetings, booked] = neuroReady
     ? await Promise.all([
       source('team-health', neuro.teamHealth),
       source('vault-actions', () => neuro.vaultActions(90)),
       source('waiting-on', neuro.waitingOn),
       source('tasks', neuro.tasks),
       source('meetings', () => neuro.recentMeetings(6)),
+      source('booked-1to1s', neuro.bookedOneToOnes),
     ])
-    : ['team-health', 'vault-actions', 'waiting-on', 'tasks', 'meetings']
+    : ['team-health', 'vault-actions', 'waiting-on', 'tasks', 'meetings', 'booked-1to1s']
       .map(name => ({ name, ok: false, error: 'NEURO not configured (NEURO_API_TOKEN)', data: null }));
 
   const meetingAnalysis = meetings.ok
-    ? await source('meeting-analysis', () => fromMeetings(meetings.data))
+    ? await source('meeting-analysis', () => fromMeetings(meetings.data, booked.data || []))
     : { name: 'meeting-analysis', ok: false, error: 'no meeting notes available', data: null };
 
   const items = [
@@ -314,7 +339,7 @@ async function build({ force = false } = {}) {
 
   const sources = [
     { name: 'nova-flow', ok: Boolean(signals?.available), error: signals?.available ? null : signals?.reason },
-    health, actions, waiting, tasks, meetings, meetingAnalysis,
+    health, actions, waiting, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
   const data = {
