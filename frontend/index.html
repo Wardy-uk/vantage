@@ -2,9 +2,30 @@
 <html lang="en-GB">
   <head>
     <meta charset="utf-8" />
+    <!-- viewport-fit=cover + the safe-area padding in styles.css keeps the header
+         clear of the notch when installed to the iOS home screen. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0e1116" />
+    <meta name="description" content="What has gone wrong, what is going wrong, and what could." />
+
     <title>VANTAGE</title>
+
+    <!-- Relative, so one build works both at a host root (Netlify) and under
+         /vantage on the Pi. Vite rewrites these against `base`. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+
+    <!-- iOS ignores the manifest for home-screen installs and needs its own
+         tags. Safari also ignores SVG here, which is why the icons are PNG. -->
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="VANTAGE" />
+    <!-- black-translucent lets the app paint under the status bar; the safe-area
+         inset is what stops the header colliding with it. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- The PIN is the only gate on this app. Keep it out of indexes. -->
+    <meta name="robots" content="noindex, nofollow" />
   </head>
   <body>
     <div id="root"></div>

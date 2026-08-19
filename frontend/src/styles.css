@@ -50,11 +50,20 @@ input, textarea, select {
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
 
-.app { display: flex; flex-direction: column; height: 100vh; }
+/* 100dvh, not 100vh: on iOS Safari 100vh is the height WITHOUT the browser
+   chrome, so the composer at the bottom of the coach sits under the address bar
+   until you scroll. dvh tracks the visible viewport. */
+.app { display: flex; flex-direction: column; height: 100dvh; }
 
 header.top {
   display: flex; align-items: center; gap: 18px;
   padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+  /* Installed to the iOS home screen the app paints under the status bar
+     (black-translucent), so the header needs the notch inset added to it. */
+  padding-top: calc(12px + env(safe-area-inset-top));
+  padding-left: calc(20px + env(safe-area-inset-left));
+  padding-right: calc(20px + env(safe-area-inset-right));
+  position: sticky; top: 0; z-index: 10;
 }
 .brand { font-weight: 700; letter-spacing: .14em; font-size: 14px; }
 .brand span { color: var(--accent); }
@@ -131,4 +140,28 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
   .coach { grid-template-columns: 1fr; }
   .sessions { display: none; }
   .sessions.show { display: block; }
+
+  /* Phone layout. The header wraps rather than compressing the nav into
+     unreadable stubs, and the clock drops to its own line. */
+  header.top { flex-wrap: wrap; gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .brand { font-size: 13px; }
+  nav { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  nav::-webkit-scrollbar { display: none; }
+  nav button { white-space: nowrap; padding: 7px 11px; }
+  .clock { font-size: 11px; }
+  .spacer { flex: 1; }
+
+  .wrap { padding: 16px 14px 40px; }
+  .card { padding: 14px; }
+  .grid { grid-template-columns: 1fr 1fr; }
+
+  /* Home-indicator clearance at the bottom of scrolling regions. */
+  main, .messages { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .composer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+
+  /* 16px minimum, or iOS zooms the whole page when a field is focused. */
+  input, textarea, select { font-size: 16px; }
+
+  table { font-size: 12px; }
+  th, td { padding: 6px 5px; }
 }
