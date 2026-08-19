@@ -12,7 +12,7 @@
  * sentiment does not move minute to minute.
  */
 
-const BUILD_EXPECTED = '2026-08-19-sentiment-a';
+const BUILD_EXPECTED = '2026-08-19-sentiment-b';
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 120_000;
 
@@ -106,6 +106,24 @@ function toRadarItems(sentiment) {
         severity: 'low',
         title: 'CSAT sample too thin to report',
         detail: `${p.data.responded} responses in the window. Scores are withheld below 10 rather than shown with a caveat — but it does mean customer satisfaction is currently unmeasured, which is itself worth knowing.`,
+        source: 'Sentiment',
+      });
+    }
+  }
+
+  // Both CSAT sources together, because they contradict each other in isolation.
+  const j = raw.jiraCsat;
+  if (j?.ok && p?.ok && j.data && p.data) {
+    const jiraUnmeasured = j.data.rated < 10;
+    const portalUnmeasured = p.data.responded < 10;
+    if (jiraUnmeasured && portalUnmeasured) {
+      out.push({
+        tense: 'happening',
+        severity: 'high',
+        title: 'Customer satisfaction is unmeasured by both mechanisms',
+        detail: `Jira Satisfaction: ${j.data.rated} ratings on ${j.data.resolved} resolved tickets. `
+          + `NOVA portal CSAT: ${p.data.responded} of ${p.data.sent} sent. `
+          + 'Two separate surveys, neither returning enough to say anything. The Support Review claims customer experience is being affected — nothing currently in place could confirm or refute that.',
         source: 'Sentiment',
       });
     }
