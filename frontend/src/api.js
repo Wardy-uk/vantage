@@ -58,6 +58,12 @@ export const api = {
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
   radar: (refresh = false) => call(`/radar${refresh ? '?refresh=1' : ''}`),
 
+  findings: (status) => call(`/findings${status ? '?status=' + status : ''}`),
+  addFinding: f => call('/findings', { method: 'POST', body: f }),
+  updateFinding: (id, patch) => call(`/findings/${id}`, { method: 'PUT', body: patch }),
+  deleteFinding: id => call(`/findings/${id}`, { method: 'DELETE' }),
+  findingsMarkdown: since => call(`/findings/markdown${since ? '?since=' + since : ''}`),
+
   modes: () => call('/coach/modes'),
   sessions: () => call('/coach/sessions'),
   session: id => call(`/coach/sessions/${id}`),

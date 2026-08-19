@@ -34,7 +34,31 @@ const TENSES = [
 
 const SEVERITY_COLOUR = { high: 'var(--bad)', medium: 'var(--warn)', low: 'var(--muted)' };
 
+/**
+ * One line on the radar, with a one-click route into the findings register.
+ *
+ * That button is the whole bridge between noticing and evidencing. A radar you
+ * read and close leaves no trace that you looked; the register is what turns
+ * "I saw that" into something dated that survives to a review.
+ */
 function Item({ it }) {
+  const [logged, setLogged] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const log = async () => {
+    setBusy(true);
+    try {
+      await api.addFinding({
+        title: it.title,
+        detail: `${it.detail}${it.meeting ? ` (${it.meeting})` : ''}`,
+        source: it.source,
+        severity: it.severity,
+      });
+      setLogged(true);
+    } catch { /* the button reverts; the radar is not the place to shout */ }
+    finally { setBusy(false); }
+  };
+
   return (
     <div style={{ padding: '11px 0', borderBottom: '1px solid var(--line)' }}>
       <div className="row" style={{ gap: 8, marginBottom: 3 }}>
@@ -42,8 +66,13 @@ function Item({ it }) {
           width: 7, height: 7, borderRadius: 99,
           background: SEVERITY_COLOUR[it.severity] || 'var(--muted)', flexShrink: 0,
         }} />
-        <strong style={{ fontSize: 14 }}>{it.title}</strong>
+        <strong style={{ fontSize: 14, flex: 1 }}>{it.title}</strong>
         <span className="pill">{it.source}</span>
+        <button className="ghost small" style={{ border: 'none', padding: '0 6px' }}
+          onClick={log} disabled={busy || logged}
+          title="Add to the findings register">
+          {logged ? '✓ logged' : busy ? '…' : '+ log'}
+        </button>
       </div>
       <div className="small" style={{ color: 'var(--muted)', paddingLeft: 15 }}>
         {it.detail}

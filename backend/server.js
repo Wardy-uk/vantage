@@ -17,6 +17,7 @@ const signals = require('./services/signals');
 const openrouter = require('./services/openrouter');
 const settings = require('./services/settings');
 const radar = require('./services/radar');
+const findings = require('./services/findings');
 
 const PORT = parseInt(process.env.PORT ?? '3006', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -152,6 +153,14 @@ app.post('/api/settings/test/:what', wrap(async req => {
 
 app.get('/api/signals', wrap(req => signals.current({ force: req.query.refresh === '1' })));
 app.get('/api/radar', wrap(req => radar.build({ force: req.query.refresh === '1' })));
+
+// ── Findings register ────────────────────────────────────────────────────────
+
+app.get('/api/findings', wrap(req => findings.list({ status: req.query.status, since: req.query.since })));
+app.post('/api/findings', wrap(req => findings.add(req.body || {})));
+app.put('/api/findings/:id', wrap(req => findings.update(Number(req.params.id), req.body || {})));
+app.delete('/api/findings/:id', wrap(req => { findings.remove(Number(req.params.id)); return { deleted: true }; }));
+app.get('/api/findings/markdown', wrap(req => ({ markdown: findings.markdown({ since: req.query.since }) })));
 
 // ── Coaching ─────────────────────────────────────────────────────────────────
 
