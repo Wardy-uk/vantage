@@ -193,6 +193,9 @@ async function overview({ suggest = true, match = true, rematch = false } = {}) 
     };
   }
 
+  let suggestionsAvailable = suggest;
+  let suggestionsReason = null;
+
   if (suggest) {
     const unlinked = plan.PLAN.filter(p => !effective[p.id]);
     if (unlinked.length) {
@@ -201,13 +204,19 @@ async function overview({ suggest = true, match = true, rematch = false } = {}) 
         const linkedIds = new Set(Object.values(effective).map(l => l.taskId));
         for (const r of res.results || []) {
           if (!items[r.id]) continue;
-          // A task already backing another action is not a suggestion for this one.
-          items[r.id].suggestions = (r.matches || []).filter(m => !linkedIds.has(m.task.id));
+          // A task already backing another action is not a suggestion for this
+          // one. A `microsoft` match has no task to check — it is not linked to
+          // anything yet, which is precisely why it is being offered.
+          items[r.id].suggestions = (r.matches || [])
+            .filter(m => m.kind === 'microsoft' || !linkedIds.has(m.task?.id));
         }
       } catch (err) {
         // Matching failing must not take the links down with it — the links are
-        // the load-bearing half. Flagged, not swallowed.
-        return { available: true, suggestionsAvailable: false, suggestionsReason: err.message, links: effective, items, plannerScope: PLANNER_SCOPE, taskCount: rows.length };
+        // the load-bearing half. Flagged, and the payload keeps its full shape:
+        // an error that returns half a response makes the screen fail in a
+        // second, unrelated way and hides which thing actually broke.
+        suggestionsAvailable = false;
+        suggestionsReason = err.message;
       }
     }
   }
@@ -243,7 +252,8 @@ async function overview({ suggest = true, match = true, rematch = false } = {}) 
 
   return {
     available: true,
-    suggestionsAvailable: suggest,
+    suggestionsAvailable,
+    suggestionsReason,
     proposals: {
       available: proposals.available,
       reason: proposals.reason || null,

@@ -15,9 +15,23 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// The overview tests need the store; the rest are pure. Same split as
+// coach.test.js — skip loudly on a machine that was never going to run VANTAGE.
+let storeReady = true;
+try {
+  require('../db').init(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vantage-plan-')), 'test.db'));
+} catch (err) {
+  storeReady = false;
+  console.log(`[skip] plan-tasks store tests: ${err.message.split('\n')[0]}`);
+}
 
 const planTasks = require('./plan-tasks');
 const plan = require('./plan');
+const neuro = require('./neuro');
 
 test('the origin stamp round-trips for every plan id', () => {
   for (const item of plan.PLAN) {
@@ -114,6 +128,59 @@ test('an unset confidence degrades to low rather than being trusted', async () =
     pairs: [{ plan: 'Q6', candidate: 'n:7', confidence: 'certain', why: 'made-up level' }],
   }), () => planMatch.propose(CATALOGUE));
   assert.equal(res.pairs.Q6.confidence, 'low');
+});
+
+/**
+ * Caught live, not by the suite (20 Aug 2026): the suggestion filter read
+ * `m.task.id` on every match, and a Planner match has no `task` — it is not a
+ * NEURO task yet, which is the entire reason it is being offered. The throw was
+ * caught and turned into a HALF response with no counts and no catalogue, so
+ * the screen then failed on the missing fields and reported the wrong problem.
+ *
+ * Two assertions, therefore: the Planner match survives the filter, and a
+ * failure anywhere in matching still returns a whole payload.
+ */
+function stubNeuro({ tasks = [], todos = [], match }) {
+  const real = { allTasks: neuro.allTasks, todos: neuro.todos, matchTasks: neuro.matchTasks, isConfigured: neuro.isConfigured };
+  neuro.isConfigured = () => true;
+  neuro.allTasks = async () => ({ tasks });
+  neuro.todos = async () => ({ todos });
+  neuro.matchTasks = match;
+  return () => Object.assign(neuro, real);
+}
+
+test('a Planner suggestion survives the filter that checks linked tasks', { skip: !storeReady }, async () => {
+  const restore = stubNeuro({
+    tasks: [],
+    todos: [{ ms_id: 'ms-121', text: 'Re-instate reglar 121s with team', source: 'MS Planner', done: false }],
+    match: async () => ({
+      results: [{ id: 'Q6', matches: [{ score: 0.8, confidence: 'strong', kind: 'microsoft', ms: { ms_id: 'ms-121', text: 'Re-instate reglar 121s with team', ms_source: 'MS Planner' } }] }],
+    }),
+  });
+  try {
+    const res = await planTasks.overview({ match: false });
+    assert.equal(res.suggestionsAvailable, true, `matching threw: ${res.suggestionsReason}`);
+    assert.equal(res.items.Q6.suggestions.length, 1);
+    assert.equal(res.items.Q6.suggestions[0].kind, 'microsoft');
+  } finally { restore(); }
+});
+
+test('matching failing still returns a whole payload', { skip: !storeReady }, async () => {
+  const restore = stubNeuro({
+    tasks: [],
+    todos: [],
+    match: async () => { throw new Error('NEURO /api/task-dedupe/match returned 404'); },
+  });
+  try {
+    const res = await planTasks.overview({ match: false });
+    assert.equal(res.available, true);
+    assert.equal(res.suggestionsAvailable, false);
+    assert.match(res.suggestionsReason, /404/);
+    // The fields the screen reads unconditionally must all still be there.
+    assert.ok(res.counts, 'counts missing — the screen would fail on the wrong thing');
+    assert.ok(res.catalogue, 'catalogue missing — the picker would fail to open');
+    assert.equal(typeof res.plannerScope, 'string');
+  } finally { restore(); }
 });
 
 test('the Planner scope caveat is stated, not implied', () => {
