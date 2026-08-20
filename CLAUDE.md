@@ -97,11 +97,15 @@ Prefer the token over the PIN: the PIN is what Nick types into NEURO himself.
 One token unlocks writes and deletes across the whole API, so the discipline
 lives on this side. Never call `weekly-risk` publish or queue-send.
 
-**GETs, plus exactly two writes.** `neuro.createTask` (`POST /api/tasks`) and
-`neuro.matchTasks` (`POST /api/task-dedupe/match`, which changes nothing) exist
-so the improvement plan can own real tasks instead of a private checklist.
+**GETs, plus exactly three writes**, so the improvement plan can own real tasks
+instead of a private checklist:
+
+- `neuro.createTask` — `POST /api/tasks`, idempotent on normalised text.
+- `neuro.matchTasks` — `POST /api/task-dedupe/match`, which changes nothing.
+- `neuro.linkTaskToMicrosoft` — `POST /api/task-dedupe/link`, the Planner merge.
+
 Nothing else in this repo may POST, PATCH or DELETE against NEURO — no updates,
-no completions, no deletes. Adding a third write is a decision, not a detail.
+no completions, no deletes. Adding a fourth write is a decision, not a detail.
 
 **Tasks live in NEURO; VANTAGE holds only the link.** `plan-tasks.js` stores
 `planId -> taskId` and reads state live. Merging a task with the MS Planner
