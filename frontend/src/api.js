@@ -60,6 +60,11 @@ export const api = {
 
   plan: () => call('/plan'),
   setPlanStatus: (id, patch) => call(`/plan/${id}`, { method: 'PUT', body: patch }),
+  planTasks: (rematch = false) => call(`/plan/tasks${rematch ? '?rematch=1' : ''}`),
+  createPlanTask: (id, body = {}) => call(`/plan/${id}/task`, { method: 'POST', body }),
+  linkPlanTask: (id, taskId) => call(`/plan/${id}/link`, { method: 'POST', body: { taskId } }),
+  adoptPlannerTask: (id, item) => call(`/plan/${id}/planner`, { method: 'POST', body: item }),
+  unlinkPlanTask: id => call(`/plan/${id}/link`, { method: 'DELETE' }),
 
   findings: (status) => call(`/findings${status ? '?status=' + status : ''}`),
   addFinding: f => call('/findings', { method: 'POST', body: f }),

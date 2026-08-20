@@ -19,6 +19,7 @@ const settings = require('./services/settings');
 const radar = require('./services/radar');
 const findings = require('./services/findings');
 const plan = require('./services/plan');
+const planTasks = require('./services/plan-tasks');
 const self = require('./services/self');
 const brief = require('./services/brief');
 
@@ -170,6 +171,15 @@ app.get('/api/findings/markdown', wrap(req => ({ markdown: findings.markdown({ s
 
 app.get('/api/plan', wrap(() => plan.list()));
 app.put('/api/plan/:id', wrap(req => plan.setStatus(req.params.id, req.body || {})));
+
+// The delivery half: which of the 35 actions are real tasks in NEURO, and which
+// of those NEURO has merged with Mel's Planner board. Separate from /api/plan
+// because it is a network call — the plan must still render with NEURO down.
+app.get('/api/plan/tasks', wrap(req => planTasks.overview({ rematch: req.query.rematch === '1' })));
+app.post('/api/plan/:id/task', wrap(req => planTasks.createFor(req.params.id, req.body || {})));
+app.post('/api/plan/:id/link', wrap(req => planTasks.link(req.params.id, (req.body || {}).taskId)));
+app.post('/api/plan/:id/planner', wrap(req => planTasks.adoptMicrosoft(req.params.id, req.body || {})));
+app.delete('/api/plan/:id/link', wrap(req => planTasks.unlink(req.params.id)));
 
 // ── Coaching ─────────────────────────────────────────────────────────────────
 

@@ -9,10 +9,24 @@
  * where "problems before they become problems" actually lives, and no amount of
  * ticket data will surface it.
  *
- * Read-only by construction. Every call here is a GET, and the endpoints that
- * write or send (weekly-risk publish, queue-send, plaud sync) are deliberately
- * not wrapped — one shared token unlocks NEURO's entire API including deletes,
- * so the discipline has to live on this side.
+ * Read-only by default, with ONE deliberate exception.
+ *
+ * Every call here is a GET except three, added so the improvement plan can own
+ * real tasks rather than a private checklist. The rule they narrow is unchanged
+ * in spirit: one shared token unlocks NEURO's entire API including deletes, so
+ * the discipline lives on this side. What is allowed is exactly:
+ *
+ *   POST /api/tasks             — create a task (idempotent on text)
+ *   POST /api/task-dedupe/match — scores candidates; changes nothing
+ *   POST /api/task-dedupe/link  — merge a task with its Planner/To-Do item
+ *
+ * Nothing here updates, completes or deletes anything, and the endpoints that
+ * write or send (weekly-risk publish, queue-send, plaud sync) remain
+ * deliberately unwrapped.
+ *
+ * NEURO holds the task; VANTAGE holds only the link to it. Merging that task
+ * with Mel's Planner board is NEURO's job and already exists (`task-dedupe`),
+ * which is why nothing here talks to Graph.
  *
  * `/api/weekly-risk` is also deliberately NOT used: it triggers a NOVA round
  * trip of its own, and VANTAGE already reads NOVA directly. Calling it would
@@ -76,6 +90,76 @@ async function call(path, { timeoutMs = TIMEOUT_MS } = {}) {
   return payload;
 }
 
+/**
+ * The two writes. Kept together and named so a grep for `method: 'POST'` in this
+ * repo lands on the whole of what VANTAGE is allowed to change in NEURO.
+ */
+async function post(path, body, { timeoutMs = TIMEOUT_MS } = {}) {
+  const c = config();
+  if (!c.token && !c.pin) throw new Error('No NEURO credential set (NEURO_API_TOKEN preferred, NEURO_PIN accepted)');
+  if (isVaultPath(path)) throw new Error('Refusing to write to the vault');
+
+  const res = await fetch(`${c.url}${path}`, {
+    method: 'POST',
+    headers: {
+      ...(c.token ? { 'X-Neuro-Api-Token': c.token } : { 'X-Neuro-Pin': c.pin }),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.error || `NEURO ${path} returned ${res.status}`);
+  }
+  return payload;
+}
+
+/**
+ * Score texts against NEURO's open tasks AND the Microsoft mirror. A read that
+ * has to be a POST because the query is a list, not a query string. Changes
+ * nothing.
+ */
+const matchTasks = (texts, { minScore, limit = 3 } = {}) =>
+  post('/api/task-dedupe/match', { texts, minScore, limit });
+
+/**
+ * Merge a NEURO task with a Microsoft one — the third and last write.
+ *
+ * This is the "NEURO should merge its task with Planner" half. NEURO owns the
+ * merge (`tasks.ms_id`), and once it exists the Planner line stops listing
+ * separately and completing either side completes both.
+ */
+const linkTaskToMicrosoft = (taskId, msId, msSource = null) =>
+  post('/api/task-dedupe/link', { taskId, msId, msSource });
+
+/**
+ * The whole todo list, which is the ONLY place the Microsoft mirror is exposed:
+ * Planner and To-Do items live as vault lines with an `ms_id` until something
+ * links them to a task. Measured 20 Aug 2026: 163 tasks, 27 Microsoft rows, and
+ * not one link between them.
+ */
+const todos = () => call('/api/todos');
+
+/**
+ * Create a task in NEURO.
+ *
+ * Idempotent on NEURO's side: `createTask` keys on normalised text and folds a
+ * second sighting into the existing row, returning `created: false`. So a race,
+ * a double-click or a plan action worded like something already captured yields
+ * a link to the existing task rather than a duplicate — which is the behaviour
+ * wanted here, not a fallback.
+ */
+const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantage-plan' }) =>
+  post('/api/tasks', {
+    text,
+    source,
+    moscow: moscow || null,
+    due_date: dueDate || null,
+    notes: notes || null,
+    origin_path: originPath || null,
+  });
+
 /** People issues: overdue 1:1s, missing notes, probation and improvement windows. */
 const teamHealth = () => call('/api/team-health?severity=all');
 
@@ -93,6 +177,13 @@ const waitingOn = () => call('/api/waiting-on?status=open');
 
 /** Nick's own task position. Overdue is computed here; NEURO has no filter for it. */
 const tasks = () => call('/api/tasks?status=open');
+
+/**
+ * Every task including completed ones. NEURO has no GET /api/tasks/:id, so a
+ * linked task's live state is read by indexing this by id — and a plan action
+ * whose task has been DONE is the whole point, so `status=open` cannot answer it.
+ */
+const allTasks = () => call('/api/tasks?status=all');
 
 /**
  * Recent meeting notes, read from the vault.
@@ -218,6 +309,7 @@ const stateOfPlay = () => call('/api/state-of-play');
 const knowledgeGaps = (daysBack = 90) => call(`/api/knowledge-gaps?daysBack=${daysBack}`);
 
 module.exports = {
-  isConfigured, call, teamHealth, vaultActions, waitingOn, tasks,
+  isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, allTasks,
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
+  matchTasks, createTask, linkTaskToMicrosoft, todos,
 };

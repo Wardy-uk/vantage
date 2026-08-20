@@ -245,7 +245,13 @@ function fromNeuro({ health, actions, waiting, tasks }) {
  * independently, and discards any that fail. A truncated final object costs one
  * finding instead of all of them.
  */
-function extractItems(text) {
+/**
+ * `required` is the field that makes an object real. It defaults to `title` for
+ * the radar's own items; the plan matcher passes `plan`, because its objects are
+ * pairs and a pair with no action id is noise the same way a titled item with no
+ * title is.
+ */
+function extractItems(text, { required = 'title' } = {}) {
   const out = [];
   let depth = 0;
   let start = -1;
@@ -271,7 +277,7 @@ function extractItems(text) {
       if (depth === 2 && start >= 0) {
         try {
           const obj = JSON.parse(text.slice(start, i + 1));
-          if (obj && obj.title) out.push(obj);
+          if (obj && obj[required]) out.push(obj);
         } catch { /* an unparseable item costs that item, not the run */ }
         start = -1;
       }

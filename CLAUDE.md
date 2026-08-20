@@ -94,9 +94,21 @@ Two credentials, not one:
 - `X-Api-Key` (`VAULT_API_KEY`) — `/api/vault/*` only, a separate gate.
 
 Prefer the token over the PIN: the PIN is what Nick types into NEURO himself.
-Only ever call GETs — one token unlocks writes and deletes across the whole API,
-so the discipline lives on this side. Never call `weekly-risk` publish or
-queue-send.
+One token unlocks writes and deletes across the whole API, so the discipline
+lives on this side. Never call `weekly-risk` publish or queue-send.
+
+**GETs, plus exactly two writes.** `neuro.createTask` (`POST /api/tasks`) and
+`neuro.matchTasks` (`POST /api/task-dedupe/match`, which changes nothing) exist
+so the improvement plan can own real tasks instead of a private checklist.
+Nothing else in this repo may POST, PATCH or DELETE against NEURO — no updates,
+no completions, no deletes. Adding a third write is a decision, not a detail.
+
+**Tasks live in NEURO; VANTAGE holds only the link.** `plan-tasks.js` stores
+`planId -> taskId` and reads state live. Merging a task with the MS Planner
+board Mel set up is NEURO's job and already exists (`services/task-dedupe.js`) —
+never call Graph from here. Note that NEURO's Planner sync reads
+`/me/planner/tasks`, so it sees only what is **assigned to Nick**: "no Planner
+task" is not evidence there isn't one, and the UI has to say so.
 
 ## Deploying VANTAGE
 
@@ -120,9 +132,22 @@ took NEURO's public access down with it.
 
 `coach`, `brief`, `self` and the observations are **private**. Nothing from them
 is quoted, summarised or exported into anything outward-facing unless Nick moves
-it himself. The boundary is structural: those services have no dependency on the
-weekly report, the vault or the evidence register, so they have no path to leak.
-Keep it that way — do not add one.
+it himself.
+
+The boundary is about DIRECTION, not isolation:
+
+- **Private reads outward — allowed.** `self` consuming `findings` and `plan` is
+  how the coach knows anything. Nothing leaks inward.
+- **Outward reads private — banned**, with one exception. Nothing in the weekly
+  report, the vault, the evidence register or any NEURO-facing route may import
+  `coach`, `brief`, `self` or the observations.
+- **The exception is a pointer, never a payload.** `brief.pointer()` returns an
+  id, a timestamp and a deep link — no prose, no pattern name, no quote. It is
+  the only symbol those modules export outward, and it is what NEURO's Focus
+  card renders.
+
+`backend/services/privacy.test.js` enforces this by parsing the import graph.
+If the test does not run, the boundary does not exist — it is not a convention.
 
 Everything else should be written as though Chris or Ricky may read it.
 
