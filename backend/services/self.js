@@ -15,7 +15,6 @@
  *     and "he did not surface it" is the specific doubt on record.
  *   - How often 1:1s are rescheduled. Invisible everywhere else, because the
  *     meeting eventually happens. It shows what gets displaced under pressure.
- *   - Whether commitments made in front of people acquire dates.
  *   - Whether the actions that are HIS on the improvement plan move, separately
  *     from the ones that are not.
  *   - What he has noticed about himself, especially under `avoidance`.
@@ -164,7 +163,6 @@ async function snapshot() {
     observations: observationBehaviour(),
     done: doneBehaviour(),
     oneToOnes: null,
-    commitments: null,
     // null, never 0 — "nothing finished" and "the ledger could not be read" are
     // opposite facts and only one of them is bad news.
     moved: null,
@@ -208,32 +206,11 @@ async function snapshot() {
     out.unavailable.push({ name: '1to1-moves', reason: err.message });
   }
 
-  try {
-    const actions = await neuro.vaultActions(30);
-    const items = actions.items || actions.data?.items || [];
-    const fromMeetings = items.filter(i => /^Meetings\//i.test(i.file || ''));
-    // ATTRIBUTION IS NOT AVAILABLE.
-    //
-    // NEURO's action-item parser leaves `assignee` empty on every row — all
-    // 2,063 of them. So these cannot be called "his commitments" without
-    // inventing the part that matters. The first cut labelled them exactly that
-    // and would have had the coach telling him he had 607 undated promises,
-    // when the truth is that nobody knows whose they are.
-    //
-    // Reported as what it is: open action items across the vault, with the
-    // attribution gap stated so the model cannot quietly assume ownership.
-    const attributed = items.filter(i => (i.assignee || '').trim()).length;
-    out.commitments = {
-      scope: 'ALL open action items in the vault, not only Nick\'s — NEURO does not populate assignee, so ownership is unknown.',
-      openLast30: items.length,
-      madeInMeetings: fromMeetings.length,
-      meetingsUndated: fromMeetings.filter(i => !i.dueDate).length,
-      attributed,
-      attributionAvailable: attributed > 0,
-    };
-  } catch (err) {
-    out.unavailable.push({ name: 'vault-actions', reason: err.message });
-  }
+  // ⚠ Vault action items are deliberately not read (1 Sep 2026). The parser
+  // records no assignee on any row, so this block could only ever describe
+  // work of unknown ownership — it carried a careful caveat saying so, which
+  // is the sign a source is answering a question nobody asked. What is his is
+  // in the task store; what others owe him is NEURO's to show.
 
   return out;
 }

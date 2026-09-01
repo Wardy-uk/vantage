@@ -38,8 +38,6 @@ const findings = require('./findings');
 const CACHE_MS = 10 * 60 * 1000;
 /** Untouched longer than this and it is not queued, it is forgotten. */
 const STALE_TICKET_DAYS = 14;
-/** A vault commitment older than this with no due date has probably been dropped. */
-const DROPPED_COMMITMENT_DAYS = 21;
 
 
 const nowIso = () => new Date().toISOString();
@@ -124,36 +122,7 @@ function fromNova(signals) {
 
 // ── NEURO: the people ────────────────────────────────────────────────────────
 
-/**
- * Fold the copies of one action line into one line.
- *
- * PLAUD writes several summary variants per recording, each landing as its own
- * note, so a single commitment appears once per variant — NEURO's own capture
- * dedupe took 258 pending candidates down to 54 distinct for exactly this
- * reason. Measured here on the live vault: 79 overdue action lines from
- * meetings folded to SEVEN distinct items, one of them counted 43 times.
- *
- * Normalised on text alone, and the id comment is stripped first — the same
- * line in two files IS the same commitment, which is the whole point.
- */
-function foldActionLines(items) {
-  const seen = new Map();
-  for (const it of items) {
-    const key = String(it.text || '')
-      .replace(/<!--.*?-->/g, '')
-      .replace(/[_*#]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase()
-      .slice(0, 60);
-    if (!key) continue;
-    if (!seen.has(key)) seen.set(key, { ...it, sightings: 1 });
-    else seen.get(key).sightings += 1;
-  }
-  return [...seen.values()];
-}
-
-function fromNeuro({ health, actions, waiting, tasks }) {
+function fromNeuro({ health, tasks }) {
   const out = [];
 
   if (health?.ok) {
@@ -177,80 +146,21 @@ function fromNeuro({ health, actions, waiting, tasks }) {
     }
   }
 
-  // Commitments written into notes and never closed. The `file` on each item is
-  // what makes this usable — it points back at the conversation it came from.
-  if (actions?.ok) {
-    const items = actions.data.items || [];
-    const today = nowIso().slice(0, 10);
-    const overdue = items.filter(i => i.dueDate && i.dueDate < today);
-    const undated = items.filter(i => !i.dueDate);
+  // ⚠ Vault action items are NOT read here, and that is deliberate.
+  //
+  // `/api/vault-actions` scrapes every unticked checkbox out of meeting notes
+  // and records no assignee on any of them, so it cannot say whose work
+  // anything is. Two sources CAN: `tasks.origin = 'commitment'` is his, and
+  // NEURO's waiting-on is other people's. Building a card on the third one put
+  // 307 unowned lines on this screen labelled as promises Nick had broken.
+  //
+  // VANTAGE only shows Nick's own work. If this ever needs to come back, it
+  // needs an owner on the row first.
 
-    // ⚠ NOT "commitments", and NOT counted raw. Two separate corrections.
-    //
-    // OWNERSHIP: NEURO's action-item parser leaves `assignee` empty on every
-    // row — all 3,218 of them. So these cannot be called HIS commitments
-    // without inventing the part that matters. `self.js` learned this and
-    // said so; this card did not, and told him on screen that he had 307
-    // broken promises. Two populations DO know whose work they are and both
-    // are already on this radar: tasks with `origin: commitment` (his), and
-    // waiting-on (other people's). This is neither — it is the raw checkbox
-    // layer underneath, and it is only worth showing as "somebody said this
-    // and the date has gone".
-    //
-    // COUNT: scoped to Meetings/ and folded. A line in a daily note is a
-    // to-do; one said in front of someone is a commitment to somebody, which
-    // is the only reason this card exists. Live: 307 -> 79 in meetings -> 7
-    // distinct.
-    const fromMeetings = foldActionLines(overdue.filter(i => /^Meetings\//i.test(i.file || '')));
-    if (fromMeetings.length) {
-      // Most recent first: something that slipped last week is recoverable,
-      // something from March is history.
-      const recent = [...fromMeetings].sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
-      const oldest = [...fromMeetings].sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))[0];
-      out.push(item('happened', fromMeetings.length > 10 ? 'high' : 'medium',
-        `${fromMeetings.length} thing${fromMeetings.length === 1 ? '' : 's'} said in meetings ${fromMeetings.length === 1 ? 'has' : 'have'} a date that has gone`,
-        `${recent.slice(0, 3).map(i => `"${(i.text || '').replace(/<!--.*?-->/g, '').trim().slice(0, 55)}" (${i.dueDate})`).join('; ')}. Oldest ${oldest?.dueDate}. ⚠ OWNERSHIP UNKNOWN — the vault records no assignee on any of these, so some are yours and some are other people\'s. For work that is definitely yours see the commitments card; for what others owe you see waiting-on.`,
-        { source: 'NEURO', remedy: "Read the oldest three and do one of three things to each: claim it, hand it back to whoever said it, or strike it. They are unowned by definition, so nothing happens to them until somebody decides." }));
-    }
-    // Deliberately NOT reported as a count.
-    //
-    // The first run returned 2,890 undated open commitments — every unticked
-    // checkbox in the vault, going back years. That is not a signal, it is the
-    // shape of how notes get written, and putting it on a risk radar trains you
-    // to ignore the radar. Only recent undated commitments are worth surfacing,
-    // because those are the ones still live enough to chase.
-    // Scoped to MEETINGS, and recent.
-    //
-    // Dating by file alone still returned 1,092 — every unticked line in every
-    // daily note. The commitments that matter are the ones made in front of
-    // someone: those carry an implicit promise, and those are the ones whose
-    // absence gets noticed. A checkbox in a personal daily note is a to-do.
-    const recentUndated = undated.filter(i => {
-      if (!/^Meetings\//i.test(i.file || '')) return false;
-      const d = (i.file || '').match(/(\d{4}-\d{2}-\d{2})/)?.[1];
-      return d && (daysSince(`${d}T00:00:00Z`) ?? 999) <= DROPPED_COMMITMENT_DAYS;
-    });
-    // Folded for the same reason as above — the raw figure was 428, which is
-    // the count of summary variants, not the count of things anybody said.
-    const undatedFolded = foldActionLines(recentUndated);
-    if (undatedFolded.length > 3) {
-      out.push(item('could', 'medium',
-        `${undatedFolded.length} things said in meetings have no date on them`,
-        `From the last ${DROPPED_COMMITMENT_DAYS} days: ${undatedFolded.slice(0, 3).map(i => `"${(i.text || '').replace(/<!--.*?-->/g, '').trim().slice(0, 50)}"`).join('; ')}. Said in front of someone, so someone is expecting them — though the vault does not record who owns them.`,
-        { source: 'NEURO', remedy: "Put a date on each, or hand it back to whoever is expecting it. Said in front of someone means someone is waiting for it." }));
-    }
-  }
-
-  if (waiting?.ok) {
-    const items = waiting.data.items || [];
-    const stale = items.filter(i => (daysSince(i.created_at || i.since) ?? 0) > (waiting.data.staleAfterDays || 7));
-    if (stale.length) {
-      out.push(item('happening', 'medium',
-        `${stale.length} things you are waiting on have gone quiet`,
-        `${stale.slice(0, 3).map(i => `${i.person || 'someone'}: ${(i.summary || i.what || '').slice(0, 50)}`).join('; ')}. Waiting is not the same as chasing, and only one of them is evidence.`,
-        { source: 'NEURO', remedy: "Chase them in writing today. Waiting leaves no trace; a chase is dated and survives to a review." }));
-    }
-  }
+  // ⚠ What OTHER people owe Nick is not read here either (Nick's call,
+  // 1 Sep 2026). NEURO's waiting-on already tracks it, on the People board
+  // where the person it concerns is, and chasing somebody is not what this
+  // tool is for. VANTAGE is about his own work and the evidence he produces.
 
   // ── Overdue tasks, SPLIT BY ORIGIN ─────────────────────────────────────────
   //
@@ -481,16 +391,17 @@ async function compute({ force = false } = {}) {
   const mood = await sentiment.current({ force });
 
   const neuroReady = neuro.isConfigured();
-  const [health, actions, waiting, tasks, meetings, booked] = neuroReady
+  // Two sources dropped with the cards that used them: nothing reads them any
+  // more, and a fetch nobody consumes is a slower radar and a blind spot that
+  // looks like coverage.
+  const [health, tasks, meetings, booked] = neuroReady
     ? await Promise.all([
       source('team-health', neuro.teamHealth),
-      source('vault-actions', () => neuro.vaultActions(90)),
-      source('waiting-on', neuro.waitingOn),
       source('tasks', neuro.tasks),
       source('meetings', () => neuro.recentMeetings(6)),
       source('booked-1to1s', neuro.bookedOneToOnes),
     ])
-    : ['team-health', 'vault-actions', 'waiting-on', 'tasks', 'meetings', 'booked-1to1s']
+    : ['team-health', 'tasks', 'meetings', 'booked-1to1s']
       .map(name => ({ name, ok: false, error: 'NEURO not configured (NEURO_API_TOKEN)', data: null }));
 
   const meetingAnalysis = meetings.ok
@@ -500,7 +411,7 @@ async function compute({ force = false } = {}) {
   const items = [
     ...fromNova(signals),
     ...sentiment.toRadarItems(mood),
-    ...fromNeuro({ health, actions, waiting, tasks }),
+    ...fromNeuro({ health, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
     (TENSE_ORDER[a.tense] - TENSE_ORDER[b.tense])
@@ -509,7 +420,7 @@ async function compute({ force = false } = {}) {
   const sources = [
     { name: 'nova-flow', ok: Boolean(signals?.available), error: signals?.available ? null : signals?.reason },
     { name: 'sentiment', ok: Boolean(mood?.available), error: mood?.available ? null : mood?.reason },
-    health, actions, waiting, tasks, meetings, booked, meetingAnalysis,
+    health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
   const data = {
@@ -630,4 +541,4 @@ async function build({ force = false } = {}) {
   return foldFindings({ ...hit.value, asOf: hit.at, stale: hit.stale, refreshing: hit.refreshing });
 }
 
-module.exports = { build, compute, foldFindings, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };
+module.exports = { build, compute, foldFindings, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS };

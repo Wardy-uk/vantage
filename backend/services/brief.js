@@ -166,12 +166,6 @@ function buildEvidence(radarData, selfData, alreadyNamed) {
       : `- ${selfData.oneToOnes.totalReschedules} reschedules across ${selfData.oneToOnes.peopleWithReschedules} people.`);
   }
 
-  if (selfData.commitments && !selfData.commitments.attributionAvailable) {
-    lines.push('\n## Vault action items');
-    lines.push(`- ${selfData.commitments.openLast30} open in 30 days, none carrying an assignee.`);
-    lines.push('- NOT known to be his. Do not describe them as his commitments.');
-  }
-
   const o = selfData.observations;
   if (o.total) {
     lines.push('\n## What he has noticed about himself');
