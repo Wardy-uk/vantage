@@ -74,7 +74,20 @@ nav button.on { background: var(--panel-2); border-color: var(--line); color: va
 .clock { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 .clock b { color: var(--warn); }
 
-main { flex: 1; overflow: auto; }
+/* ⚠ min-height: 0 is load-bearing, and its absence is why the page grew a
+   second scrollbar.
+
+   `.app` is a fixed 100dvh flex column. A flex item defaults to
+   `min-height: auto`, which means it REFUSES to shrink below its own content
+   — so on any tall view `main` grew past the space left by the header and the
+   standing bar, `.app` overflowed its own fixed height, and the DOCUMENT
+   scrolled behind it. Two scrollbars, and the top of the page pushed out of
+   view. `overflow: auto` cannot save it: the box was never allowed to get
+   small enough to need scrolling in the first place.
+
+   Same species as the SARA kiosk bug — a height that assumes it owns the
+   whole viewport, inside something that had already spent part of it. */
+main { flex: 1; min-height: 0; overflow: auto; }
 .wrap { max-width: 980px; margin: 0 auto; padding: 22px 20px 60px; }
 
 .card {
@@ -103,8 +116,8 @@ main { flex: 1; overflow: auto; }
 .small { font-size: 12px; }
 
 /* Coach */
-.coach { display: grid; grid-template-columns: 250px 1fr; height: 100%; }
-.sessions { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; }
+.coach { display: grid; grid-template-columns: 250px 1fr; height: 100%; min-height: 0; }
+.sessions { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; min-height: 0; padding: 12px; }
 .sessions .item {
   padding: 9px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 3px;
   border: 1px solid transparent;
@@ -114,8 +127,8 @@ main { flex: 1; overflow: auto; }
 .sessions .item .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sessions .item .m { font-size: 11px; color: var(--muted); }
 
-.thread { display: flex; flex-direction: column; height: 100%; min-width: 0; }
-.messages { flex: 1; overflow: auto; padding: 20px; }
+.thread { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
+.messages { flex: 1; min-height: 0; overflow: auto; padding: 20px; }
 .msg { max-width: 720px; margin: 0 auto 16px; }
 .msg .who { font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .07em; }
 .msg .body { white-space: pre-wrap; }
