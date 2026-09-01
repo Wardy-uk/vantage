@@ -78,6 +78,30 @@ while it is non-empty the commitment figure is declared a FLOOR. Improvement
 work never acquires the word "overdue". Pinned by `task-origin.test.js`,
 including the live shape as a fixture.
 
+### Three populations, and only two of them know whose work it is
+
+- **His** — `tasks.origin = 'commitment'`. Attributed.
+- **Other people's** — NEURO's `waiting_on`, matched against the roster. Attributed.
+- **Raw action lines** — `/api/vault-actions`. `assignee` is empty on **every**
+  row, so this one knows nothing about ownership and must never claim to.
+
+The radar called the third one "commitments are past their due date" and put
+307 of them on the screen Nick reads every day. `self.js` had already learned
+this exact lesson and written it down — *"the first cut would have had the coach
+telling him he had 607 undated promises, when the truth is that nobody knows
+whose they are"* — and the radar did it anyway, one source over.
+
+The count was wrong too. PLAUD writes several summary variants per recording, so
+one thing said once appears once per variant: **307 → 79 in Meetings/ → SEVEN
+distinct**, the oldest counted 43 times. Cards built on these lines are scoped
+to `Meetings/` (a line in a daily note is a to-do, not a promise to anybody) and
+folded on normalised text. Paired with NEURO `66c8be5`, which stopped the feed
+returning `Tasks/Archive`, the read-only task export and five Syncthing conflict
+copies of the Microsoft mirror.
+
+Pinned by `vault-actions-cards.test.js`, including forbidden-wording tests — a
+tidy-up that restores the shorter word puts an accusation back on the screen.
+
 ### What VANTAGE reads about Nick, and what it does not
 
 Beyond the radar's sources, two reads exist because VANTAGE was measuring
