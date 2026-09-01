@@ -230,6 +230,17 @@ app.post('/api/coach/brief/start', wrap(req => brief.startFrom(req.body || {})))
 app.get('/api/self', wrap(() => self.snapshot()));
 app.get('/api/self/quick', wrap(() => self.quick()));
 
+// What actually moved, from NEURO's ledger. Its own route because it is a
+// network call and `/self/quick` is deliberately local-only, so the standing
+// bar can render instantly and fill this in when it arrives.
+app.get('/api/self/moved', wrap(async () => {
+  const snap = await self.snapshot();
+  return { moved: snap.moved, unavailable: snap.unavailable.filter(u => u.name === 'wins' || u.name === 'neuro') };
+}));
+
+// NEURO's friction read, shown beside the observations Nick types himself.
+app.get('/api/friction', wrap(() => coach.neuroFriction()));
+
 // ── Observations ─────────────────────────────────────────────────────────────
 
 app.get('/api/observations', wrap(req => coach.listObservations({ kind: req.query.kind })));

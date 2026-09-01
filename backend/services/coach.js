@@ -233,6 +233,43 @@ function addObservation({ kind, note, sessionId = null }) {
   });
 }
 
+/**
+ * NEURO's friction read, for the screen the typed observations live on.
+ *
+ * They are shown SEPARATELY and never merged into the observation list. An
+ * observation is Nick saying "this keeps happening"; a friction insight is a
+ * count of things he did, with the evidence attached. Folding the second into
+ * the first would put words in his mouth, and folding the first into the second
+ * would give a hunch the authority of a measurement.
+ *
+ * Degrades to a reason rather than throwing: this sits under a screen that must
+ * still work with NEURO down, and an empty list would read as "nothing is in
+ * your way", which is the one thing it must never say without having looked.
+ */
+async function neuroFriction() {
+  const neuro = require('./neuro');
+  if (!neuro.isConfigured()) {
+    return { available: false, reason: 'No NEURO credential set', insights: [] };
+  }
+  try {
+    const f = await neuro.friction();
+    return {
+      available: true,
+      insights: f.insights || [],
+      // NEURO's own honesty flags, carried rather than recomputed: `complete`
+      // false means a source could not be read, so an empty list is "I could
+      // not look", not "nothing to report".
+      complete: f.complete !== false,
+      gaps: f.gaps || [],
+      evidenceCount: f.evidenceCount ?? null,
+      noted: f.noted ?? 0,
+      generatedAt: f.generatedAt || null,
+    };
+  } catch (err) {
+    return { available: false, reason: err.message, insights: [] };
+  }
+}
+
 function deleteObservation(id) {
   db.remove('observations', o => o.id === id);
 }
@@ -240,5 +277,5 @@ function deleteObservation(id) {
 module.exports = {
   MODES, SITUATION, buildMessages, OBSERVATION_KINDS,
   listSessions, getSession, createSession, deleteSession, send,
-  listObservations, addObservation, deleteObservation,
+  listObservations, addObservation, deleteObservation, neuroFriction,
 };

@@ -165,12 +165,36 @@ async function snapshot() {
     done: doneBehaviour(),
     oneToOnes: null,
     commitments: null,
+    // null, never 0 — "nothing finished" and "the ledger could not be read" are
+    // opposite facts and only one of them is bad news.
+    moved: null,
     unavailable: [],
   };
 
   if (!neuro.isConfigured()) {
     out.unavailable.push({ name: 'neuro', reason: 'no NEURO credential' });
     return out;
+  }
+
+  // ⚠ VANTAGE's own `doneBehaviour()` counts findings raised and plan items
+  // moved — its own activity, and nothing else. That is a few percent of the
+  // work, on a screen built for a man who systematically under-registers
+  // completion. NEURO's ledger is the rest, detected from six sources, with the
+  // gaps it knows about carried rather than hidden.
+  try {
+    const w = await neuro.wins();
+    out.moved = {
+      today: w.doneToday ?? null,
+      thisWeek: w.doneThisWeek ?? null,
+      typicalDay: w.typical ?? null,
+      bySource: w.bySource || [],
+      // Said out loud so nothing downstream reads the totals as the whole
+      // picture: Jira resolutions and emails dealt with are NOT in them.
+      knownGaps: w.knownGaps || [],
+      headline: w.headline || null,
+    };
+  } catch (err) {
+    out.unavailable.push({ name: 'wins', reason: err.message });
   }
 
   try {

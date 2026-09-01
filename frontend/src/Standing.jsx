@@ -42,8 +42,21 @@ function Stat({ n, label, tone, title }) {
 
 export default function Standing({ onGoTo }) {
   const [d, setD] = useState(null);
+  const [moved, setMoved] = useState(null);
 
-  const load = () => api.selfQuick().then(setD).catch(() => {});
+  /**
+   * Two loads on purpose. `selfQuick` is local reads only, so the bar renders
+   * the instant the app opens; what moved comes from NEURO's ledger over the
+   * network and fills in behind it.
+   *
+   * A failure shows NOTHING rather than a zero. "You finished nothing this
+   * week" is the single most damaging thing this bar could say wrongly, and an
+   * unreachable Pi must never be able to say it.
+   */
+  const load = () => {
+    api.selfQuick().then(setD).catch(() => {});
+    api.moved().then(r => setMoved(r?.moved || null)).catch(() => setMoved(null));
+  };
   useEffect(() => {
     load();
     // Refresh on focus rather than on a timer: the numbers change when he does
@@ -80,6 +93,16 @@ export default function Standing({ onGoTo }) {
       <Stat n={`${d.plan.mineMoving}/${d.plan.mineTotal}`} label="plan actions moving" />
       {d.done.findingsRaised > 0 && (
         <Stat n={d.done.findingsRaised} label="raised this week" tone="var(--good)" />
+      )}
+      {/* The other half of the report. Everything to the left is what is
+          outstanding; without this the bar only ever shows the debt. */}
+      {moved?.thisWeek != null && (
+        <Stat
+          n={moved.thisWeek}
+          label="finished this week"
+          tone="var(--good)"
+          title={`Detected by NEURO, not self-reported${moved.typicalDay != null ? ` — a usual day is ${moved.typicalDay}` : ''}${moved.knownGaps?.length ? `. Does not include: ${moved.knownGaps.length} source(s) the ledger cannot see, so it is a floor.` : ''}`}
+        />
       )}
 
       <div style={{ flex: 1 }} />

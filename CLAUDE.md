@@ -58,6 +58,56 @@ over `/api/neuro-bridge` and consume it. A second implementation drifts from the
 one feeding the weekly report — and the disagreement surfaces in a document going
 to Nick's manager.
 
+### Two numbers for one competency
+
+**Overdue tasks are split by `origin` and always will be.** NEURO classifies a
+task as a COMMITMENT (somebody asked for it, or is waiting on it) or CONTINUAL
+IMPROVEMENT (Nick set it himself, nobody is waiting), and the weekly risk report
+counts overdue **commitments only** — because counting them together makes the
+improvement backlog penalise him: a man who writes down thirty ideas and dates
+them optimistically reads exactly like a man who has broken thirty promises.
+
+The radar counted the lot and said *"PIP competency 4 measures exactly this"*.
+Measured live on 1 Sep 2026: three overdue tasks, **all three improvement, zero
+commitments** — so the screen he reads daily reported a competency he is meeting
+as one he is failing, while the document going to his manager had it right.
+
+Unclassified is a NAMED THIRD BUCKET, never folded into either — guessing
+commitment manufactures a broken promise, guessing improvement hides one — and
+while it is non-empty the commitment figure is declared a FLOOR. Improvement
+work never acquires the word "overdue". Pinned by `task-origin.test.js`,
+including the live shape as a fixture.
+
+### What VANTAGE reads about Nick, and what it does not
+
+Beyond the radar's sources, two reads exist because VANTAGE was measuring
+something it could not see:
+
+- **`/api/friction`** → the Patterns screen. That screen had an input and no
+  source and read `0 · 0 · 0 · 0`, while NEURO had been recording deferrals with
+  reasons, tasks shrunk more than once and sessions parked as too big — from
+  evidence, never inferred from silence. Rendered BESIDE the typed notes and
+  never merged: an observation is Nick saying "this keeps happening", an insight
+  is a count of things he did. Every insight renders its `because` line; a
+  surface that drops the working reintroduces the problem at the last step.
+- **`/api/wins`** → `self.moved`, the coaching brief and the standing bar.
+  `doneBehaviour()` counts findings raised and plan items moved — VANTAGE's own
+  activity, a few percent of the work, on a tool built for a man who
+  systematically under-registers completion. The ledger detects it from six
+  sources and carries its own known gaps, which are passed through so nothing
+  reads the total as the whole picture. **A failed read shows nothing, never a
+  zero** — "you finished nothing this week" is the most damaging thing the bar
+  could say wrongly.
+
+Deliberately NOT read: health, readiness, ambient (sitting, diet, daylight),
+desktop activity, location. NEURO surfaces those where they belong. VANTAGE's
+line is a judgement about a number or a signal that only exists because sources
+were combined, and "you have been sitting for two hours" is neither.
+
+`neuro.stateOfPlay()` and `neuro.knowledgeGaps()` are exported and called by
+NOTHING. A client function with no caller looks like coverage and is not — the
+same species as a reader outliving its writer. Wire them up or delete them.
+
 ### The finding lifecycle
 
 Radar → `+ log` → Findings → `log to NEURO` → resolve. Every step is Nick

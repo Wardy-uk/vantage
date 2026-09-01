@@ -125,6 +125,24 @@ function buildEvidence(radarData, selfData, alreadyNamed) {
 
   lines.push('## What moved recently');
   const d = selfData.done;
+  // NEURO's ledger FIRST, because it is the only line here measuring the whole
+  // of his work rather than his use of this tool. The three VANTAGE numbers
+  // below it are real but tiny, and leading with them is how a productive week
+  // reads as an empty one.
+  if (selfData.moved) {
+    const m = selfData.moved;
+    lines.push(`- ${m.thisWeek} things finished this week, ${m.today} today (his usual day is ${m.typicalDay}). Detected, not self-reported.`);
+    if (m.bySource?.length) {
+      lines.push(`- Where from: ${m.bySource.map(s => `${s.source} ${s.count}`).join(', ')}.`);
+    }
+    if (m.knownGaps?.length) {
+      lines.push(`- NOT counted: ${m.knownGaps.length} source(s) the ledger cannot see, so this is a floor. Do not treat it as the whole of what he did.`);
+    }
+  } else {
+    // The absence is stated. Without this the model reads the three VANTAGE
+    // numbers as a complete account of the week and says so.
+    lines.push('- NEURO\'s completion ledger could not be read. The numbers below cover only his use of VANTAGE, not his week. Do not characterise how much he got done.');
+  }
   lines.push(`- ${d.findingsRaised} finding(s) raised in the last 7 days.`);
   lines.push(`- ${d.findingsWithAction} finding(s) now carry a recorded action.`);
   lines.push(`- ${d.planMoved} improvement-plan action(s) of his are in progress or done.`);

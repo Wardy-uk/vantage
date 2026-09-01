@@ -189,6 +189,32 @@ const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantag
     origin_path: originPath || null,
   });
 
+/**
+ * What has actually got in the way — NEURO's friction read.
+ *
+ * The one source in either system for the thing VANTAGE's Patterns screen was
+ * built to hold: repeated deferrals with the reason Nick gave, tasks he has
+ * made smaller more than once, a session parked as too big, recorded
+ * step-aways. All of it evidence he produced himself, none of it inferred from
+ * silence — which is why it can be shown next to his own notes without becoming
+ * a second opinion about him.
+ *
+ * Read-only there and read-only here. `/api/friction/note` (dismissing a line)
+ * is deliberately NOT wrapped: taking an observation on board is something Nick
+ * does where the observation lives.
+ */
+const friction = () => call('/api/friction');
+
+/**
+ * The wins ledger — completion DETECTED, not self-reported.
+ *
+ * VANTAGE measures "what moved" from its own findings and plan, which is a
+ * fraction of the work. NEURO derives it from six sources and carries the gaps
+ * it knows it has, so this is the honest half of a report that would otherwise
+ * only ever show the outstanding column.
+ */
+const wins = () => call('/api/wins');
+
 /** People issues: overdue 1:1s, missing notes, probation and improvement windows. */
 const teamHealth = () => call('/api/team-health?severity=all');
 
@@ -341,5 +367,6 @@ module.exports = {
   weeklyRiskManual, setWeeklyRiskManual,
   isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, allTasks,
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
+  friction, wins,
   matchTasks, createTask, linkTaskToMicrosoft, todos,
 };

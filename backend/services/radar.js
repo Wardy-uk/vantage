@@ -203,15 +203,69 @@ function fromNeuro({ health, actions, waiting, tasks }) {
     }
   }
 
+  // ── Overdue tasks, SPLIT BY ORIGIN ─────────────────────────────────────────
+  //
+  // This card used to count every overdue open task and say "PIP competency 4
+  // measures exactly this". It does not, and the error ran in the direction
+  // that costs most. NEURO splits the list by `origin` for exactly this reason:
+  //
+  //   COMMITMENT           — somebody asked for it, or is waiting on it. Missing
+  //                          one is a fact about reliability to other people,
+  //                          and it is what competency 4 counts.
+  //   CONTINUAL IMPROVEMENT — work Nick set himself. Nobody is waiting. One
+  //                          slipping is a fact about his own ambition.
+  //
+  // Counted together, the improvement backlog PENALISES him: a man who writes
+  // down thirty ideas and dates them optimistically reads exactly like a man
+  // who has broken thirty promises. Measured live on 1 Sep 2026 — 3 overdue,
+  // ALL THREE improvement, zero overdue commitments — this card was reporting a
+  // competency he is meeting as one he is failing.
+  //
+  // The weekly report going to Chris already counts it the right way. Two
+  // numbers for one competency, with the harsher one on the screen he reads
+  // every day, is the disagreement this repo exists to prevent.
   if (tasks?.ok) {
     const list = tasks.data.tasks || [];
     const today = nowIso().slice(0, 10);
-    const overdue = list.filter(t => t.due_date && t.due_date < today);
-    if (overdue.length) {
-      out.push(item('happened', overdue.length > 10 ? 'high' : 'medium',
-        `${overdue.length} of your own tasks are overdue`,
-        `PIP competency 4 measures exactly this, with a target of zero overdue management actions by 11 September.`,
-        { source: 'NEURO', remedy: "Clear or re-date them before 11 September. Competency 4 is measured on this number and the target is zero, so a re-dated task counts and a silent one does not." }));
+    const overdue = list.filter(t => t.due_date && String(t.due_date).slice(0, 10) < today);
+
+    const commitments = overdue.filter(t => t.origin === 'commitment');
+    const improvement = overdue.filter(t => t.origin === 'improvement');
+    // NEURO has no default for origin and deliberately refuses to invent one:
+    // guessing commitment manufactures a broken promise, guessing improvement
+    // hides a real one. So unclassified is a NAMED THIRD BUCKET, never folded
+    // into either — and while it is non-empty the commitment figure is a FLOOR.
+    const unclassified = overdue.filter(t => !t.origin);
+    // A classification NEURO proposed rather than one Nick made. Reported,
+    // because a figure resting on guesses should say how many.
+    const proposed = commitments.filter(t => t.origin_proposed).length;
+
+    if (commitments.length) {
+      out.push(item('happened', commitments.length > 5 ? 'high' : 'medium',
+        `${commitments.length} commitment${commitments.length === 1 ? ' is' : 's are'} overdue`,
+        `Work somebody else asked for or is waiting on. This is what PIP competency 4 counts, and the target is zero by 11 September.`
+        + (proposed ? ` ${proposed} of these were classified by NEURO rather than by you — worth confirming before quoting the number.` : '')
+        + (unclassified.length ? ` ${unclassified.length} more overdue task${unclassified.length === 1 ? ' is' : 's are'} unclassified, so treat this as a floor.` : ''),
+        { source: 'NEURO', remedy: "Clear or re-date them before 11 September. A re-dated commitment counts and a silent one does not — the measure is whether the person waiting was told." }));
+    }
+
+    // Deliberately its own card, a different tense, and never the word
+    // "overdue". These are dates Nick set himself; missing one is not a broken
+    // promise, and phrasing it as one is what made the old card unfair.
+    if (improvement.length) {
+      out.push(item('could', 'low',
+        `${improvement.length} improvement task${improvement.length === 1 ? ' is' : 's are'} past the date you set`,
+        `Work you set yourself — nobody is waiting on these, and they are NOT what competency 4 counts. Worth re-dating so the list stays honest, not chasing.`,
+        { source: 'NEURO', remedy: "Re-date or drop them in one pass. An improvement backlog full of dates that have gone stops being a plan and starts being a reason to avoid the list." }));
+    }
+
+    // Only worth raising when there is nothing else to say about the overdue
+    // list — otherwise it is a footnote on the commitment card above.
+    if (unclassified.length && !commitments.length) {
+      out.push(item('could', 'low',
+        `${unclassified.length} overdue task${unclassified.length === 1 ? '' : 's'} ${unclassified.length === 1 ? 'is' : 'are'} unclassified`,
+        'Neither a commitment nor continual improvement, so nothing can say whether competency 4 is clean. NEURO does not guess, and neither does this.',
+        { source: 'NEURO', remedy: "Set the origin on each in NEURO. Two minutes, and it is what makes the weekly report's overdue figure mean something." }));
     }
   }
 
