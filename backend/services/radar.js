@@ -124,6 +124,35 @@ function fromNova(signals) {
 
 // ── NEURO: the people ────────────────────────────────────────────────────────
 
+/**
+ * Fold the copies of one action line into one line.
+ *
+ * PLAUD writes several summary variants per recording, each landing as its own
+ * note, so a single commitment appears once per variant — NEURO's own capture
+ * dedupe took 258 pending candidates down to 54 distinct for exactly this
+ * reason. Measured here on the live vault: 79 overdue action lines from
+ * meetings folded to SEVEN distinct items, one of them counted 43 times.
+ *
+ * Normalised on text alone, and the id comment is stripped first — the same
+ * line in two files IS the same commitment, which is the whole point.
+ */
+function foldActionLines(items) {
+  const seen = new Map();
+  for (const it of items) {
+    const key = String(it.text || '')
+      .replace(/<!--.*?-->/g, '')
+      .replace(/[_*#]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .slice(0, 60);
+    if (!key) continue;
+    if (!seen.has(key)) seen.set(key, { ...it, sightings: 1 });
+    else seen.get(key).sightings += 1;
+  }
+  return [...seen.values()];
+}
+
 function fromNeuro({ health, actions, waiting, tasks }) {
   const out = [];
 
@@ -156,15 +185,32 @@ function fromNeuro({ health, actions, waiting, tasks }) {
     const overdue = items.filter(i => i.dueDate && i.dueDate < today);
     const undated = items.filter(i => !i.dueDate);
 
-    if (overdue.length) {
-      // Sorted most-recently-due first: a commitment that slipped last week is
-      // still recoverable, one from March is history. The count includes both
-      // because the total is honest, but the examples shown are the live ones.
-      const recent = [...overdue].sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
-      out.push(item('happened', 'high',
-        `${overdue.length} commitments are past their due date`,
-        `Most recent: ${recent.slice(0, 3).map(i => `"${(i.text || '').slice(0, 55)}" (due ${i.dueDate})`).join('; ')}. These were written down and the date has gone.`,
-        { source: 'NEURO', remedy: "Work the most recent first: close it, re-date it, or drop it out loud. A commitment quietly left past its date is the one that gets noticed." }));
+    // ⚠ NOT "commitments", and NOT counted raw. Two separate corrections.
+    //
+    // OWNERSHIP: NEURO's action-item parser leaves `assignee` empty on every
+    // row — all 3,218 of them. So these cannot be called HIS commitments
+    // without inventing the part that matters. `self.js` learned this and
+    // said so; this card did not, and told him on screen that he had 307
+    // broken promises. Two populations DO know whose work they are and both
+    // are already on this radar: tasks with `origin: commitment` (his), and
+    // waiting-on (other people's). This is neither — it is the raw checkbox
+    // layer underneath, and it is only worth showing as "somebody said this
+    // and the date has gone".
+    //
+    // COUNT: scoped to Meetings/ and folded. A line in a daily note is a
+    // to-do; one said in front of someone is a commitment to somebody, which
+    // is the only reason this card exists. Live: 307 -> 79 in meetings -> 7
+    // distinct.
+    const fromMeetings = foldActionLines(overdue.filter(i => /^Meetings\//i.test(i.file || '')));
+    if (fromMeetings.length) {
+      // Most recent first: something that slipped last week is recoverable,
+      // something from March is history.
+      const recent = [...fromMeetings].sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
+      const oldest = [...fromMeetings].sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))[0];
+      out.push(item('happened', fromMeetings.length > 10 ? 'high' : 'medium',
+        `${fromMeetings.length} thing${fromMeetings.length === 1 ? '' : 's'} said in meetings ${fromMeetings.length === 1 ? 'has' : 'have'} a date that has gone`,
+        `${recent.slice(0, 3).map(i => `"${(i.text || '').replace(/<!--.*?-->/g, '').trim().slice(0, 55)}" (${i.dueDate})`).join('; ')}. Oldest ${oldest?.dueDate}. ⚠ OWNERSHIP UNKNOWN — the vault records no assignee on any of these, so some are yours and some are other people\'s. For work that is definitely yours see the commitments card; for what others owe you see waiting-on.`,
+        { source: 'NEURO', remedy: "Read the oldest three and do one of three things to each: claim it, hand it back to whoever said it, or strike it. They are unowned by definition, so nothing happens to them until somebody decides." }));
     }
     // Deliberately NOT reported as a count.
     //
@@ -184,10 +230,13 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       const d = (i.file || '').match(/(\d{4}-\d{2}-\d{2})/)?.[1];
       return d && (daysSince(`${d}T00:00:00Z`) ?? 999) <= DROPPED_COMMITMENT_DAYS;
     });
-    if (recentUndated.length > 3) {
+    // Folded for the same reason as above — the raw figure was 428, which is
+    // the count of summary variants, not the count of things anybody said.
+    const undatedFolded = foldActionLines(recentUndated);
+    if (undatedFolded.length > 3) {
       out.push(item('could', 'medium',
-        `${recentUndated.length} commitments made in meetings have no due date`,
-        `From the last ${DROPPED_COMMITMENT_DAYS} days: ${recentUndated.slice(0, 3).map(i => `"${(i.text || '').slice(0, 50)}"`).join('; ')}. Said in front of someone, so someone is expecting them.`,
+        `${undatedFolded.length} things said in meetings have no date on them`,
+        `From the last ${DROPPED_COMMITMENT_DAYS} days: ${undatedFolded.slice(0, 3).map(i => `"${(i.text || '').replace(/<!--.*?-->/g, '').trim().slice(0, 50)}"`).join('; ')}. Said in front of someone, so someone is expecting them — though the vault does not record who owns them.`,
         { source: 'NEURO', remedy: "Put a date on each, or hand it back to whoever is expecting it. Said in front of someone means someone is waiting for it." }));
     }
   }
