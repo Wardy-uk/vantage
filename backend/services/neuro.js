@@ -16,9 +16,10 @@
  * in spirit: one shared token unlocks NEURO's entire API including deletes, so
  * the discipline lives on this side. What is allowed is exactly:
  *
- *   POST /api/tasks             — create a task (idempotent on text)
- *   POST /api/task-dedupe/match — scores candidates; changes nothing
- *   POST /api/task-dedupe/link  — merge a task with its Planner/To-Do item
+ *   POST /api/tasks              — create a task (idempotent on text)
+ *   POST /api/task-dedupe/match  — scores candidates; changes nothing
+ *   POST /api/task-dedupe/link   — merge a task with its Planner/To-Do item
+ *   POST /api/weekly-risk/manual — put a finding on the report's escalation list
  *
  * Nothing here updates, completes or deletes anything, and the endpoints that
  * write or send (weekly-risk publish, queue-send, plaud sync) remain
@@ -28,9 +29,15 @@
  * with Mel's Planner board is NEURO's job and already exists (`task-dedupe`),
  * which is why nothing here talks to Graph.
  *
- * `/api/weekly-risk` is also deliberately NOT used: it triggers a NOVA round
- * trip of its own, and VANTAGE already reads NOVA directly. Calling it would
- * double the load on a DTU-limited database to fetch numbers we have.
+ * `GET /api/weekly-risk` — the assembled report — is deliberately NOT used: it
+ * triggers a NOVA round trip of its own, and VANTAGE already reads NOVA
+ * directly. Calling it would double the load on a DTU-limited database to fetch
+ * numbers we have. `/manual` is a different thing and is safe: NEURO split it
+ * out precisely so the entry screen could be opened without paying for that
+ * round trip, and it touches nothing but the sections Nick types himself.
+ *
+ * `publish`, `queue-send` and `test-send` remain unwrapped. VANTAGE can put a
+ * line on the report; sending it to Chris stays a decision Nick makes in NEURO.
  */
 
 const TIMEOUT_MS = 20_000;
@@ -132,6 +139,28 @@ const matchTasks = (texts, { minScore, limit = 3 } = {}) =>
  */
 const linkTaskToMicrosoft = (taskId, msId, msSource = null) =>
   post('/api/task-dedupe/link', { taskId, msId, msSource });
+
+/**
+ * The manual half of the weekly risk report — the sections NOVA cannot answer.
+ *
+ * Read separately from the report itself on NEURO's own advice: `/manual` exists
+ * so the entry screen can be opened without triggering the report's NOVA round
+ * trip. Returns `{ week, manual, blockers }`.
+ */
+const weeklyRiskManual = (week = null) =>
+  call(`/api/weekly-risk/manual${week ? `?week=${encodeURIComponent(week)}` : ''}`);
+
+/**
+ * The fourth and last write: put a line on the report's escalation list.
+ *
+ * A PATCH would be safer and NEURO does not offer one — `setManual` merges the
+ * patch over the stored object, so a whole field is replaced wholesale. The
+ * caller therefore has to read, append and write back, and this function stays
+ * dumb about that on purpose: the appending is a judgement about duplicates and
+ * belongs with the finding, not with the transport.
+ */
+const setWeeklyRiskManual = (patch, week = null) =>
+  post('/api/weekly-risk/manual', { ...(week ? { week } : {}), ...patch });
 
 /**
  * The whole todo list, which is the ONLY place the Microsoft mirror is exposed:
@@ -309,6 +338,7 @@ const stateOfPlay = () => call('/api/state-of-play');
 const knowledgeGaps = (daysBack = 90) => call(`/api/knowledge-gaps?daysBack=${daysBack}`);
 
 module.exports = {
+  weeklyRiskManual, setWeeklyRiskManual,
   isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, allTasks,
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
   matchTasks, createTask, linkTaskToMicrosoft, todos,

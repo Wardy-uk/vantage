@@ -84,6 +84,7 @@ function toRadarItems(sentiment) {
         + 'Inferred from ticket comments, and only on tickets that already tripped a problem rule — '
         + 'so this is the worst of the bad, not a view of customers in general.',
       source: 'Sentiment',
+      remedy: "Read the worst three tickets yourself and decide whether each needs a call rather than another update. Inferred sentiment is a reason to look, not a finding on its own.",
     });
   }
 
@@ -98,6 +99,7 @@ function toRadarItems(sentiment) {
         title: `Only ${p.data.responseRatePct}% of CSAT surveys are being answered`,
         detail: `${p.data.responded} of ${p.data.sent} sent. Any satisfaction figure drawn from this is a statement about the few who replied, and should not be quoted as customer satisfaction.`,
         source: 'Sentiment',
+        remedy: "Fix the survey before quoting the score — when it is sent, and from where. Until the response rate rises, no satisfaction figure drawn from it should be quoted at all.",
       });
     }
     if (p.data.thin && p.data.sent > 0) {
@@ -107,6 +109,7 @@ function toRadarItems(sentiment) {
         title: 'CSAT sample too thin to report',
         detail: `${p.data.responded} responses in the window. Scores are withheld below 10 rather than shown with a caveat — but it does mean customer satisfaction is currently unmeasured, which is itself worth knowing.`,
         source: 'Sentiment',
+        remedy: "Nothing to remediate in the tickets; the gap is measurement. Either raise the response rate or say plainly that customer satisfaction is currently unmeasured.",
       });
     }
   }
@@ -125,6 +128,7 @@ function toRadarItems(sentiment) {
           + `NOVA portal CSAT: ${p.data.responded} of ${p.data.sent} sent. `
           + 'Two separate surveys, neither returning enough to say anything. The Support Review claims customer experience is being affected — nothing currently in place could confirm or refute that.',
         source: 'Sentiment',
+        remedy: "Pick ONE mechanism and make it work rather than nursing two thin ones. Until one of them returns enough, say in the weekly report that satisfaction is unmeasured — that sentence is the finding.",
       });
     }
   }
@@ -139,6 +143,7 @@ function toRadarItems(sentiment) {
         title: 'No team or account-manager sentiment has ever been measured',
         detail: 'The Support Review flagged morale, trust and retention as significant risks and noted low confidence that previous feedback led to change. Nothing currently measures whether that is improving or worsening.',
         source: 'Sentiment',
+        remedy: "Run one short survey and set a date to repeat it. A single reading is not a trend, but it is the only way to ever have one, and the Review's claim cannot be answered without it.",
       });
     } else {
       for (const [cat, runs] of cats) {
@@ -153,6 +158,7 @@ function toRadarItems(sentiment) {
               title: `${cat.replace(/_/g, ' ')} satisfaction fell ${Math.abs(delta)} points`,
               detail: `${prior.avgScore} → ${latest.avgScore} out of 5, across ${latest.responses} responses. A move this size between runs is a change in how people feel, not noise.`,
               source: 'Sentiment',
+              remedy: "Read the free-text answers behind the drop before doing anything about the number, then take the theme to the next team meeting and say what will change because of it.",
             });
           }
         }

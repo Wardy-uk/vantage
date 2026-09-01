@@ -33,6 +33,7 @@ const neuro = require('./neuro');
 const openrouter = require('./openrouter');
 const sentiment = require('./sentiment');
 const cache = require('./cache');
+const findings = require('./findings');
 
 const CACHE_MS = 10 * 60 * 1000;
 /** Untouched longer than this and it is not queued, it is forgotten. */
@@ -70,7 +71,7 @@ function fromNova(signals) {
     out.push(item('happened', 'high',
       `${b.data.total} open tickets are already over SLA`,
       `Of ${b.data.openTickets} open.${top ? ` Most are sitting in ${top.tier} (${top.breaches}).` : ''} These have breached — the question is what the customer has been told, not whether it can be prevented.`,
-      { source: 'NOVA' }));
+      { source: 'NOVA', remedy: "Cannot be un-breached. Pull the list by queue, decide which customers get told today, and record who was told — the breach is a fact; the silence is the part still in your hands." }));
   }
 
   const s = flow?.stalled;
@@ -79,7 +80,7 @@ function fromNova(signals) {
     out.push(item('happening', 'high',
       `${s.data.total} tickets untouched for ${s.data.staleDays}+ days`,
       `${worst ? `Worst is ${worst.issue_key} at ${worst.days_untouched} days${worst.assignee ? `, with ${worst.assignee}` : ' and unassigned'}. ` : ''}Measured from last update, not creation — these are forgotten, not queued.`,
-      { source: 'NOVA' }));
+      { source: 'NOVA', remedy: "Take the worst ten by days-untouched into the next stand-up and give each a name and a next date. The unassigned ones need an owner before they need a plan." }));
   }
 
   const u = flow?.unowned;
@@ -88,7 +89,7 @@ function fromNova(signals) {
     out.push(item('could', 'medium',
       `${u.data.total} open tickets have nobody's name on them`,
       `${worst ? `Worst ${worst.tier}: ${worst.count}, oldest ${worst.oldest_days} days. ` : ''}Unowned work is the review's number one finding, and it is the state a ticket is in just before it is forgotten.`,
-      { source: 'NOVA' }));
+      { source: 'NOVA', remedy: "Assign the oldest in the worst tier first — an unowned ticket has nobody to notice it. If one tier keeps producing them, the routing rule is the fix, not the assigning." }));
   }
 
   const h = flow?.handbacks;
@@ -97,13 +98,13 @@ function fromNova(signals) {
       out.push(item('happening', 'high',
         `Rejections up ${h.data.changePct}% — ${h.data.total} tickets returned`,
         `Against ${h.data.previous} the period before. Something changed in what is being escalated, or in what is being accepted.`,
-        { source: 'NOVA' }));
+        { source: 'NOVA', remedy: "Read five of the returned tickets and find out why they came back. Either the escalating side is sending less complete work or the receiving side has raised the bar; those need opposite conversations, and the sample tells you which." }));
     }
     if (h.data.unclassified > 50) {
       out.push(item('could', 'low',
         `${h.data.unclassified} tier moves cannot be classified`,
         'Recorded before evidence capture started, so they are neither rejections nor returns-after-fix. The number falls as new moves accumulate; it is not a backlog to clear.',
-        { source: 'NOVA' }));
+        { source: 'NOVA', remedy: "Nothing to clear. Leave it and watch the number fall as new moves accumulate — if it does not fall, evidence capture is not running." }));
     }
   }
 
@@ -114,7 +115,7 @@ function fromNova(signals) {
       out.push(item('happening', 'medium',
         `${bad.length} tickets have crossed queues 6+ times`,
         `${bad.slice(0, 3).map(t => `${t.ticket_key} (${t.moves})`).join(', ')}. Each move was a chance to own it that nobody took.`,
-        { source: 'NOVA' }));
+        { source: 'NOVA', remedy: "Stop the next move rather than reviewing the past ones: name an owner for each of the worst tickets today and make them the one who hands it on, if it moves at all." }));
     }
   }
 
@@ -135,7 +136,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('happening', 'high',
         `${overdue1to1.length} overdue 1:1${overdue1to1.length === 1 ? '' : 's'}`,
         `${overdue1to1.map(i => i.person).join(', ')}. Management cadence is the one Support Review finding that sits squarely with you, and it is the easiest to evidence either way.`,
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Book them, with dates, before the end of today. A booking in the diary is the evidence; an intention is not." }));
     }
 
     const others = high.filter(i => i.type !== 'overdue_1to1');
@@ -143,7 +144,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('could', 'medium',
         `${others.length} people issues flagged high`,
         others.slice(0, 4).map(i => `${i.person}: ${i.title}`).join('; '),
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Take the named people into your next 1:1 and write what was said into their note afterwards. Unwritten, it evidences nothing." }));
     }
   }
 
@@ -163,7 +164,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('happened', 'high',
         `${overdue.length} commitments are past their due date`,
         `Most recent: ${recent.slice(0, 3).map(i => `"${(i.text || '').slice(0, 55)}" (due ${i.dueDate})`).join('; ')}. These were written down and the date has gone.`,
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Work the most recent first: close it, re-date it, or drop it out loud. A commitment quietly left past its date is the one that gets noticed." }));
     }
     // Deliberately NOT reported as a count.
     //
@@ -187,7 +188,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('could', 'medium',
         `${recentUndated.length} commitments made in meetings have no due date`,
         `From the last ${DROPPED_COMMITMENT_DAYS} days: ${recentUndated.slice(0, 3).map(i => `"${(i.text || '').slice(0, 50)}"`).join('; ')}. Said in front of someone, so someone is expecting them.`,
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Put a date on each, or hand it back to whoever is expecting it. Said in front of someone means someone is waiting for it." }));
     }
   }
 
@@ -198,7 +199,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('happening', 'medium',
         `${stale.length} things you are waiting on have gone quiet`,
         `${stale.slice(0, 3).map(i => `${i.person || 'someone'}: ${(i.summary || i.what || '').slice(0, 50)}`).join('; ')}. Waiting is not the same as chasing, and only one of them is evidence.`,
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Chase them in writing today. Waiting leaves no trace; a chase is dated and survives to a review." }));
     }
   }
 
@@ -210,7 +211,7 @@ function fromNeuro({ health, actions, waiting, tasks }) {
       out.push(item('happened', overdue.length > 10 ? 'high' : 'medium',
         `${overdue.length} of your own tasks are overdue`,
         `PIP competency 4 measures exactly this, with a target of zero overdue management actions by 11 September.`,
-        { source: 'NEURO' }));
+        { source: 'NEURO', remedy: "Clear or re-date them before 11 September. Competency 4 is measured on this number and the target is zero, so a re-dated task counts and a silent one does not." }));
     }
   }
 
@@ -325,6 +326,10 @@ Rules:
 - Quote or closely paraphrase the meeting so he can find it.
 - Do NOT restate things that are plainly already being handled.
 - Do NOT invent risk to fill a quota. Returning an empty list is a valid and useful answer.
+- Where you can name ONE concrete next step, put it in "remedy": what Nick would
+  actually do next, specific enough to start today. If you cannot name one
+  without guessing, OMIT the field. A vague remedy ("monitor the situation") is
+  worse than none, because it reads as advice and costs nothing to ignore.
 - Ignore anything purely personal or pastoral.
 
 DATES AND SCHEDULING — read this carefully:
@@ -338,7 +343,7 @@ DATES AND SCHEDULING — read this carefully:
 - If you believe something needs a date and none appears anywhere, say "no date
   is mentioned in the note" rather than "no date has been set".
 
-Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity":"high|medium|low","title":"short","detail":"what was said and why it matters","meeting":"note title"}]}`;
+Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity":"high|medium|low","title":"short","detail":"what was said and why it matters","remedy":"one concrete next step, or omit","meeting":"note title"}]}`;
 
   const reply = await openrouter.complete(
     [{ role: 'system', content: system }, { role: 'user', content: corpus }],
@@ -354,7 +359,9 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
     ['happened', 'happening', 'could'].includes(i.tense) ? i.tense : 'could',
     ['high', 'medium', 'low'].includes(i.severity) ? i.severity : 'medium',
     i.title, i.detail,
-    { source: 'Meetings', meeting: i.meeting },
+    // No remedy is left absent rather than filled in. A generated next step the
+    // model could not actually name would read exactly like one it could.
+    { source: 'Meetings', meeting: i.meeting, remedy: typeof i.remedy === 'string' && i.remedy.trim() ? i.remedy.trim() : null },
   ));
 }
 
@@ -429,9 +436,95 @@ async function compute({ force = false } = {}) {
  * The value survives restarts, so a deploy does not hand the next visitor a cold
  * two-minute load.
  */
-async function build({ force = false } = {}) {
-  const hit = await cache.get('radar', () => compute({ force }), { maxAgeMs: CACHE_MS, force });
-  return { ...hit.value, asOf: hit.at, stale: hit.stale, refreshing: hit.refreshing };
+/**
+ * Fold the findings register back into the live picture.
+ *
+ * The radar is recomputed from live signals, so an item DISAPPEARS the moment
+ * its number moves — a stalled-ticket count falling below a threshold, a 1:1
+ * being booked, a meeting note scrolling out of the window. Most of the time
+ * that is right. It is wrong for anything Nick has actually logged: a signal
+ * going quiet is not the same as the problem being dealt with, and a radar that
+ * silently drops a logged risk is a radar that quietly forgets what he noticed.
+ *
+ * So an unresolved finding is PINNED back on, and a live item that has already
+ * been logged says so rather than offering to log it twice. Resolved findings
+ * come back separately — visible, closed, with what was done — because the
+ * register is a history and the radar is where he is actually looking.
+ *
+ * Matched on title, which is exactly what `+ log` copies across. A reworded
+ * finding pins as a second card, which is visible and correctable; the opposite
+ * error, silently treating two different risks as one, is not.
+ *
+ * Applied at SERVE time rather than inside `compute()`: the radar is cached for
+ * ten minutes and the register changes the second something is logged, so a
+ * finding folded into the cached value would not appear until the next rebuild.
+ * It is a local read, so it costs nothing on a path that is polled.
+ */
+function foldFindings(data) {
+  let register;
+  try {
+    register = findings.list({ limit: 500 });
+  } catch (err) {
+    // The register failing must not take the radar down, but it must not look
+    // like an empty register either — that would read as "nothing logged".
+    return { ...data, registerRead: false, registerError: err.message, resolved: [] };
+  }
+
+  const byTitle = new Map(register.map(f => [f.title, f]));
+  const items = (data.items || []).map(i => {
+    const f = byTitle.get(i.title);
+    return f ? { ...i, findingId: f.id, findingStatus: f.status, loggedOn: f.found_on } : i;
+  });
+
+  const liveTitles = new Set(items.map(i => i.title));
+  const open = register.filter(f => f.status !== 'resolved' && f.status !== 'accepted');
+
+  const pinned = open
+    .filter(f => !liveTitles.has(f.title))
+    .map(f => ({
+      tense: f.tense || null,
+      severity: f.severity,
+      title: f.title,
+      detail: f.detail,
+      source: f.source,
+      // Says WHY it is still here, which is the whole point of pinning it: the
+      // signal has gone and the finding has not been closed.
+      pinned: true,
+      findingId: f.id,
+      findingStatus: f.status,
+      loggedOn: f.found_on,
+    }));
+
+  const all = [...items, ...pinned];
+  return {
+    ...data,
+    items: all,
+    registerRead: true,
+    counts: {
+      happened: all.filter(i => i.tense === 'happened').length,
+      happening: all.filter(i => i.tense === 'happening').length,
+      could: all.filter(i => i.tense === 'could').length,
+      // Findings typed in by hand carry no tense and are not given one. They
+      // render in their own group rather than being filed under a guess.
+      unplaced: all.filter(i => i.pinned && !i.tense).length,
+    },
+    resolved: register
+      .filter(f => f.status === 'resolved')
+      .map(f => ({
+        findingId: f.id,
+        title: f.title,
+        severity: f.severity,
+        source: f.source,
+        foundOn: f.found_on,
+        resolvedOn: f.resolved_on || null,
+        how: f.resolved_how || null,
+      })),
+  };
 }
 
-module.exports = { build, compute, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };
+async function build({ force = false } = {}) {
+  const hit = await cache.get('radar', () => compute({ force }), { maxAgeMs: CACHE_MS, force });
+  return foldFindings({ ...hit.value, asOf: hit.at, stale: hit.stale, refreshing: hit.refreshing });
+}
+
+module.exports = { build, compute, foldFindings, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS, DROPPED_COMMITMENT_DAYS };

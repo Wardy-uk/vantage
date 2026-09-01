@@ -58,6 +58,38 @@ over `/api/neuro-bridge` and consume it. A second implementation drifts from the
 one feeding the weekly report — and the disagreement surfaces in a document going
 to Nick's manager.
 
+### The finding lifecycle
+
+Radar → `+ log` → Findings → `log to NEURO` → resolve. Every step is Nick
+deciding something, and the two ends are the ones with rules:
+
+- **Logging to NEURO creates BOTH a risk and a task** — the escalation line is
+  what Chris reads, the task is what makes it get done. A risk with no task is
+  the pattern the Support Review found. The task create is never allowed to fail
+  the escalation, and the two outcomes are reported separately: "on the report,
+  but no task" is a different thing to fix than neither.
+- **Resolving REQUIRES the sentence.** "Resolved" alone records nothing; at a
+  review the question is never whether something was closed but what was done
+  about it, and a finding closed with no account is indistinguishable from one
+  quietly dropped. Enforced in `findings.resolve()`, not in the UI, so the next
+  caller cannot walk past it.
+- **A tick in NEURO gives `resolved_pending`, never `resolved`.** The tick
+  proves the work happened and says nothing about what was done, so the register
+  asks. `syncFromNeuro()` is one call for all findings, runs AFTER the register
+  renders, and never writes back — resolving here does not tick the task, and
+  closing someone's task on the strength of a sentence typed in another tool is
+  not a write this repo has any business making. A `dropped` task is recorded
+  and is NOT a resolution.
+- **The radar pins what is unresolved.** Radar items are recomputed from live
+  signals, so one vanishes the moment its number moves — which is not the same
+  as the problem being dealt with. An unresolved finding is folded back in at
+  serve time (not into the 10-minute cache, or it would not appear until the
+  next rebuild), and a live item already logged says so instead of offering to
+  log it twice. Matched on title: a reworded finding pins as a second card,
+  which is visible and correctable, where silently merging two risks is not.
+- **A hand-typed finding carries no tense and is not given one.** The three
+  tenses demand different responses; an unplaced card beats a guessed one.
+
 **Never build a second Weekly Risk Summary.** NEURO owns it
 (`backend/services/weekly-risk.js`, published to `Projects/PIP/Weekly Risk
 Summaries/`). Improve it in place.
@@ -95,17 +127,32 @@ Two credentials, not one:
 
 Prefer the token over the PIN: the PIN is what Nick types into NEURO himself.
 One token unlocks writes and deletes across the whole API, so the discipline
-lives on this side. Never call `weekly-risk` publish or queue-send.
+lives on this side. Never call `weekly-risk` publish, queue-send or test-send —
+VANTAGE may put a line on the report; sending it to Chris stays a decision Nick
+makes in NEURO, behind NEURO's own approval gate.
 
-**GETs, plus exactly three writes**, so the improvement plan can own real tasks
-instead of a private checklist:
+**GETs, plus exactly four writes:**
 
 - `neuro.createTask` — `POST /api/tasks`, idempotent on normalised text.
 - `neuro.matchTasks` — `POST /api/task-dedupe/match`, which changes nothing.
 - `neuro.linkTaskToMicrosoft` — `POST /api/task-dedupe/link`, the Planner merge.
+- `neuro.setWeeklyRiskManual` — `POST /api/weekly-risk/manual`, which is how
+  `findings.escalate()` puts a finding on the report's escalation list. Note
+  `GET /api/weekly-risk` (the assembled report) stays unused: it triggers a NOVA
+  round trip VANTAGE has already paid for. `/manual` does not, which is why
+  NEURO split it out.
 
 Nothing else in this repo may POST, PATCH or DELETE against NEURO — no updates,
-no completions, no deletes. Adding a fourth write is a decision, not a detail.
+no completions, no deletes. Adding a fifth write is a decision, not a detail.
+
+**`escalateToChris` is three-valued in NEURO** — `null` (not confirmed, and
+blocking publication), `[]` (a decision that there is nothing), or a list. So
+the first line VANTAGE appends ANSWERS that section and clears NEURO's blocker.
+`escalate()` reports when it did that and the card says so, because otherwise a
+one-click convenience silently stops NEURO asking whether there was anything
+else. It also deliberately does NOT set `raised_on`: being listed on a report
+that has not been sent is not the same as having raised something, and that date
+is the one number the register exists to produce.
 
 **Tasks live in NEURO; VANTAGE holds only the link.** `plan-tasks.js` stores
 `planId -> taskId` and reads state live. Merging a task with the MS Planner

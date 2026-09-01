@@ -167,6 +167,19 @@ app.delete('/api/findings/:id', wrap(req => { findings.remove(Number(req.params.
 app.post('/api/findings/:id/draft', wrap(req => findings.draftRaise(Number(req.params.id), req.body || {})));
 app.get('/api/findings/markdown', wrap(req => ({ markdown: findings.markdown({ since: req.query.since }) })));
 
+// The one automated step in radar → log → findings → report. Puts a line on
+// NEURO's weekly risk report; sending it to Chris stays a decision made in
+// NEURO, behind its own approval gate.
+app.post('/api/findings/:id/neuro', wrap(req => findings.escalate(Number(req.params.id), req.body || {})));
+
+// Literal path first: Express matches in registration order, and this repo has
+// shipped a literal swallowed by a sibling parameter before.
+// Pull NEURO's answer back — a ticked task moves its finding to
+// resolved_pending, which asks Nick for the sentence NEURO cannot know.
+app.post('/api/findings/sync', wrap(() => findings.syncFromNeuro()));
+app.post('/api/findings/:id/resolve', wrap(req => findings.resolve(Number(req.params.id), req.body || {})));
+app.post('/api/findings/:id/reopen', wrap(req => findings.reopen(Number(req.params.id))));
+
 // ── Improvement plan ─────────────────────────────────────────────────────────
 
 app.get('/api/plan', wrap(() => plan.list()));

@@ -72,6 +72,10 @@ export const api = {
   deleteFinding: id => call(`/findings/${id}`, { method: 'DELETE' }),
   draftRaise: (id, to) => call(`/findings/${id}/draft`, { method: 'POST', body: { to } }),
   findingsMarkdown: since => call(`/findings/markdown${since ? '?since=' + since : ''}`),
+  escalateFinding: (id, week) => call(`/findings/${id}/neuro`, { method: 'POST', body: week ? { week } : {} }),
+  resolveFinding: (id, how) => call(`/findings/${id}/resolve`, { method: 'POST', body: { how } }),
+  reopenFinding: id => call(`/findings/${id}/reopen`, { method: 'POST', body: {} }),
+  syncFindings: () => call('/findings/sync', { method: 'POST', body: {} }),
 
   modes: () => call('/coach/modes'),
   brief: (refresh = false) => call(`/coach/brief${refresh ? '?refresh=1' : ''}`),
