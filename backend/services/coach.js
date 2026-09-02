@@ -191,7 +191,7 @@ async function send({ sessionId, content, signals, model }) {
 
   let reply;
   try {
-    reply = await openrouter.complete(messages, { model });
+    reply = await openrouter.complete(messages, { model, callType: 'coach' });
   } catch (err) {
     // The user's message stays. Losing what he typed because the model was
     // unreachable would be its own small betrayal, and he may want to retry it

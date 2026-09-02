@@ -300,13 +300,26 @@ settings.apply();
  * The first warm is delayed: the boot path already has a database to open and a
  * frontend to serve, and racing a two-minute query against startup helps no one.
  */
-const WARM_EVERY_MS = 25 * 60 * 1000;
-const WARM_FROM_HOUR = 6;
-const WARM_UNTIL_HOUR = 20;
+// Nick's call, 2 Sep 2026: hourly, weekdays only, 08:00-18:00.
+//
+// It had been every 25 minutes from 06:00 to 20:00, SEVEN DAYS A WEEK -- 38
+// runs on 1 Sep, first at 05:21 on a Sunday, and no drop at the weekend. Each
+// pass is a Sonnet call over ~10,000 prompt tokens, so that cadence alone was
+// $14.79 of a $16.97 week and 87% of the shared key's bill. A radar nobody
+// reads at 05:21 on a Sunday is not worth keeping warm.
+const WARM_EVERY_MS = 60 * 60 * 1000;
+const WARM_FROM_HOUR = 8;
+const WARM_UNTIL_HOUR = 18;   // last run starts before 18:00, never after
 
 async function warm(reason) {
-  const hour = new Date().getHours();
-  if (reason !== 'startup' && (hour < WARM_FROM_HOUR || hour >= WARM_UNTIL_HOUR)) return;
+  const now = new Date();
+  const hour = now.getHours();
+  const day = now.getDay();                 // 0 Sun, 6 Sat
+  const isWeekend = day === 0 || day === 6;
+  // 'startup' stays exempt, as it always has been for the hour window: it
+  // fires only when NOTHING is stored, so the alternative is an app with an
+  // empty radar until Monday morning. At most one call.
+  if (reason !== 'startup' && (isWeekend || hour < WARM_FROM_HOUR || hour >= WARM_UNTIL_HOUR)) return;
   try {
     const started = Date.now();
     await radar.build({ force: true });

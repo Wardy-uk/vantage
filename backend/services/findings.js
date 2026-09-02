@@ -210,7 +210,7 @@ RULES
       role: 'user',
       content: `FINDING: ${f.title}\n\nDETAIL: ${f.detail}\n\nSEVERITY: ${f.severity}\nFOUND: ${f.found_on}\nACTION ALREADY TAKEN: ${f.action || 'none recorded'}`,
     },
-  ], { temperature: 0.5, maxTokens: 400 });
+  ], { temperature: 0.5, maxTokens: 400, callType: 'findings' });
 
   return { findingId: id, to, draft: reply.text.trim() };
 }

@@ -32,10 +32,13 @@ function isConfigured() {
  * a contract; this is. Where a provider ignores the hint the caller still has to
  * parse defensively, but the failure rate drops from routine to rare.
  */
-async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false } = {}) {
+async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false, callType = null } = {}) {
   if (!isConfigured()) {
     throw new Error('OPENROUTER_API_KEY is not set — add it to backend/.env');
   }
+
+  const ledger = require('./llm-ledger');
+  const started = Date.now();
 
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -48,6 +51,9 @@ async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, ma
     },
     body: JSON.stringify({
       model, messages, temperature, max_tokens: maxTokens,
+      // The vendor's OWN charged cost, rather than a local price table that
+      // drifts the moment pricing changes.
+      usage: { include: true },
       ...(json ? { response_format: { type: 'json_object' } } : {}),
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -56,12 +62,32 @@ async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, ma
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = payload?.error?.message || `HTTP ${res.status}`;
+    // Recorded before throwing: a refused call still consumed a slot, and a
+    // ledger of successes cannot tell an expensive outage from a quiet week.
+    ledger.record({ model, callType, ok: false, error: detail, latencyMs: Date.now() - started });
     throw new Error(`OpenRouter refused the request: ${detail}`);
   }
 
   const text = payload?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('OpenRouter returned no content');
-  return { text, model: payload?.model || model, usage: payload?.usage || null };
+  if (!text) {
+    ledger.record({ model, callType, ok: false, error: 'no content', latencyMs: Date.now() - started });
+    throw new Error('OpenRouter returned no content');
+  }
+
+  const usage = payload?.usage || null;
+  ledger.record({
+    // The model that ACTUALLY served it, not the one requested — a fallback
+    // would otherwise be billed to the wrong name.
+    model: payload?.model || model,
+    callType,
+    promptTokens: usage?.prompt_tokens || 0,
+    completionTokens: usage?.completion_tokens || 0,
+    // null when OpenRouter did not report one. Never 0.
+    costUsd: usage && usage.cost != null ? Number(usage.cost) : null,
+    latencyMs: Date.now() - started,
+    ok: true,
+  });
+  return { text, model: payload?.model || model, usage };
 }
 
 module.exports = { complete, isConfigured, DEFAULT_MODEL };

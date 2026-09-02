@@ -364,7 +364,7 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
     // string at position 6289" — which failed the whole source. Six meetings of
     // genuine risk does not fit in 1600 tokens, and a cap that silently
     // decapitates the answer is worse than a slower call.
-    { temperature: 0.2, maxTokens: 4000, json: true },
+    { temperature: 0.2, maxTokens: 4000, json: true, callType: 'radar' },
   );
 
   const parsed = { items: extractItems(reply.text) };

@@ -202,7 +202,7 @@ async function generate({ force = false } = {}) {
 
   const reply = await openrouter.complete(
     [{ role: 'system', content: SYSTEM }, { role: 'user', content: evidence }],
-    { temperature: 0.4, maxTokens: 2500, json: true },
+    { temperature: 0.4, maxTokens: 2500, json: true, callType: 'brief' },
   );
 
   const themes = radar.extractItems(reply.text).filter(t => t.title);
