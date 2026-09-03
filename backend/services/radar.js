@@ -32,6 +32,7 @@ const nova = require('./signals');
 const neuro = require('./neuro');
 const openrouter = require('./openrouter');
 const sentiment = require('./sentiment');
+const oneToOnes = require('./one-to-ones');
 const cache = require('./cache');
 const findings = require('./findings');
 
@@ -389,6 +390,8 @@ const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
 async function compute({ force = false } = {}) {
   const signals = await nova.current({ force });
   const mood = await sentiment.current({ force });
+  // The omission signal. Read from NOVA's /121/state, which already answers it.
+  const coverage = await oneToOnes.current({ force });
 
   const neuroReady = neuro.isConfigured();
   // Two sources dropped with the cards that used them: nothing reads them any
@@ -411,6 +414,7 @@ async function compute({ force = false } = {}) {
   const items = [
     ...fromNova(signals),
     ...sentiment.toRadarItems(mood),
+    ...oneToOnes.toRadarItems(coverage),
     ...fromNeuro({ health, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
@@ -420,6 +424,9 @@ async function compute({ force = false } = {}) {
   const sources = [
     { name: 'nova-flow', ok: Boolean(signals?.available), error: signals?.available ? null : signals?.reason },
     { name: 'sentiment', ok: Boolean(mood?.available), error: mood?.available ? null : mood?.reason },
+    // Named even when it fails, so the UI says 1:1 coverage was not measured
+    // rather than leaving its absence to look like full coverage.
+    { name: '1to1-coverage', ok: Boolean(coverage?.available), error: coverage?.available ? null : coverage?.reason },
     health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
