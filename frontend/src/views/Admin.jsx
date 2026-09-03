@@ -135,13 +135,20 @@ export default function Admin() {
               <div className="row" style={{ marginBottom: 4 }}>
                 <label style={{ fontWeight: 600, fontSize: 13 }}>{f.label}</label>
                 <span className={`pill${f.isSet ? '' : ' '}`} style={f.isSet ? { color: 'var(--good)', borderColor: 'var(--good)' } : {}}>
-                  {sourceLabel[f.source] || f.source}
+                  {/* An unset THRESHOLD is a deliberate state — that card is off —
+                      not a half-configured install. "unset" would read as broken. */}
+                  {f.numeric && !f.isSet ? 'card off' : (sourceLabel[f.source] || f.source)}
                 </span>
               </div>
               <input
-                type={f.secret ? 'password' : 'text'}
+                type={f.secret ? 'password' : (f.numeric ? 'number' : 'text')}
+                min={f.numeric ? f.min : undefined}
+                max={f.numeric ? f.max : undefined}
+                step={f.numeric ? 'any' : undefined}
                 value={edits[f.key] ?? (f.secret ? '' : f.value)}
-                placeholder={f.secret && f.isSet ? `${f.value} — leave blank to keep` : f.hint}
+                placeholder={f.secret && f.isSet
+                  ? `${f.value} — leave blank to keep`
+                  : (f.numeric ? `${f.min}–${f.max}, blank to turn this card off` : f.hint)}
                 onChange={e => setEdits(x => ({ ...x, [f.key]: e.target.value }))}
               />
               <div className="small muted" style={{ marginTop: 3 }}>{f.hint}</div>
