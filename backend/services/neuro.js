@@ -178,11 +178,34 @@ const todos = () => call('/api/todos');
  * a double-click or a plan action worded like something already captured yields
  * a link to the existing task rather than a duplicate — which is the behaviour
  * wanted here, not a fallback.
+ *
+ * ⚠ `origin` is sent, and it is not decoration. NEURO's `inferOrigin()` reads
+ * PROVENANCE and knows three sources — the management log, a meeting note and a
+ * Planner board. `vantage-plan` and `vantage-finding` are none of them, so every
+ * task VANTAGE has ever created landed UNCLASSIFIED: uncountable by the weekly
+ * risk report going to Chris, and then reported back on VANTAGE's OWN radar as
+ * "N overdue tasks are unclassified — treat the commitment figure as a floor".
+ * VANTAGE was generating the ambiguity it complains about. Measured live 3 Sep
+ * 2026: two open `vantage-finding` tasks, both unclassified, half of NEURO's
+ * entire unclassified backlog.
+ *
+ * And they are not genuinely ambiguous. NEURO's test for a commitment is *is
+ * somebody else expecting it?* — a finding escalated onto the report Chris reads
+ * is, and a Support Review plan action is, because Mel's review asked for it.
+ * Both of VANTAGE's write paths pass that test, which is why the default sits
+ * here rather than at each call site: this wrapper is the whole of VANTAGE's
+ * task-creating surface, so one answer covers it and a grep finds it.
+ *
+ * Passed EXPLICITLY rather than taught to `inferOrigin()`: the knowledge of WHY
+ * this is a commitment belongs on the side that knows what it escalated. NEURO
+ * stores an explicit origin as a DECISION, not a proposal — no trailing '?' on
+ * the badge, because there is nothing to hedge about.
  */
-const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantage-plan' }) =>
+const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantage-plan', origin = 'commitment' }) =>
   post('/api/tasks', {
     text,
     source,
+    origin,
     moscow: moscow || null,
     due_date: dueDate || null,
     notes: notes || null,
