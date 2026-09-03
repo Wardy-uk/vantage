@@ -200,6 +200,15 @@ test('Nick and the AI agent are never the subject of a per-person card', () => {
 
 test('a real report with no standups still raises, alongside them', () => {
   const p = base({
+    roster: ok({
+      scope: { departments: ['NT', 'NOVA_AI'], activeOnly: true },
+      people: [
+        { accountId: 'h1', name: 'Hope Goodall', tierCode: 'T1', team: 'CustomerCare' },
+        { accountId: 'n1', name: 'Nick Ward', tierCode: 'NTL', team: 'Support' },
+        { accountId: 'ai', name: 'NOVA AI', tierCode: 'AI', team: 'NOVA AI' },
+      ],
+      measuredButNotOnRoster: [],
+    }),
     standups: ok({
       sessionsInWindow: 23, sessionsEvidenced: 22,
       perPerson: [
@@ -240,6 +249,11 @@ test('standup coverage counts against EVIDENCED sessions, not session rows', () 
   // missed standup charged against a row a background job created is a
   // manufactured finding.
   const p = base({
+    roster: ok({
+      scope: { departments: ['NT'], activeOnly: true },
+      people: [{ accountId: 'z1', name: 'Zoe Rees', tierCode: 'T1', team: 'CustomerCare' }],
+      measuredButNotOnRoster: [],
+    }),
     standups: ok({
       sessionsInWindow: 23,
       sessionsEvidenced: 22,
@@ -259,6 +273,21 @@ test('missed:null raises nothing — "missed 0 of 0" is not a fact about a perso
     standups: ok({
       sessionsInWindow: 5, sessionsEvidenced: 0,
       perPerson: [{ accountId: 'z1', name: 'Zoe Rees', submitted: 0, missed: null, lastSubmittedAt: null }],
+      unmatchedSubmitters: [],
+    }),
+  });
+  assert.equal(people.toRadarItems(p).filter(i => /standups/.test(i.title)).length, 0);
+});
+
+test('with no roster, no per-person card is raised at all', () => {
+  // Identity lives only on the roster. Without it there is no way to tell a
+  // person from an agent, and naming whoever happens to be in the list is the
+  // absent-is-not-zero failure pointed at identity instead of at counts.
+  const p = base({
+    roster: failed('KPI SQL Server not configured'),
+    standups: ok({
+      sessionsInWindow: 23, sessionsEvidenced: 22,
+      perPerson: [{ accountId: 'ai', name: 'NOVA AI', submitted: 0, missed: 22, lastSubmittedAt: null }],
       unmatchedSubmitters: [],
     }),
   });

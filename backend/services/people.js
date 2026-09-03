@@ -70,6 +70,24 @@ const isSelf = p => (p?.name || '').trim().toLowerCase() === SELF_NAME;
 const isBot = p => p?.tierCode === 'AI';
 const managedOnly = list => (list || []).filter(p => !isSelf(p) && !isBot(p));
 
+/**
+ * The set of accountIds Nick manages, taken from the ROSTER.
+ *
+ * Only the roster carries `tierCode`. The standup and escalation rows carry
+ * `accountId` and `name` and nothing else, so filtering them on tier silently
+ * did nothing: it dropped Nick (matched by name) and let the NOVA AI agent
+ * straight through, which then became the entire content of the one card the
+ * reader produced.
+ *
+ * Returns null when the roster could not be read. A caller that cannot tell who
+ * is a person must raise NOTHING rather than name whoever happens to be in the
+ * list — the absent-is-not-zero rule pointed at identity instead of at counts.
+ */
+function managedIds(p) {
+  if (!p?.roster?.ok) return null;
+  return new Set(managedOnly(p.roster.data.people).map(x => x.accountId));
+}
+
 let cache = { at: 0, data: null };
 
 function isConfigured() {
@@ -206,6 +224,7 @@ function summarise(p) {
 function toRadarItems(p) {
   if (!p?.available) return [];
   const items = [];
+  const ids = managedIds(p);
 
   // 1. People being measured who are not on the roster. Leavers whose scores are
   //    still in the day's totals, which makes every coverage figure wrong.
@@ -259,7 +278,10 @@ function toRadarItems(p) {
   //    No threshold invented: zero against a non-zero evidenced denominator.
   if (p.standups?.ok) {
     const s = p.standups.data;
-    const silent = managedOnly(s.perPerson)
+    // Identity comes from the roster, not from these rows — they carry no tier.
+    // No roster means no way to tell a person from an agent, so nothing is said.
+    const silent = ids === null ? [] : (s.perPerson || [])
+      .filter(x => ids.has(x.accountId))
       .filter(x => x.submitted === 0 && x.missed !== null && x.missed > 0);
     if (silent.length && s.sessionsEvidenced > 0) {
       items.push({
