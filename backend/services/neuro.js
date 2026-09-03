@@ -1,5 +1,9 @@
 'use strict';
 
+// The weighting. Required at the top rather than lazily, because this module is
+// the only caller and a lazy require would hide that.
+const criticality = require('./criticality');
+
 /**
  * NEURO client — the second of VANTAGE's three signal sources.
  *
@@ -201,16 +205,78 @@ const todos = () => call('/api/todos');
  * stores an explicit origin as a DECISION, not a proposal — no trailing '?' on
  * the badge, because there is nothing to hedge about.
  */
-const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantage-plan', origin = 'commitment' }) =>
+const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantage-plan', origin = 'commitment', criticality = null }) =>
   post('/api/tasks', {
     text,
     source,
     origin,
+    // What VANTAGE claimed about urgency, stored by NEURO as provenance and
+    // never re-derived there. Null for anything Nick creates by hand from a
+    // plan action — nobody claimed anything, and null is not "low".
+    criticality,
     moscow: moscow || null,
     due_date: dueDate || null,
     notes: notes || null,
     origin_path: originPath || null,
   });
+
+/**
+ * Queue a suggestion for Nick instead of writing it into his list.
+ *
+ * The fifth write, and the low-criticality half of the handoff. Before it,
+ * VANTAGE could create a task and nothing else, so "worth a look when you have
+ * a minute" had nowhere to go: it became a task at the top of the list he uses
+ * to decide what to do next, or it became nothing at all.
+ *
+ * The `basis` travels, which is the point — a card arriving from another system
+ * has to be able to say why it is there and who thought so.
+ */
+const queueSuggestion = ({ text, source = 'vantage-finding', criticality = null, basis = null, reason = null, payload = null }) =>
+  post('/api/actions', {
+    type: 'vantage_suggestion',
+    text,
+    source,
+    criticality,
+    basis,
+    reason,
+    payload: payload || undefined,
+  });
+
+/**
+ * Propose a piece of work to NEURO, at the weight it deserves (item 13).
+ *
+ * ⚠ **The single funnel.** Every VANTAGE→NEURO task-creating write goes through
+ * here, so `criticality.assess` has exactly one caller and a grep for it finds
+ * the whole of the policy. The alternative — each caller deciding for itself —
+ * is how two screens come to disagree about what is urgent.
+ *
+ * Returns the route it TOOK, not just the result, so the caller can tell Nick
+ * "added to your tasks" or "waiting for you in VANTAGE" rather than reporting
+ * a create that did not happen.
+ */
+async function proposeWork({ text, severity, tense, source, notes, moscow, dueDate, originPath } = {}) {
+  const verdict = criticality.assess({ severity, tense, source });
+
+  if (verdict.route === criticality.DIRECT) {
+    const created = await createTask({
+      text, moscow, dueDate, originPath, source,
+      criticality: verdict.level,
+      // The basis rides along in the notes so a task that arrived without being
+      // asked for can always answer *why* — on the phone, three weeks later,
+      // with no memory of the screen it came from.
+      notes: [notes, `VANTAGE routed this straight to your tasks: ${verdict.basis}.`].filter(Boolean).join('\n\n'),
+    });
+    return { ...verdict, created, taskId: created.id ?? created.task?.id ?? created.data?.id ?? null };
+  }
+
+  const queued = await queueSuggestion({
+    text, source,
+    criticality: verdict.level,
+    basis: verdict.basis,
+    reason: notes || null,
+  });
+  return { ...verdict, queued, actionId: queued.id ?? null };
+}
 
 /**
  * What has actually got in the way — NEURO's friction read.
@@ -391,5 +457,5 @@ module.exports = {
   isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, allTasks,
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
   friction, wins,
-  matchTasks, createTask, linkTaskToMicrosoft, todos,
+  matchTasks, createTask, queueSuggestion, proposeWork, linkTaskToMicrosoft, todos,
 };

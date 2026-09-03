@@ -278,21 +278,38 @@ async function escalate(id, { week = null } = {}) {
   //
   // Never allowed to fail the escalation. The line is on the report either way,
   // and a 500 here would send Nick back to click again and duplicate it.
+  //
+  // ⚠ WHICH object it becomes is now `criticality`'s call, not this function's
+  // (item 14). It used to be a hardcoded `createTask`, so a low-severity
+  // observation and a customer-facing failure both arrived at the top of the
+  // list Nick uses to decide what to do next. The route TAKEN comes back on the
+  // result so the card can say "added to your tasks" or "waiting for you in
+  // VANTAGE" — reporting a create that did not happen is worse than either.
   let task = null;
   try {
-    const created = await neuro.createTask({
+    const outcome = await neuro.proposeWork({
       text: f.title,
+      severity: f.severity,
+      tense: f.tense,
+      source: 'vantage-finding',
       notes: `${f.detail || ''}
 
 VANTAGE finding, spotted ${f.found_on}. On the w/c ${targetWeek} risk report.`.trim(),
-      source: 'vantage-finding',
     });
     // Same id-shape tolerance plan-tasks already needs: NEURO has answered
     // with the row at the top level and nested under `task` at different times.
-    const taskId = created.id ?? created.task?.id ?? created.data?.id ?? null;
-    task = { id: taskId, created: created.created !== false };
+    task = {
+      route: outcome.route,
+      level: outcome.level,
+      basis: outcome.basis,
+      id: outcome.taskId ?? null,
+      actionId: outcome.actionId ?? null,
+      created: outcome.route === 'direct'
+        ? outcome.created?.created !== false
+        : Boolean(outcome.actionId),
+    };
   } catch (err) {
-    task = { id: null, created: false, error: err.message };
+    task = { id: null, actionId: null, route: null, created: false, error: err.message };
   }
 
   db.update('findings', id, {
