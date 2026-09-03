@@ -35,8 +35,21 @@ const BUILD_EXPECTED = '2026-09-03-people-a';
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
 
-/** A capture older than this is reported as stale rather than as today. */
-const STALE_CAPTURE_DAYS = 2;
+/**
+ * A capture older than this is reported as stale rather than as today.
+ *
+ * FIVE, not two, and the arithmetic matters. NOVA computes
+ * `Math.round((now - midnight of the frozen day) / 1 day)`, and the capture
+ * freezes at 18:00 for the day just ended. So a job that ran perfectly last
+ * night reads as 2 by the afternoon, and a Monday reading Friday's capture
+ * reads as 3 or 4 with nothing wrong at all.
+ *
+ * At 2 this fired every single day on a healthy system. A card that is always
+ * on is a card he learns to scroll past, and it takes the real ones with it.
+ * 5 means at least one working day's capture genuinely did not run, whenever
+ * you happen to look.
+ */
+const STALE_CAPTURE_DAYS = 5;
 
 let cache = { at: 0, data: null };
 

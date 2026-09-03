@@ -146,6 +146,38 @@ test('a fresh capture raises no staleness card', () => {
   assert.equal(people.toRadarItems(base()).filter(i => /days old/.test(i.title)).length, 0);
 });
 
+test('a HEALTHY capture never raises staleness, midweek or after a weekend', () => {
+  // The false positive that would have shipped. NOVA rounds (now - midnight of
+  // the frozen day), and the capture freezes at 18:00 for the day just ended, so
+  // last night's run reads as 2 by the afternoon and Friday's reads as 3-4 on a
+  // Monday. At a threshold of 2 this card fired every day on a healthy system —
+  // and a card that is always on is one he learns to scroll past.
+  for (const ageDays of [0, 1, 2, 3, 4]) {
+    const p = base({
+      performance: ok({
+        asOf: { day: '2026-09-02', capturedAt: null, ageDays },
+        people: [], notCaptured: 0,
+        slaCoverage: { withValue: 1, ofPeople: 1, basis: 'x' }, withheld: [],
+      }),
+    });
+    assert.equal(
+      people.toRadarItems(p).filter(i => /days old/.test(i.title)).length, 0,
+      `ageDays ${ageDays} is normal and must not raise a card`,
+    );
+  }
+});
+
+test('a genuinely missed capture does raise it', () => {
+  const p = base({
+    performance: ok({
+      asOf: { day: '2026-08-29', capturedAt: null, ageDays: 5 },
+      people: [], notCaptured: 0,
+      slaCoverage: { withValue: 1, ofPeople: 1, basis: 'x' }, withheld: [],
+    }),
+  });
+  assert.equal(people.toRadarItems(p).filter(i => /days old/.test(i.title)).length, 1);
+});
+
 // ── Standups ─────────────────────────────────────────────────────────────────
 
 test('standup coverage counts against EVIDENCED sessions, not session rows', () => {
