@@ -1,7 +1,19 @@
 # HANDOFF — VANTAGE, as at 19 August 2026
 
-Written at the end of the build phase. Everything below is deployed and working
-unless it says otherwise.
+> ⚠ **HISTORIC. This is a snapshot of 19 August 2026 and parts of it are no
+> longer true.** It sat third in the mandatory reading order while claiming
+> present-tense accuracy, which made it the stalest document with the most
+> authority. Known to have moved since: the radar's sources changed on 31 Aug –
+> 1 Sep; the overdue-task split landed after this was written; the criticality
+> handoff, the auto-push timer and `privacy.test.js` landed on 3 Sep; and the
+> data path below is wrong (the live database is
+> `/mnt/data/vantage/backend/data/vantage.db`, verified on the Pi 3 Sep 2026).
+>
+> **`CLAUDE.md` and the code are the current record. Read this for how things
+> got here, not for how they are.**
+
+Written at the end of the build phase. Everything below was deployed and working
+on 19 August 2026 unless it says otherwise.
 
 **Start by reading, in this order:** `CLAUDE.md` → `context/situation.md` →
 `.claude/memory/mistakes.md`. The third is not a formality; the same class of
@@ -17,7 +29,7 @@ error recurred four times in two days.
 | Direct | https://pi5.tailecb90f.ts.net/vantage/ (Pi, backend + frontend) |
 | PIN | in `/mnt/data/vantage/backend/.env` on the Pi; changeable from Admin |
 | Backend | PM2 `vantage-backend`, port 3006, `/mnt/data/vantage` |
-| Data | SQLite, `/mnt/data/vantage-data/vantage.db` |
+| Data | SQLite — ⚠ **now `/mnt/data/vantage/backend/data/vantage.db`** (this said `/mnt/data/vantage-data/`; verified on the Pi 3 Sep 2026) |
 | Repo | `Wardy-uk/vantage`, `main`, auto-deploys to Netlify on push |
 
 ## What is built
