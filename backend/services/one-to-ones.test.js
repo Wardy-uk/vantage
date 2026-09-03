@@ -22,7 +22,7 @@ const ymd = offsetDays => new Date(Date.now() + offsetDays * DAY).toISOString().
 
 // Shape taken from NOVA's live route (neuro-bridge-121.ts), not invented.
 const agent = (name, over = {}) => ({
-  agentName: name, planStatus: 'active', cadenceDays: 7,
+  agentName: name, planStatus: 'active', cadenceDays: 28,
   booked: null, sessionId: null, sessionStatus: null, outlookEventId: null, lastHeld: null,
   ...over,
 });
@@ -34,6 +34,34 @@ test('a person with no 1:1 on record and nothing booked is the sharpest case', (
   assert.equal(a.covered.length, 0);
 });
 
+test('a booking whose date has passed is NOT coverage', () => {
+  // THE DEFECT LIVE DATA CAUGHT. /121/state returns the earliest still-open
+  // session, and open sessions go stale — Stephen Mitchell's sat at 2 Jul,
+  // "in_progress", nine weeks after the fact. Counting any non-null `booked` as
+  // coverage read five of twelve people as fine and produced NO CARD AT ALL:
+  // a clean bill of health for a man on a PIP for management cadence.
+  const a = oto.assess({
+    agents: [agent('Stephen Mitchell', {
+      lastHeld: ymd(-161), booked: ymd(-63), sessionStatus: 'in_progress',
+    })],
+  });
+  assert.equal(a.covered.length, 0, 'a past date must never count as covered');
+  assert.equal(a.staleBookings.length, 1);
+  assert.equal(a.lapsedUnbooked.length, 1, 'and it is still a gap');
+  const [card] = oto.toRadarItems({ available: true, ...a });
+  assert.match(card.detail, /still open/);
+  assert.match(card.detail, /look booked and are not/);
+});
+
+test('a never-held person with a stale booking is still the sharpest case', () => {
+  // Isabel Busk, live: lastHeld null, booked 25 Aug, session still in_progress.
+  const a = oto.assess({
+    agents: [agent('Isabel Busk', { lastHeld: null, booked: ymd(-9), sessionStatus: 'in_progress' })],
+  });
+  assert.equal(a.neverHeldUnbooked.length, 1);
+  assert.equal(a.covered.length, 0);
+});
+
 test('overdue is measured from the last 1:1 HELD, not from a booking', () => {
   // The whole point. A session rebooked repeatedly has not happened, and a tool
   // that counted the booking would report cadence being met while it slipped.
@@ -42,7 +70,7 @@ test('overdue is measured from the last 1:1 HELD, not from a booking', () => {
   });
   assert.equal(a.lapsedUnbooked.length, 0, 'a booked date is not a gap');
   assert.equal(a.lapsedButBooked.length, 1, 'but it is still past cadence, and visible');
-  assert.equal(a.people[0].overdueBy, 33);
+  assert.equal(a.people[0].overdueBy, 12);
 });
 
 test('within cadence, or booked, counts as covered and raises nothing', () => {
@@ -58,7 +86,7 @@ test('within cadence, or booked, counts as covered and raises nothing', () => {
 
 test('a lapse inside the grace period is not raised', () => {
   // He does not need another list of small failures. One day late is noise.
-  const a = oto.assess({ agents: [agent('Luke Scaife', { lastHeld: ymd(-9) })] });
+  const a = oto.assess({ agents: [agent('Luke Scaife', { lastHeld: ymd(-30) })] });
   assert.equal(a.lapsedUnbooked.length, 0);
   assert.equal(a.people[0].overdueBy, 2);
 });
@@ -73,10 +101,10 @@ test('a deferred plan is excluded from the count, not silently failed', () => {
   assert.deepEqual(a.deferred, ['Nathan Rutland']);
 });
 
-test('a missing cadence falls back to weekly rather than to no cadence', () => {
+test('a missing cadence falls back to a default rather than to no cadence', () => {
   // cadenceDays null must not make overdueBy null — that would silently drop the
   // person out of every bucket and read as coverage.
-  const a = oto.assess({ agents: [agent('Maria Pappa', { cadenceDays: null, lastHeld: ymd(-20) })] });
+  const a = oto.assess({ agents: [agent('Maria Pappa', { cadenceDays: null, lastHeld: ymd(-40) })] });
   assert.equal(a.people[0].cadenceDays, oto.DEFAULT_CADENCE_DAYS);
   assert.equal(a.lapsedUnbooked.length, 1);
 });
@@ -102,8 +130,8 @@ test('the card reports what is covered as well as what is missing', () => {
     ],
   });
   const [card] = oto.toRadarItems({ available: true, ...a });
-  assert.match(card.detail, /2 of 3 have a 1:1 booked or are within cadence/);
-  assert.match(card.title, /1 of 3 have no 1:1 booked/);
+  assert.match(card.detail, /2 of 3 have a 1:1 in the diary or are within cadence/);
+  assert.match(card.title, /1 of 3 have no 1:1 coming up/);
 });
 
 test('the card names one person and writes the message, rather than listing work', () => {
