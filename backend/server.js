@@ -177,6 +177,11 @@ app.post('/api/findings/:id/neuro', wrap(req => findings.escalate(Number(req.par
 // Pull NEURO's answer back — a ticked task moves its finding to
 // resolved_pending, which asks Nick for the sentence NEURO cannot know.
 app.post('/api/findings/sync', wrap(() => findings.syncFromNeuro()));
+// What the unattended pass would do, and a way to run it by hand. GET is the
+// dry run — a "show me what this would push" that quietly pushes is the worst
+// version of a route whose job is to write into Nick's task list.
+app.get('/api/findings/auto-push', wrap(() => require('./services/auto-push').run({ apply: false })));
+app.post('/api/findings/auto-push', wrap(() => require('./services/auto-push').run({ apply: true, reason: 'manual' })));
 app.post('/api/findings/:id/resolve', wrap(req => findings.resolve(Number(req.params.id), req.body || {})));
 app.post('/api/findings/:id/reopen', wrap(req => findings.reopen(Number(req.params.id))));
 
@@ -331,6 +336,36 @@ async function warm(reason) {
   }
 }
 
+/**
+ * VANTAGE acting on its own (item 18).
+ *
+ * Deliberately its OWN timer beside the radar warmer rather than a branch
+ * inside it: the warmer keeps a screen fresh and costs a model call, this puts
+ * work into somebody's task list and costs nothing but an HTTP round trip. One
+ * timer doing both would tie the cadence of a write into Nick's list to the
+ * cost of a Sonnet call, and a decision about one would silently move the other.
+ *
+ * Weekday working hours, like the warmer — not for cost, but because a finding
+ * that appears in his list at 03:00 was not urgent enough to have been written
+ * unattended in the first place. There is no startup exemption: nothing here is
+ * time-critical, and a deploy is not a reason to write into his tasks.
+ */
+const PUSH_EVERY_MS = 15 * 60 * 1000;
+
+async function pushFindings(reason) {
+  const now = new Date();
+  const day = now.getDay();
+  const hour = now.getHours();
+  if (day === 0 || day === 6 || hour < WARM_FROM_HOUR || hour >= WARM_UNTIL_HOUR) return;
+  try {
+    await require('./services/auto-push').run({ apply: true, reason });
+  } catch (err) {
+    // Never fatal. The findings are still in the register and the next pass
+    // will try again — a failed push must not take the server with it.
+    console.warn(`[VANTAGE] auto-push failed (${reason}):`, err.message);
+  }
+}
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[VANTAGE] running on 0.0.0.0:${PORT}`);
   if (!openrouter.isConfigured()) console.warn('[VANTAGE] No OpenRouter key — set one on the Admin page. Coaching will fail until then.');
@@ -343,4 +378,5 @@ app.listen(PORT, '0.0.0.0', () => {
   if (!stored) setTimeout(() => warm('startup'), 20_000);
   else console.log(`[VANTAGE] radar cache restored from ${stored.at}`);
   setInterval(() => warm('timer'), WARM_EVERY_MS);
+  setInterval(() => pushFindings('timer'), PUSH_EVERY_MS);
 });
