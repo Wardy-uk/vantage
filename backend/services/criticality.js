@@ -39,14 +39,31 @@
  * high severity. "Could go wrong" never goes direct however severe it looks —
  * being early is the value of that tense, and earliness is not urgency.
  *
- * ⚠ **The thresholds are set from that asymmetry and from the vocabulary, NOT
- * from a measured distribution.** The live findings register was read on 3 Sep
- * 2026 while this was written and holds ZERO rows, so there was no severity mix
- * to fixture from — and inventing one to justify a number would be worse than
- * saying this. They are the conservative reading of a vocabulary of nine
- * severity/tense pairs, and they are worth re-checking against real findings
- * once the register has some: the number to watch is how often a `direct`
- * turned out to be something Nick would rather have reviewed.
+ * ── Measured, and the measurement changed the conclusion ─────────────────────
+ *
+ * The live register (`/mnt/data/vantage-data/vantage.db`, read 3 Sep 2026) holds
+ * **10 findings: 8 high, 2 medium — and `tense` is NULL on all ten.** Sources
+ * are `NOVA` (7), `Support Review`, `Meetings` and `NOVA + NEURO`; not one is
+ * `manual`, and not one carries a tense, because `tense` is only ever set by the
+ * radar path.
+ *
+ * Two things follow, and both are why the thresholds are where they are:
+ *
+ *   • **Severity alone cannot license an unattended write.** Eighty per cent of
+ *     the register is `high`. A rule of "high goes direct" would write four
+ *     findings in five straight into the list Nick uses to decide what to do
+ *     next — the flood this is supposed to prevent, delivered by the thing meant
+ *     to prevent it. Severity is not discriminating on this corpus; the tense is
+ *     what says whether something is already costing anything.
+ *   • ⚠ **So on today's data NOTHING routes `direct`, and that is the honest
+ *     answer rather than a bug.** Every live finding lands in the approval
+ *     queue. `direct` unlocks the moment findings start carrying a tense, which
+ *     is the radar path — and the radar is where an unattended write is most
+ *     defensible anyway, because it is the half no human has read yet.
+ *
+ * The live mix is a fixture in `criticality.test.js`, and the number to watch
+ * once tenses start arriving is how often a `direct` turns out to be something
+ * Nick would rather have reviewed.
  *
  * ⚠ **Unknown is never treated as low.** A finding with no severity or no tense
  * is one nobody has judged, and it routes to `pending` with a basis that says

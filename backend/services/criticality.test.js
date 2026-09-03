@@ -15,11 +15,9 @@
  * So the tests that must not be quietly relaxed are the negative ones: the
  * severe-but-hypothetical finding, and the one nobody has judged.
  *
- * ⚠ There is deliberately NO live-data fixture here. The plan asked for the
- * live severity mix, and the live findings register was read while this was
- * written and holds ZERO rows — so the whole nine-pair vocabulary is enumerated
- * instead. Making up a distribution and calling it measured would be worse than
- * saying that plainly.
+ * The live severity mix is the fixture at the bottom, and it is the reason the
+ * thresholds are conservative rather than a matter of taste: 8 of the 10 live
+ * findings are `high` and NONE of them carries a tense.
  */
 
 const test = require('node:test');
@@ -149,4 +147,52 @@ test('isDirect agrees with assess, so there is one answer and not two', () => {
     {},
   ];
   for (const c of cases) assert.strictEqual(isDirect(c), assess(c).route === DIRECT);
+});
+
+// ---------------------------------------------------------------------------
+// The live register, 3 Sep 2026
+//
+// Read from /mnt/data/vantage-data/vantage.db. 10 findings: 8 high, 2 medium,
+// tense null on ALL TEN, sources NOVA / Support Review / Meetings — not one
+// `manual` and not one tensed. This is the fixture the thresholds were set
+// against, and it is what makes the conservative reading evidence rather than
+// preference.
+// ---------------------------------------------------------------------------
+
+const LIVE = [
+  { title: 'Team survey claims anonymity it cannot deliver', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'SLA breach flag never populated — wrong Jira field', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'Ticket handbacks were never classified or counted', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'Jira Rejection Reason never reached NOVA', severity: 'medium', tense: null, source: 'NOVA' },
+  { title: 'finding 5', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'finding 6', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'finding 7', severity: 'high', tense: null, source: 'NOVA' },
+  { title: 'finding 8', severity: 'high', tense: null, source: 'Support Review' },
+  { title: 'finding 9', severity: 'high', tense: null, source: 'NOVA + NEURO' },
+  { title: 'finding 10', severity: 'medium', tense: null, source: 'Meetings' },
+];
+
+test('severity alone does not license an unattended write — the live corpus proves it', () => {
+  // 8 of 10 are high. "High goes direct" would write four findings in five
+  // straight into the list Nick uses to decide what to do next — the flood this
+  // exists to prevent, delivered by the thing meant to prevent it.
+  const high = LIVE.filter(f => f.severity === 'high').length;
+  assert.strictEqual(high, 8, 'the fixture no longer matches what was measured');
+  assert.ok(high / LIVE.length > 0.5, 'severity is not discriminating on this corpus');
+});
+
+test('on the live register, NOTHING routes direct — and that is the answer, not a bug', () => {
+  // Every live finding lands in the approval queue, because none carries a
+  // tense and the tense is what says whether something is already costing
+  // anything. `direct` unlocks when findings start carrying one — the radar
+  // path — which is also where an unattended write is most defensible, because
+  // it is the half no human has read yet.
+  const direct = LIVE.filter(f => isDirect(f));
+  assert.deepStrictEqual(direct, [], 'a live finding routed direct — re-check against the register before relaxing this');
+});
+
+test('the same findings WOULD go direct once the radar gives them a tense', () => {
+  // Not a hypothetical: this is what changes when the radar is the source.
+  const tensed = LIVE.filter(f => f.severity === 'high').map(f => ({ ...f, tense: 'happened' }));
+  assert.strictEqual(tensed.every(f => isDirect(f)), true);
 });

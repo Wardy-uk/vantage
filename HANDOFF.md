@@ -4,10 +4,9 @@
 > longer true.** It sat third in the mandatory reading order while claiming
 > present-tense accuracy, which made it the stalest document with the most
 > authority. Known to have moved since: the radar's sources changed on 31 Aug –
-> 1 Sep; the overdue-task split landed after this was written; the criticality
-> handoff, the auto-push timer and `privacy.test.js` landed on 3 Sep; and the
-> data path below is wrong (the live database is
-> `/mnt/data/vantage/backend/data/vantage.db`, verified on the Pi 3 Sep 2026).
+> 1 Sep; the overdue-task split landed after this was written; and the
+> criticality handoff, the auto-push timer and `privacy.test.js` landed on
+> 3 Sep.
 >
 > **`CLAUDE.md` and the code are the current record. Read this for how things
 > got here, not for how they are.**
@@ -29,7 +28,7 @@ error recurred four times in two days.
 | Direct | https://pi5.tailecb90f.ts.net/vantage/ (Pi, backend + frontend) |
 | PIN | in `/mnt/data/vantage/backend/.env` on the Pi; changeable from Admin |
 | Backend | PM2 `vantage-backend`, port 3006, `/mnt/data/vantage` |
-| Data | SQLite — ⚠ **now `/mnt/data/vantage/backend/data/vantage.db`** (this said `/mnt/data/vantage-data/`; verified on the Pi 3 Sep 2026) |
+| Data | SQLite, `/mnt/data/vantage-data/vantage.db` — ⚠ correct, and NOT `backend/data/vantage.db`, which exists on the Pi as a stale 16KB decoy from the code's default path (verified 3 Sep 2026) |
 | Repo | `Wardy-uk/vantage`, `main`, auto-deploys to Netlify on push |
 
 ## What is built
