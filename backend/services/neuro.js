@@ -15,12 +15,18 @@ const criticality = require('./criticality');
  *
  * Read-only by default, with ONE deliberate exception.
  *
- * Every call here is a GET except three, added so the improvement plan can own
- * real tasks rather than a private checklist. The rule they narrow is unchanged
- * in spirit: one shared token unlocks NEURO's entire API including deletes, so
- * the discipline lives on this side. What is allowed is exactly:
+ * ⚠ Every call here is a GET except **FIVE**. That count has been wrong twice —
+ * the prose said "three" while listing four, and the `post()` helper below said
+ * "the two writes" — which matters in a file whose entire safety argument is
+ * that this is the CLOSED SET of things VANTAGE may change in NEURO. If you add
+ * a write, change the number here and the sentence on `post()`.
+ *
+ * The rule they narrow is unchanged in spirit: one shared token unlocks NEURO's
+ * entire API including deletes, so the discipline lives on this side. What is
+ * allowed is exactly:
  *
  *   POST /api/tasks              — create a task (idempotent on text)
+ *   POST /api/actions            — queue a suggestion for Nick to approve
  *   POST /api/task-dedupe/match  — scores candidates; changes nothing
  *   POST /api/task-dedupe/link   — merge a task with its Planner/To-Do item
  *   POST /api/weekly-risk/manual — put a finding on the report's escalation list
@@ -102,8 +108,9 @@ async function call(path, { timeoutMs = TIMEOUT_MS } = {}) {
 }
 
 /**
- * The two writes. Kept together and named so a grep for `method: 'POST'` in this
- * repo lands on the whole of what VANTAGE is allowed to change in NEURO.
+ * The five writes. Kept together and named so a grep for `method: 'POST'` in
+ * this repo lands on the whole of what VANTAGE is allowed to change in NEURO.
+ * The count is load-bearing — see the header.
  */
 async function post(path, body, { timeoutMs = TIMEOUT_MS } = {}) {
   const c = config();
@@ -135,7 +142,7 @@ const matchTasks = (texts, { minScore, limit = 3 } = {}) =>
   post('/api/task-dedupe/match', { texts, minScore, limit });
 
 /**
- * Merge a NEURO task with a Microsoft one — the third and last write.
+ * Merge a NEURO task with a Microsoft one. One of the five writes.
  *
  * This is the "NEURO should merge its task with Planner" half. NEURO owns the
  * merge (`tasks.ms_id`), and once it exists the Planner line stops listing
@@ -155,7 +162,7 @@ const weeklyRiskManual = (week = null) =>
   call(`/api/weekly-risk/manual${week ? `?week=${encodeURIComponent(week)}` : ''}`);
 
 /**
- * The fourth and last write: put a line on the report's escalation list.
+ * Put a line on the report's escalation list. One of the five writes.
  *
  * A PATCH would be safer and NEURO does not offer one — `setManual` merges the
  * patch over the stored object, so a whole field is replaced wholesale. The
