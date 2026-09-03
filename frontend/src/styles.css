@@ -50,6 +50,27 @@ input, textarea, select {
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
 
+/* Scrollbars. The default Windows/Chromium bar is a wide light-grey slab that
+   sits against a dark panel like a strip of masking tape. Slim, panel-coloured,
+   and only visible when it has something to say.
+
+   Firefox gets the two-value `scrollbar-color` (thumb, track); WebKit/Blink
+   needs the pseudo-elements. Neither is honoured by the other, so both stay. */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+  /* The border is transparent and clipped to the padding box, which insets the
+     thumb inside the track without needing a narrower bar to grab. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #3b4552; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* 100dvh, not 100vh: on iOS Safari 100vh is the height WITHOUT the browser
    chrome, so the composer at the bottom of the coach sits under the address bar
    until you scroll. dvh tracks the visible viewport. */
@@ -73,6 +94,21 @@ nav button.on { background: var(--panel-2); border-color: var(--line); color: va
 .spacer { flex: 1; }
 .clock { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 .clock b { color: var(--warn); }
+
+/* Same control as NEURO's topbar reload: the app is installed to the home
+   screen, where there is no address bar and no pull-to-refresh, so a deploy
+   otherwise sits behind a stale shell with no way for Nick to ask for the new
+   one. */
+.reload {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  background: transparent; color: var(--muted);
+  font-size: 16px; line-height: 1;
+}
+.reload:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.reload.spin { color: var(--accent); }
+.reload.spin span { display: block; animation: reload-spin .7s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
 
 /* ⚠ min-height: 0 is load-bearing, and its absence is why the page grew a
    second scrollbar.

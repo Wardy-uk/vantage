@@ -17,6 +17,45 @@ function daysUntil(d) {
 }
 
 /**
+ * Reload the app, picking up a new deploy.
+ *
+ * Installed to the home screen there is no address bar and no pull-to-refresh,
+ * so without this a deploy sits behind whatever shell the service worker
+ * already has. `registration.update()` is what makes the button honest: it
+ * forces the browser to re-fetch sw.js rather than waiting for its own schedule,
+ * and the worker calls `skipWaiting()` on install, so the new one is in charge
+ * by the time the page comes back.
+ *
+ * It is deliberately best-effort — no service worker, or a failed update check,
+ * still reloads. A refresh button that can refuse to refresh is worse than one
+ * that occasionally only does half the job.
+ */
+async function reloadApp() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    }
+  } catch { /* the reload below is the point; the update check is a bonus */ }
+  window.location.reload();
+}
+
+function ReloadButton() {
+  const [going, setGoing] = useState(false);
+  return (
+    <button
+      className={`reload${going ? ' spin' : ''}`}
+      title="Reload app"
+      aria-label="Reload app"
+      disabled={going}
+      onClick={() => { setGoing(true); reloadApp(); }}
+    >
+      <span>↻</span>
+    </button>
+  );
+}
+
+/**
  * The PIN gate.
  *
  * Deliberately not a login — there is one user and no session. It exists so the
@@ -89,6 +128,7 @@ export default function App() {
           {toReview > 0 ? <>review in <b>{toReview}d</b> · </> : null}
           PIP ends in {toEnd}d
         </div>
+        <ReloadButton />
       </header>
 
       <Standing onGoTo={setTab} />
