@@ -264,13 +264,23 @@ The boundary is about DIRECTION, not isolation:
 - **Outward reads private — banned**, with one exception. Nothing in the weekly
   report, the vault, the evidence register or any NEURO-facing route may import
   `coach`, `brief`, `self` or the observations.
-- **The exception is a pointer, never a payload.** `brief.pointer()` returns an
-  id, a timestamp and a deep link — no prose, no pattern name, no quote. It is
-  the only symbol those modules export outward, and it is what NEURO's Focus
-  card renders.
+- **The exception would be a pointer, never a payload** — and it is NOT BUILT.
+  ⚠ This paragraph described `brief.pointer()` in the present tense, as "what
+  NEURO's Focus card renders". It has never existed: `brief.js` exports
+  `generate`, `startFrom`, `buildEvidence` and `namedThemes`, and nothing in
+  NEURO renders anything from VANTAGE. So **today the rule is absolute** —
+  nothing outward-facing may read the private half at all, which is stricter
+  than the exception and is the safe state. If it is ever built it returns an
+  id, a timestamp and a deep link: no prose, no pattern name, no quote.
+  `privacy.test.js` pins its ABSENCE, and says what to replace that test with
+  on the day it exists.
 
 `backend/services/privacy.test.js` enforces this by parsing the import graph.
 If the test does not run, the boundary does not exist — it is not a convention.
+⚠ That sentence was written before the file was, and was untrue for as long as
+it stood: by its own words the boundary was a convention. It exists now, and it
+carries a positive control, because a test that passes by reading an empty set
+is the same failure wearing a different hat.
 
 Everything else should be written as though Chris or Ricky may read it.
 
