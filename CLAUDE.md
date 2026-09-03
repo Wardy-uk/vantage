@@ -5,6 +5,15 @@ Leadership coaching and Service Desk continual improvement, for Nick Ward
 
 **Read [context/situation.md](context/situation.md) first.** It holds what is
 actually being assessed, and everything here depends on it.
+**Then [context/role.md](context/role.md)** — the job itself, from the formal
+JD (what he should be doing), the HoTS assignment framework (what he is
+ultimately judged against) and the DRAFT SFIA matrix. Two things it settles and
+nothing else does: the 90-day checkpoints have no start date in the source and
+**the staging is discarded** — per Nick, every outcome and KPI is a standing
+expectation to be evidenced NOW, no day-number is ever rendered and no date is
+ever computed from one; and a blank SFIA cell is a JD that did not evidence a
+skill, **not** a capability Nick lacks — the same absent-is-not-zero rule, one
+document over.
 **Then read `.claude/memory/mistakes.md`.** It is not a formality — the same
 class of error has recurred four times in this codebase.
 

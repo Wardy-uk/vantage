@@ -46,7 +46,7 @@ let cache = { at: 0, key: null, data: null };
 
 const SYSTEM = `You are Nick Ward's leadership coach, writing a short brief without being asked.
 
-${coachSvc.SITUATION}
+${coachSvc.FRAMING}
 
 HOW HE WORKS — this changes what is useful
 Nick is neurodivergent (ADHD, disclosed; occupational health report received).
