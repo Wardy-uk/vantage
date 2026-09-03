@@ -196,6 +196,36 @@ async function current({ force = false } = {}) {
 }
 
 /**
+ * A few lines for the coach's system prompt.
+ *
+ * Says the covered side first. A coach handed only the gaps talks to him as
+ * though nothing is working, which is both inaccurate and the fastest way to
+ * make him stop opening it.
+ */
+function summarise(c) {
+  if (!c?.available) return null;
+  const gaps = c.neverHeldUnbooked.length + c.lapsedUnbooked.length;
+  const lines = [
+    `- 1:1s: ${c.covered.length} of ${c.total} have one in the diary or are inside cadence.`,
+  ];
+  if (gaps) {
+    lines.push(`- Nothing upcoming for ${gaps}: `
+      + [...c.neverHeldUnbooked, ...c.lapsedUnbooked]
+        .map(p => (p.lastHeld ? `${p.person} (${p.daysSinceHeld}d since)` : `${p.person} (never held)`))
+        .join(', ') + '.');
+  }
+  if (c.staleBookings.length) {
+    lines.push(`- ${c.staleBookings.length} carry a booking whose date has passed and is still open `
+      + `(${c.staleBookings.map(p => p.person).join(', ')}). They look booked and are not.`);
+  }
+  if (c.lapsedButBooked.length) {
+    lines.push(`- Past cadence but a real date IS booked: ${c.lapsedButBooked.map(p => p.person).join(', ')}. `
+      + 'Do not tell him to book these.');
+  }
+  return lines.join('\n');
+}
+
+/**
  * Radar cards.
  *
  * One card for the gap, carrying the names and a written first line — not "book
@@ -252,4 +282,4 @@ function toRadarItems(coverage) {
   return items;
 }
 
-module.exports = { current, assess, toRadarItems, isConfigured, DEFAULT_CADENCE_DAYS, DEFAULT_GRACE_DAYS, graceDays };
+module.exports = { current, assess, summarise, toRadarItems, isConfigured, DEFAULT_CADENCE_DAYS, DEFAULT_GRACE_DAYS, graceDays };

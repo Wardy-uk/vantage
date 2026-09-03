@@ -237,7 +237,7 @@ function deleteSession(id) {
  * absent — a coach silently missing this week's numbers would give confident
  * advice about a department it cannot see.
  */
-function buildMessages({ mode, history, signals }) {
+function buildMessages({ mode, history, signals, team }) {
   const modeSpec = MODES[mode] || MODES.coach;
 
   let system = `${FRAMING}\n\n---\n\n${modeSpec.prompt}`;
@@ -250,6 +250,24 @@ function buildMessages({ mode, history, signals }) {
     system += ` Do not invent numbers. If a question needs them, say they are not loaded.`;
   }
 
+  // His own management cadence, which the queue signals say nothing about.
+  //
+  // Without this the coach could discuss the department in detail and could not
+  // answer "how am I doing on my 1:1s" — the thing the PIP actually measures.
+  // Each half is named when absent: a coach that quietly omits a section it
+  // could not read gives confident advice about a team it cannot see.
+  system += `\n\n---\n\nHIS TEAM AND HIS OWN CADENCE:\n`;
+  system += team?.oneToOnes
+    ? team.oneToOnes
+    : `- 1:1 coverage: UNAVAILABLE${team?.oneToOnesReason ? ` (${team.oneToOnesReason})` : ''}.`
+      + ' Do not say his 1:1s are up to date, and do not say they are not.';
+  system += '\n';
+  system += team?.people
+    ? team.people
+    : `- Per-person signals: UNAVAILABLE${team?.peopleReason ? ` (${team.peopleReason})` : ''}.`;
+  system += '\n\nWhen a gap here is real, the useful move is to name ONE person and draft the message,'
+    + ' not to hand him the list. He knows the list.';
+
   return [
     { role: 'system', content: system },
     ...history.slice(-MAX_CONTEXT_MESSAGES).map(m => ({ role: m.role, content: m.content })),
@@ -257,7 +275,7 @@ function buildMessages({ mode, history, signals }) {
 }
 
 /** Send a message and get the reply. Persists both. */
-async function send({ sessionId, content, signals, model }) {
+async function send({ sessionId, content, signals, team, model }) {
   const session = getSession(sessionId);
   if (!session) throw new Error(`No session ${sessionId}`);
   if (!content?.trim()) throw new Error('Empty message');

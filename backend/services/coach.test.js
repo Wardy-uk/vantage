@@ -114,6 +114,35 @@ test('the brief prompt gets the role, not just the situation', () => {
   assert.doesNotMatch(src, /\$\{coachSvc\.SITUATION\}/);
 });
 
+test('the coach is told his 1:1 coverage, not just the queues', () => {
+  const [system] = coach.buildMessages({
+    mode: 'coach', history: [], signals: null,
+    team: { oneToOnes: '- 1:1s: 8 of 12 have one in the diary or are inside cadence.', people: '- Team: 12 people report to him.' },
+  });
+  // Without this the coach could discuss the department in detail and could not
+  // answer "how am I doing on my 1:1s" — the thing the PIP actually measures.
+  assert.match(system.content, /HIS TEAM AND HIS OWN CADENCE/);
+  assert.match(system.content, /8 of 12 have one in the diary/);
+  assert.match(system.content, /name ONE person and draft the message/);
+});
+
+test('unreadable team signals are named, and neither verdict is allowed', () => {
+  const [system] = coach.buildMessages({
+    mode: 'coach', history: [], signals: null,
+    team: { oneToOnes: null, oneToOnesReason: 'NOVA returned 502', people: null, peopleReason: 'bridge down' },
+  });
+  // The symmetric danger. "Your 1:1s are up to date" is the damaging one, but
+  // "you have gaps" invented from a 502 is just as wrong in the other direction.
+  assert.match(system.content, /1:1 coverage: UNAVAILABLE \(NOVA returned 502\)/);
+  assert.match(system.content, /Do not say his 1:1s are up to date, and do not say they are not/);
+  assert.match(system.content, /Per-person signals: UNAVAILABLE \(bridge down\)/);
+});
+
+test('no team argument at all still says unavailable rather than nothing', () => {
+  const [system] = coach.buildMessages({ mode: 'coach', history: [], signals: null });
+  assert.match(system.content, /1:1 coverage: UNAVAILABLE/);
+});
+
 test('unavailable signals are stated, and inventing numbers is forbidden', () => {
   const [system] = coach.buildMessages({
     mode: 'coach', history: [], signals: { available: false, reason: 'NOVA unreachable' },

@@ -13,6 +13,8 @@ const express = require('express');
 
 const db = require('./db');
 const coach = require('./services/coach');
+const oneToOnes = require('./services/one-to-ones');
+const people = require('./services/people');
 const signals = require('./services/signals');
 const openrouter = require('./services/openrouter');
 const settings = require('./services/settings');
@@ -219,11 +221,21 @@ app.delete('/api/coach/sessions/:id', wrap(req => {
 app.post('/api/coach/sessions/:id/messages', wrap(async req => {
   // Signals are pulled per message rather than per session: a conversation
   // spanning an afternoon should not be reasoning about this morning's numbers.
-  const current = await signals.current();
+  // Three reads, in parallel: the queues, his 1:1 cadence, and his team. The
+  // second is the one the PIP measures, and the coach was blind to it.
+  const [current, coverage, perPerson] = await Promise.all([
+    signals.current(), oneToOnes.current(), people.current(),
+  ]);
   return coach.send({
     sessionId: Number(req.params.id),
     content: req.body?.content,
     signals: current,
+    team: {
+      oneToOnes: oneToOnes.summarise(coverage),
+      oneToOnesReason: coverage?.available ? null : coverage?.reason,
+      people: people.summarise(perPerson),
+      peopleReason: perPerson?.available ? null : perPerson?.reason,
+    },
     model: req.body?.model,
   });
 }));
