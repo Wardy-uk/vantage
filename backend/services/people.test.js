@@ -178,6 +178,60 @@ test('a genuinely missed capture does raise it', () => {
   assert.equal(people.toRadarItems(p).filter(i => /days old/.test(i.title)).length, 1);
 });
 
+// ── Who a card can be about ──────────────────────────────────────────────────
+
+test('Nick and the AI agent are never the subject of a per-person card', () => {
+  // The live run produced: "Ask Nick Ward at your next 1:1 whether the standup
+  // is landing" — telling Nick to ask himself, next to a robot that cannot
+  // attend a standup. NOVA's roster is a MEASUREMENT scope, not a reporting
+  // line: 14 = 12 reports + Nick (NTL) + NOVA AI (AI).
+  const p = base({
+    standups: ok({
+      sessionsInWindow: 23, sessionsEvidenced: 22,
+      perPerson: [
+        { accountId: 'n1', name: 'Nick Ward', tierCode: 'NTL', submitted: 0, missed: 22, lastSubmittedAt: null },
+        { accountId: 'ai', name: 'NOVA AI', tierCode: 'AI', submitted: 0, missed: 22, lastSubmittedAt: null },
+      ],
+      unmatchedSubmitters: [],
+    }),
+  });
+  assert.equal(people.toRadarItems(p).filter(i => /standups/.test(i.title)).length, 0);
+});
+
+test('a real report with no standups still raises, alongside them', () => {
+  const p = base({
+    standups: ok({
+      sessionsInWindow: 23, sessionsEvidenced: 22,
+      perPerson: [
+        { accountId: 'n1', name: 'Nick Ward', tierCode: 'NTL', submitted: 0, missed: 22, lastSubmittedAt: null },
+        { accountId: 'ai', name: 'NOVA AI', tierCode: 'AI', submitted: 0, missed: 22, lastSubmittedAt: null },
+        { accountId: 'h1', name: 'Hope Goodall', tierCode: 'T1', submitted: 0, missed: 22, lastSubmittedAt: null },
+      ],
+      unmatchedSubmitters: [],
+    }),
+  });
+  const [card] = people.toRadarItems(p).filter(i => /standups/.test(i.title));
+  assert.match(card.title, /^1 submitted no standups/);
+  assert.match(card.detail, /Hope Goodall/);
+  assert.doesNotMatch(card.detail, /Nick Ward|NOVA AI/);
+});
+
+test('the summary reports the reporting line, not the measurement scope', () => {
+  const p = base({
+    roster: ok({
+      scope: { departments: ['NT', 'NOVA_AI'], activeOnly: true },
+      people: [
+        { accountId: 'a1', name: 'Abdi Mohamed', tierCode: 'T2' },
+        { accountId: 'n1', name: 'Nick Ward', tierCode: 'NTL' },
+        { accountId: 'ai', name: 'NOVA AI', tierCode: 'AI' },
+      ],
+      measuredButNotOnRoster: [],
+    }),
+  });
+  assert.match(people.summarise(p), /Team: 1 person reports to him/);
+  assert.match(people.summarise(p), /returns 3 because it is a MEASUREMENT scope/);
+});
+
 // ── Standups ─────────────────────────────────────────────────────────────────
 
 test('standup coverage counts against EVIDENCED sessions, not session rows', () => {
@@ -224,7 +278,7 @@ test('each signal fails independently rather than losing the rest', () => {
   assert.match(people.summarise(p), /Escalations: UNAVAILABLE \(Invalid column name\)/);
   assert.match(people.summarise(p), /Standups: UNAVAILABLE \(timeout\)/);
   // The roster still reports, because one broken query must not blank the rest.
-  assert.match(people.summarise(p), /Team: 1 active/);
+  assert.match(people.summarise(p), /Team: 1 person reports to him/);
 });
 
 test('the expected build is the one NOVA shipped', () => {

@@ -51,6 +51,25 @@ const TIMEOUT_MS = 60_000;
  */
 const STALE_CAPTURE_DAYS = 5;
 
+/**
+ * Who a per-person card can be ABOUT.
+ *
+ * NOVA's roster is the KPI measurement scope, not Nick's reporting line: its 14
+ * is twelve people who report to him, plus Nick himself (tierCode 'NTL'), plus
+ * the NOVA AI robot (tierCode 'AI'). Reading it as "the team" produced a card
+ * telling Nick to ask Nick, at his next 1:1 with Nick, why Nick had not
+ * submitted a standup — alongside a robot that cannot attend one.
+ *
+ * Matched on name for Nick because this whole tool is his and the bridge route
+ * is already hardcoded to him. NOT matched on 'NTL': the Service Desk Team
+ * Leader is a live vacancy in the JD folder, and whoever fills it will carry
+ * that tier and WILL be somebody he manages.
+ */
+const SELF_NAME = 'nick ward';
+const isSelf = p => (p?.name || '').trim().toLowerCase() === SELF_NAME;
+const isBot = p => p?.tierCode === 'AI';
+const managedOnly = list => (list || []).filter(p => !isSelf(p) && !isBot(p));
+
 let cache = { at: 0, data: null };
 
 function isConfigured() {
@@ -134,7 +153,10 @@ function summarise(p) {
 
   const r = p.roster;
   if (r?.ok) {
-    lines.push(`- Team: ${r.data.people.length} active (${r.data.scope.departments.join(', ')}).`);
+    const managed = managedOnly(r.data.people);
+    lines.push(`- Team: ${managed.length} ${managed.length === 1 ? 'person reports' : 'people report'} to him.`
+      + ` NOVA's roster returns ${r.data.people.length} because it is a MEASUREMENT scope —`
+      + ` it also carries Nick himself and the NOVA AI agent, neither of whom is a report.`);
     const off = r.data.measuredButNotOnRoster;
     lines.push(off === null
       ? '- Roster vs capture: NOT CHECKED (the capture could not be read). Do not say the two agree.'
@@ -237,7 +259,8 @@ function toRadarItems(p) {
   //    No threshold invented: zero against a non-zero evidenced denominator.
   if (p.standups?.ok) {
     const s = p.standups.data;
-    const silent = (s.perPerson || []).filter(x => x.submitted === 0 && x.missed !== null && x.missed > 0);
+    const silent = managedOnly(s.perPerson)
+      .filter(x => x.submitted === 0 && x.missed !== null && x.missed > 0);
     if (silent.length && s.sessionsEvidenced > 0) {
       items.push({
         tense: 'happening',
