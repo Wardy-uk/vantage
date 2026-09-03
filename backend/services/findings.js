@@ -27,6 +27,15 @@
 const db = require('../db');
 
 const SEVERITIES = ['high', 'medium', 'low'];
+
+/**
+ * The three tenses, in one place.
+ *
+ * `add` and `update` both validate against this list rather than each carrying
+ * a copy — two lists is how a value one half accepts becomes a value the other
+ * silently drops.
+ */
+const TENSES = ['happened', 'happening', 'could'];
 /**
  * `resolved_pending` is the honest gap between two systems.
  *
@@ -62,7 +71,7 @@ function add({ title, detail, source, severity = 'medium', foundOn, action, rais
     // in by hand — and it stays null rather than being guessed, because
     // "already gone wrong" and "could go wrong" demand different responses and
     // a wrong one is worse than an unplaced card.
-    tense: ['happened', 'happening', 'could'].includes(tense) ? tense : null,
+    tense: TENSES.includes(tense) ? tense : null,
     // Defaults to today, but explicitly settable — a finding spotted on Tuesday
     // and logged on Thursday should say Tuesday.
     found_on: foundOn || today(),
@@ -76,13 +85,31 @@ function add({ title, detail, source, severity = 'medium', foundOn, action, rais
 }
 
 function update(id, patch = {}) {
-  const allowed = ['title', 'detail', 'severity', 'action', 'raised_with', 'raised_on', 'status', 'found_on'];
+  // ⚠ `tense` was missing from this list, and the consequence was not cosmetic.
+  // Nine findings predate the field (created 19 Aug, before it existed on 1
+  // Sep) and one more was logged from a stale browser tab, so ten rows carry no
+  // tense — and `criticality.assess` reads the tense to decide whether a
+  // finding is written straight into Nick's task list or waits in the approval
+  // queue. With no way to set it after the fact, those ten could only ever
+  // route `pending`, for ever, with no way to say otherwise.
+  const allowed = ['title', 'detail', 'severity', 'action', 'raised_with', 'raised_on', 'status', 'found_on', 'tense'];
   const clean = {};
   for (const [k, v] of Object.entries(patch)) {
     if (allowed.includes(k)) clean[k] = v;
   }
   if (clean.severity && !SEVERITIES.includes(clean.severity)) throw new Error('bad severity');
   if (clean.status && !STATUSES.includes(clean.status)) throw new Error('bad status');
+  // ⚠ Three-valued, and REFUSED rather than nulled on anything unrecognised —
+  // the opposite of `add`, deliberately. `add` takes whatever the radar hands
+  // it and nulling an unknown is the safe read of a machine payload; an update
+  // is a person making a statement, and quietly clearing the tense they meant
+  // to set would look exactly like the bug this fixes. Explicit null CLEARS,
+  // because disagreeing with a tense without yet knowing the right one has to
+  // be possible.
+  if ('tense' in clean) {
+    if (clean.tense === null || clean.tense === '') clean.tense = null;
+    else if (!TENSES.includes(clean.tense)) throw new Error(`tense must be one of: ${TENSES.join(', ')} (or null to clear)`);
+  }
   // Recording who it was raised with implies it HAS been raised. Leaving the
   // status behind would understate the thing the register exists to evidence.
   if (clean.raised_on && !clean.status) clean.status = 'raised';
@@ -382,6 +409,8 @@ async function syncFromNeuro() {
 }
 
 module.exports = {
+  SEVERITIES,
+  TENSES,
   list, add, update, remove, markdown, draftRaise,
   escalate, resolve, reopen, syncFromNeuro,
   SEVERITIES, STATUSES,

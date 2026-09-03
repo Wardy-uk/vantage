@@ -12,6 +12,28 @@ import { api } from '../api.js';
 
 const SEV = { high: 'var(--bad)', medium: 'var(--warn)', low: 'var(--muted)' };
 
+/**
+ * The three tenses, and what each one means for what happens next.
+ *
+ * Not decoration. `criticality.assess` reads the tense to decide whether a
+ * finding is written straight into Nick's task list or waits in the approval
+ * queue — a high-severity thing that has ALREADY gone wrong goes direct, and
+ * one that has not happened yet waits, because being early is worth attention
+ * rather than an interruption. Ten findings predate the field and carry none,
+ * so this control is how they get one.
+ */
+const TENSE_LABELS = {
+  happened: 'Already gone wrong',
+  happening: 'Going wrong now',
+  could: 'Could go wrong',
+};
+
+const TENSE_HELP = {
+  happened: 'It has already cost something. High severity here goes straight to your NEURO tasks.',
+  happening: 'It is going wrong right now. High severity here goes straight to your NEURO tasks.',
+  could: 'It has not happened yet. Waits in the approval queue however severe — being early is worth your attention, not your task list.',
+};
+
 function Row({ f, onChange, onDelete }) {
   const [draft, setDraft] = useState(null);
   const [drafting, setDrafting] = useState(false);
@@ -61,6 +83,31 @@ function Row({ f, onChange, onDelete }) {
         <strong style={{ fontSize: 14, flex: 1 }}>{f.title}</strong>
         <span className="small muted">{f.found_on}</span>
         <span className="pill">{f.source}</span>
+      </div>
+
+      {/* ⚠ "Not set" is shown rather than hidden. A finding with no tense routes
+          `pending` for ever and there was previously no way to say otherwise —
+          leaving the gap invisible is what let ten of them sit like that. */}
+      <div className="row small" style={{ gap: 6, paddingLeft: 15, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="muted">When:</span>
+        {Object.keys(TENSE_LABELS).map(t => (
+          <button
+            key={t}
+            className="ghost small"
+            title={TENSE_HELP[t]}
+            onClick={() => onChange(f.id, { tense: f.tense === t ? null : t })}
+            style={{
+              border: '1px solid var(--line)', borderRadius: 99, padding: '1px 8px',
+              color: f.tense === t ? 'var(--accent)' : 'var(--muted)',
+              borderColor: f.tense === t ? 'var(--accent)' : 'var(--line)',
+            }}
+          >{TENSE_LABELS[t]}</button>
+        ))}
+        {!f.tense && (
+          <span className="muted" title="Nothing has said whether this has happened yet, so it waits in the approval queue rather than reaching your tasks.">
+            not set — waits for you
+          </span>
+        )}
       </div>
 
       {f.detail && <div className="small muted" style={{ paddingLeft: 15, marginTop: 3 }}>{f.detail}</div>}
