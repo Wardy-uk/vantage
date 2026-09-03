@@ -42,8 +42,32 @@ const DEFAULT_CADENCE_DAYS = 28;
 /**
  * How far past cadence before it is worth saying. A 1:1 one day late is noise;
  * this is a tool for a man who does not need another list of small failures.
+ *
+ * Configurable — ONE_TO_ONE_GRACE_DAYS on the admin page. Where late becomes
+ * overdue is Nick's standard to set, not one baked in here.
  */
-const GRACE_DAYS = 3;
+const DEFAULT_GRACE_DAYS = 3;
+const graceDays = () => threshold('ONE_TO_ONE_GRACE_DAYS') ?? DEFAULT_GRACE_DAYS;
+
+/**
+ * A configured threshold, or null.
+ *
+ * Lazily required and failure-tolerant on purpose. `settings` reaches the store,
+ * which needs `better-sqlite3` — built natively on the Pi and absent on plenty of
+ * machines. Requiring it at module load made these readers, and everything that
+ * imports them, throw on import. A threshold is configuration: it must never be
+ * the reason the radar cannot load.
+ *
+ * A store that cannot be read yields null, which each caller already treats as
+ * "no line drawn" rather than as zero.
+ */
+function threshold(key) {
+  try {
+    return require('./settings').getNumber(key);
+  } catch {
+    return null;
+  }
+}
 
 let cache = { at: 0, data: null };
 
@@ -85,7 +109,7 @@ async function fetchState(days = 60) {
  * is not a stylistic preference, it is the difference between a tool he uses
  * and one he avoids.
  */
-function assess({ agents }, now = Date.now()) {
+function assess({ agents }, now = Date.now(), grace = graceDays()) {
   const today = new Date(now).toISOString().slice(0, 10);
 
   const people = agents
@@ -121,7 +145,7 @@ function assess({ agents }, now = Date.now()) {
     });
 
   const deferred = agents.filter(a => a.planStatus === 'deferred').map(a => a.agentName);
-  const lapsed = p => p.overdueBy !== null && p.overdueBy > GRACE_DAYS;
+  const lapsed = p => p.overdueBy !== null && p.overdueBy > grace;
 
   return {
     total: people.length,
@@ -228,4 +252,4 @@ function toRadarItems(coverage) {
   return items;
 }
 
-module.exports = { current, assess, toRadarItems, isConfigured, DEFAULT_CADENCE_DAYS, GRACE_DAYS };
+module.exports = { current, assess, toRadarItems, isConfigured, DEFAULT_CADENCE_DAYS, DEFAULT_GRACE_DAYS, graceDays };

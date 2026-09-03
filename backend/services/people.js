@@ -88,6 +88,26 @@ function managedIds(p) {
   return new Set(managedOnly(p.roster.data.people).map(x => x.accountId));
 }
 
+/**
+ * A configured threshold, or null.
+ *
+ * Lazily required and failure-tolerant on purpose. `settings` reaches the store,
+ * which needs `better-sqlite3` — built natively on the Pi and absent on plenty of
+ * machines. Requiring it at module load made these readers, and everything that
+ * imports them, throw on import. A threshold is configuration: it must never be
+ * the reason the radar cannot load.
+ *
+ * A store that cannot be read yields null, which each caller already treats as
+ * "no line drawn" rather than as zero.
+ */
+function threshold(key) {
+  try {
+    return require('./settings').getNumber(key);
+  } catch {
+    return null;
+  }
+}
+
 let cache = { at: 0, data: null };
 
 function isConfigured() {
@@ -274,22 +294,64 @@ function toRadarItems(p) {
     });
   }
 
-  // 4. Somebody submitting no standups at all while the team is submitting.
+  // 4. Quality floors. UNSET means no card — a line nobody has drawn is not a
+  //    line, and picking one here would name a real person as underperforming on
+  //    an opinion of "low" that Nick never gave. Both read SCORES, never counts.
+  const qaFloor = threshold('QA_SCORE_FLOOR');
+  const grFloor = threshold('GOLDEN_RULES_FLOOR');
+  const measured = ids === null ? [] : (p.performance?.ok ? p.performance.data.people : [])
+    .filter(x => ids.has(x.accountId) && x.state === 'measured');
+
+  for (const [floor, read, label, scale, what] of [
+    [qaFloor, x => x.quality?.qaOverall, 'QA', '10', 'accuracy, clarity and tone on resolved tickets'],
+    [grFloor, x => x.quality?.grOverall, 'Golden Rules', '3', 'ownership, next action and timeframe in customer replies'],
+  ]) {
+    if (floor === null) continue;
+    // A null score is UNSCORED, not a low score. Nobody is raised for a day
+    // nothing of theirs was sampled.
+    const below = measured
+      .filter(x => typeof read(x) === 'number' && read(x) < floor)
+      .sort((a, b) => read(a) - read(b));
+    if (!below.length) continue;
+
+    items.push({
+      tense: 'happening',
+      severity: 'medium',
+      title: `${below.length} below your ${label} floor of ${floor}`,
+      detail: `${below.map(x => `${x.name} (${read(x)})`).join(', ')} — scored out of ${scale} on `
+        + `${what}, for ${p.performance.data.asOf?.day || 'the captured day'}. `
+        + `${measured.length - below.length} of ${measured.length} scored at or above it. `
+        + 'One day of sampling: check the trend before treating it as a pattern.',
+      source: 'People',
+      remedy: `Pull ${below[0].name}'s lowest-scoring ticket from that day and read it with them at your next 1:1. `
+        + 'A score is not feedback; the ticket is.',
+    });
+  }
+
+  // 5. Somebody submitting no standups at all while the team is submitting.
   //    No threshold invented: zero against a non-zero evidenced denominator.
   if (p.standups?.ok) {
     const s = p.standups.data;
     // Identity comes from the roster, not from these rows — they carry no tier.
     // No roster means no way to tell a person from an agent, so nothing is said.
+    const pct = threshold('STANDUP_FLOOR_PCT');
+    const denom = s.sessionsEvidenced;
+    // Unset floor: only a total no-show is raised. Set: anyone under the share.
+    const under = x => (pct === null
+      ? x.submitted === 0
+      : denom > 0 && (x.submitted / denom) * 100 < pct);
     const silent = ids === null ? [] : (s.perPerson || [])
       .filter(x => ids.has(x.accountId))
-      .filter(x => x.submitted === 0 && x.missed !== null && x.missed > 0);
+      .filter(x => x.missed !== null && x.missed > 0 && under(x));
     if (silent.length && s.sessionsEvidenced > 0) {
       items.push({
         tense: 'happening',
         severity: 'low',
-        title: `${silent.length} submitted no standups in the window`,
-        detail: `${silent.map(x => x.name).join(', ')} submitted nothing across `
-          + `${s.sessionsEvidenced} sessions that have evidence of running. `
+        title: pct === null
+        ? `${silent.length} submitted no standups in the window`
+        : `${silent.length} below your standup floor of ${pct}%`,
+        detail: `${silent.map(x => `${x.name} (${x.submitted}/${denom})`).join(', ')} against `
+          + `${denom} sessions that have evidence of running. `
           + 'Counted against evidenced sessions only — a session row on its own is created by background '
           + 'jobs and does not prove a standup happened.'
           + (s.unmatchedSubmitters?.length

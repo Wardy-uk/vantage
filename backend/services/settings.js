@@ -28,7 +28,46 @@ const FIELDS = {
   NEURO_URL: { secret: false, label: 'NEURO URL', hint: 'Base URL of NEURO. On the Pi this is http://127.0.0.1:3001.', default: 'http://127.0.0.1:3001' },
   NEURO_API_TOKEN: { secret: true, label: 'NEURO API token', hint: 'NEURO_API_TOKEN from NEURO .env. Machine-to-machine; supplies people, commitments and task signals.' },
   NEURO_VAULT_API_KEY: { secret: true, label: 'NEURO vault API key', hint: 'VAULT_API_KEY from NEURO .env. Separate gate on /api/vault — needed to read meeting notes.' },
+
+  // ── Thresholds ────────────────────────────────────────────────────────────
+  //
+  // Where a number becomes a card is a judgement about Nick's own standards, so
+  // it is his to set, not one hardcoded here. A threshold picked by whoever
+  // wrote the file names a real person as underperforming on somebody else's
+  // opinion of what "low" means.
+  //
+  // `numeric` fields are range-checked on save. Leaving one unset disables that
+  // card entirely rather than falling back to a guess — a line nobody has drawn
+  // is not a line.
+  ONE_TO_ONE_GRACE_DAYS: {
+    secret: false, numeric: true, min: 0, max: 60, default: '3',
+    label: '1:1 grace period (days)',
+    hint: 'How far past the cadence before a 1:1 counts as overdue. Stops a meeting one day late reading as a failure.',
+  },
+  QA_SCORE_FLOOR: {
+    secret: false, numeric: true, min: 0, max: 10,
+    label: 'QA score floor (0-10)',
+    hint: "Below this average, a person's ticket quality is raised for a conversation. NOVA's own rubric calls a correctly handled ticket 7-8. UNSET = no QA card.",
+  },
+  GOLDEN_RULES_FLOOR: {
+    secret: false, numeric: true, min: 0, max: 3,
+    label: 'Golden Rules floor (0-3)',
+    hint: 'Below this average on ownership / next action / timeframe. Mean of the rules that apply. UNSET = no Golden Rules card.',
+  },
+  STANDUP_FLOOR_PCT: {
+    secret: false, numeric: true, min: 0, max: 100,
+    label: 'Standup submission floor (%)',
+    hint: 'Below this share of evidenced standups. UNSET = only a total no-show is raised.',
+  },
 };
+
+/** Numeric setting as a number, or null when unset or unparseable. */
+function getNumber(key) {
+  const raw = get(key);
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 function stored() {
   return db.findOne('settings', () => true) || null;
@@ -76,6 +115,9 @@ function describe() {
       secret: spec.secret,
       isSet: Boolean(value),
       source,
+      numeric: Boolean(spec.numeric),
+      min: spec.min ?? null,
+      max: spec.max ?? null,
       // A non-secret is shown as-is; a secret only ever as a tail.
       value: spec.secret ? mask(value) : (value || ''),
     };
@@ -94,9 +136,22 @@ function save(patch = {}) {
   const values = { ...(row?.values || {}) };
 
   for (const [key, value] of Object.entries(patch)) {
-    if (!FIELDS[key]) throw new Error(`Unknown setting "${key}"`);
-    if (value === null) delete values[key];
-    else if (typeof value === 'string' && value.trim() !== '') values[key] = value.trim();
+    const spec = FIELDS[key];
+    if (!spec) throw new Error(`Unknown setting "${key}"`);
+    if (value === null) { delete values[key]; continue; }
+    if (typeof value !== 'string' || value.trim() === '') continue;
+
+    const trimmed = value.trim();
+    if (spec.numeric) {
+      // Rejected rather than coerced. A threshold silently becoming NaN would
+      // disable the card it governs and look exactly like one that never fired.
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) throw new Error(`"${spec.label}" must be a number`);
+      if (n < spec.min || n > spec.max) {
+        throw new Error(`"${spec.label}" must be between ${spec.min} and ${spec.max}`);
+      }
+    }
+    values[key] = trimmed;
   }
 
   if (row) db.update('settings', row.id, { values, updated_at: new Date().toISOString() });
@@ -146,4 +201,5 @@ function changePin({ current, next }) {
   return { changed: true };
 }
 
-module.exports = { FIELDS, get, save, describe, apply, changePin };
+module.exports = {
+  getNumber, FIELDS, get, save, describe, apply, changePin };

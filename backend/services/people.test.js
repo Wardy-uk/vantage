@@ -294,6 +294,54 @@ test('with no roster, no per-person card is raised at all', () => {
   assert.equal(people.toRadarItems(p).filter(i => /standups/.test(i.title)).length, 0);
 });
 
+// ── Configurable floors ──────────────────────────────────────────────────────
+
+test('with no floor set, no quality card is raised at all', () => {
+  // A line nobody has drawn is not a line. Picking one here would name a real
+  // person as underperforming on somebody else's opinion of "low".
+  const p = base({
+    roster: ok({
+      scope: { departments: ['NT'], activeOnly: true },
+      people: [{ accountId: 'a1', name: 'Abdi Mohamed', tierCode: 'T2' }],
+      measuredButNotOnRoster: [],
+    }),
+    performance: ok({
+      asOf: { day: '2026-09-03', capturedAt: null, ageDays: 1 }, notCaptured: 0,
+      slaCoverage: { withValue: 1, ofPeople: 1, basis: 'x' }, withheld: [],
+      people: [{
+        accountId: 'a1', name: 'Abdi Mohamed', state: 'measured',
+        workload: {}, sla: {}, verificationOnly: {},
+        quality: { qaOverall: 2.0, grOverall: 1.0 },
+      }],
+    }),
+  });
+  // Rock-bottom scores, no configured floor, nothing said.
+  assert.equal(p.performance.data.people[0].quality.qaOverall, 2.0);
+  assert.equal(people.toRadarItems(p).filter(i => /floor/.test(i.title)).length, 0);
+});
+
+test('an unscored person is never treated as a low-scoring one', () => {
+  // qaOverall null means nothing of theirs was sampled that day. Reading that as
+  // a failing score is the absent-is-not-zero rule aimed at a person's record.
+  const p = base({
+    roster: ok({
+      scope: { departments: ['NT'], activeOnly: true },
+      people: [{ accountId: 'a1', name: 'Abdi Mohamed', tierCode: 'T2' }],
+      measuredButNotOnRoster: [],
+    }),
+    performance: ok({
+      asOf: { day: '2026-09-03', capturedAt: null, ageDays: 1 }, notCaptured: 0,
+      slaCoverage: { withValue: 1, ofPeople: 1, basis: 'x' }, withheld: [],
+      people: [{
+        accountId: 'a1', name: 'Abdi Mohamed', state: 'measured',
+        workload: {}, sla: {}, verificationOnly: {},
+        quality: { qaOverall: null, grOverall: null },
+      }],
+    }),
+  });
+  assert.equal(people.toRadarItems(p).filter(i => /floor/.test(i.title)).length, 0);
+});
+
 // ── Build stamp and failure ──────────────────────────────────────────────────
 
 test('an unavailable read produces no cards and no summary', () => {
