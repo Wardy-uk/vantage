@@ -3,10 +3,13 @@
 /**
  * OpenRouter client.
  *
- * Kept deliberately thin — no retries, no streaming, no model fallback chain.
- * A coaching reply that fails is a message Nick re-sends; a silent retry that
- * doubles a bill or masks a broken key is worse. Failures surface with their
- * real reason.
+ * Kept deliberately thin — no streaming, no model fallback chain. A coaching
+ * reply that fails is a message Nick re-sends; a silent retry that doubles a
+ * bill or masks a broken key is worse. Failures surface with their real reason.
+ *
+ * ⚠ ONE narrow exception to "no retries" — see `retryOnEmpty` below. It is
+ * opt-in per call, fires only on an unbilled empty answer, and never applies to
+ * anything a person is waiting on.
  */
 
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-4.5';
@@ -17,26 +20,36 @@ function isConfigured() {
 }
 
 /**
- * One completion. `messages` is the OpenAI-shaped array.
+ * Why an answer came back empty.
  *
- * Throws with a usable message rather than returning a sentinel: every caller
- * here surfaces the failure to Nick, and a coaching pane that says "I could not
- * reach the model, the key is rejected" is more useful than one that says
- * nothing and looks thoughtful.
- */
-/**
- * `json: true` asks the provider to constrain the output to valid JSON.
+ * A 200 with no content is NOT self-explanatory, and the client used to throw
+ * the bare words "OpenRouter returned no content" — which is the single line the
+ * radar's blind-spot banner shows Nick. Three live failures (2 Sep 13:45, 2 Sep
+ * 14:46, 4 Sep 06:12) all reported exactly that and nothing else, so the same
+ * message covered a stalled upstream, a refusal and a length cut without
+ * distinguishing them.
  *
- * The meeting analyser failed twice on malformed output — truncated once, then
- * an unescaped character at position 6748. Prompting for JSON and hoping is not
- * a contract; this is. Where a provider ignores the hint the caller still has to
- * parse defensively, but the failure rate drops from routine to rare.
+ * OpenRouter puts the reason in one of three places on a 200: an `error` object
+ * beside the choices, `finish_reason`, or the provider's own
+ * `native_finish_reason`. Read all three, keep whatever answered, and say so.
+ * A reason that is itself absent renders as absent — never as "unknown cause"
+ * dressed up as a diagnosis.
  */
-async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false, callType = null } = {}) {
-  if (!isConfigured()) {
-    throw new Error('OPENROUTER_API_KEY is not set — add it to backend/.env');
-  }
+function emptyReason(payload) {
+  const choice = payload?.choices?.[0] || {};
+  const parts = [
+    payload?.error?.message || payload?.error?.code,
+    choice.finish_reason,
+    // Only when it adds something — providers routinely echo finish_reason.
+    choice.native_finish_reason !== choice.finish_reason ? choice.native_finish_reason : null,
+  ].filter(v => v != null && v !== '');
+  return parts.length ? parts.join(' / ') : null;
+}
 
+/** Marks the empty-answer case so the retry can tell it from a refusal. */
+class EmptyCompletion extends Error {}
+
+async function attempt(messages, { model, temperature, maxTokens, json, callType }) {
   const ledger = require('./llm-ledger');
   const started = Date.now();
 
@@ -70,8 +83,10 @@ async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, ma
 
   const text = payload?.choices?.[0]?.message?.content;
   if (!text) {
-    ledger.record({ model, callType, ok: false, error: 'no content', latencyMs: Date.now() - started });
-    throw new Error('OpenRouter returned no content');
+    const why = emptyReason(payload);
+    const detail = why ? `no content (${why})` : 'no content, and no reason given';
+    ledger.record({ model: payload?.model || model, callType, ok: false, error: detail, latencyMs: Date.now() - started });
+    throw new EmptyCompletion(`OpenRouter returned ${detail}`);
   }
 
   const usage = payload?.usage || null;
@@ -90,4 +105,57 @@ async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, ma
   return { text, model: payload?.model || model, usage };
 }
 
-module.exports = { complete, isConfigured, DEFAULT_MODEL };
+/**
+ * One completion. `messages` is the OpenAI-shaped array.
+ *
+ * Throws with a usable message rather than returning a sentinel: every caller
+ * here surfaces the failure to Nick, and a coaching pane that says "I could not
+ * reach the model, the key is rejected" is more useful than one that says
+ * nothing and looks thoughtful.
+ */
+/**
+ * `json: true` asks the provider to constrain the output to valid JSON.
+ *
+ * The meeting analyser failed twice on malformed output — truncated once, then
+ * an unescaped character at position 6748. Prompting for JSON and hoping is not
+ * a contract; this is. Where a provider ignores the hint the caller still has to
+ * parse defensively, but the failure rate drops from routine to rare.
+ */
+/**
+ * `retryOnEmpty` — one more go, and only for the case that earns it.
+ *
+ * Measured on the Pi's ledger, 4 Sep 2026: 3 of 27 calls failed, all three the
+ * radar's meeting analysis, all three a 200 with an empty body, ZERO usage
+ * reported and 72–90 seconds on the clock. Nothing was billed, so a second
+ * attempt cannot double a bill; the run is a background warm nobody is sitting
+ * in front of, so it cannot cost anyone a wait; and the alternative is the
+ * meeting analysis going blind on roughly one build in nine, with the blind-spot
+ * banner then served from cache until the next successful rebuild — over three
+ * hours, on 4 Sep.
+ *
+ * Strictly limited, because the reasons this file has no retries are still true:
+ *  - ONE extra attempt, never a loop.
+ *  - ONLY on an empty answer. A refusal, a bad key, an HTTP error or a timeout
+ *    throws on the first try exactly as before — retrying those masks the fault.
+ *  - Opt-in per call. `coach` and `brief` do not pass it and must not: a person
+ *    is waiting, and a re-send is theirs to decide.
+ *
+ * Both attempts are recorded in the ledger. A retry that hides the first
+ * failure would turn an 11% blank rate into a number nobody could see.
+ */
+async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false, callType = null, retryOnEmpty = false } = {}) {
+  if (!isConfigured()) {
+    throw new Error('OPENROUTER_API_KEY is not set — add it to backend/.env');
+  }
+
+  const opts = { model, temperature, maxTokens, json, callType };
+  try {
+    return await attempt(messages, opts);
+  } catch (err) {
+    if (!retryOnEmpty || !(err instanceof EmptyCompletion)) throw err;
+    console.warn(`[VANTAGE] ${callType || 'model'} call came back empty (${err.message}) — retrying once`);
+    return attempt(messages, opts);
+  }
+}
+
+module.exports = { complete, isConfigured, emptyReason, EmptyCompletion, DEFAULT_MODEL };

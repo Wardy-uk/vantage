@@ -367,7 +367,11 @@ Respond ONLY with JSON: {"items":[{"tense":"happened|happening|could","severity"
     // string at position 6289" — which failed the whole source. Six meetings of
     // genuine risk does not fit in 1600 tokens, and a cap that silently
     // decapitates the answer is worse than a slower call.
-    { temperature: 0.2, maxTokens: 4000, json: true, callType: 'radar' },
+    // `retryOnEmpty`: the only caller that asks for it. This is a background
+    // warm nobody is waiting on, an empty answer is never billed, and losing it
+    // blanks the source AND leaves the blind-spot banner in the cache until the
+    // next successful rebuild — three hours, on 4 Sep. See `openrouter.js`.
+    { temperature: 0.2, maxTokens: 4000, json: true, callType: 'radar', retryOnEmpty: true },
   );
 
   const parsed = { items: extractItems(reply.text) };
