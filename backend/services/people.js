@@ -31,7 +31,10 @@
  *     0" is not a fact about anybody.
  */
 
-const BUILD_EXPECTED = '2026-09-03-people-a';
+// -b: capturedAt and lastSubmittedAt now carry the Z. Both were always UTC
+// (GETUTCDATE) and never said so; VANTAGE consumes neither today, which is why
+// it was the right moment to remove the ambiguity rather than document it.
+const BUILD_EXPECTED = '2026-09-03-people-b';
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
 

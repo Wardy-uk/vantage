@@ -15,6 +15,7 @@ const db = require('./db');
 const coach = require('./services/coach');
 const oneToOnes = require('./services/one-to-ones');
 const people = require('./services/people');
+const conversations = require('./services/conversations');
 const signals = require('./services/signals');
 const openrouter = require('./services/openrouter');
 const settings = require('./services/settings');
@@ -223,8 +224,8 @@ app.post('/api/coach/sessions/:id/messages', wrap(async req => {
   // spanning an afternoon should not be reasoning about this morning's numbers.
   // Three reads, in parallel: the queues, his 1:1 cadence, and his team. The
   // second is the one the PIP measures, and the coach was blind to it.
-  const [current, coverage, perPerson] = await Promise.all([
-    signals.current(), oneToOnes.current(), people.current(),
+  const [current, coverage, perPerson, convos] = await Promise.all([
+    signals.current(), oneToOnes.current(), people.current(), conversations.current(),
   ]);
   return coach.send({
     sessionId: Number(req.params.id),
@@ -235,6 +236,8 @@ app.post('/api/coach/sessions/:id/messages', wrap(async req => {
       oneToOnesReason: coverage?.available ? null : coverage?.reason,
       people: people.summarise(perPerson),
       peopleReason: perPerson?.available ? null : perPerson?.reason,
+      conversations: conversations.summarise(convos),
+      conversationsReason: convos?.available ? null : convos?.reason,
     },
     model: req.body?.model,
   });

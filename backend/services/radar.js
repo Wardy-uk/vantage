@@ -34,6 +34,7 @@ const openrouter = require('./openrouter');
 const sentiment = require('./sentiment');
 const oneToOnes = require('./one-to-ones');
 const people = require('./people');
+const conversations = require('./conversations');
 const cache = require('./cache');
 const findings = require('./findings');
 
@@ -395,6 +396,8 @@ async function compute({ force = false } = {}) {
   const coverage = await oneToOnes.current({ force });
   // Per-person signals: roster, capture freshness, standup coverage.
   const perPerson = await people.current({ force });
+  // Competency 3: was the conversation written up, within two working days.
+  const convos = await conversations.current({ force });
 
   const neuroReady = neuro.isConfigured();
   // Two sources dropped with the cards that used them: nothing reads them any
@@ -419,6 +422,7 @@ async function compute({ force = false } = {}) {
     ...sentiment.toRadarItems(mood),
     ...oneToOnes.toRadarItems(coverage),
     ...people.toRadarItems(perPerson),
+    ...conversations.toRadarItems(convos),
     ...fromNeuro({ health, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
@@ -432,6 +436,7 @@ async function compute({ force = false } = {}) {
     // rather than leaving its absence to look like full coverage.
     { name: '1to1-coverage', ok: Boolean(coverage?.available), error: coverage?.available ? null : coverage?.reason },
     { name: 'people-signals', ok: Boolean(perPerson?.available), error: perPerson?.available ? null : perPerson?.reason },
+    { name: 'conversations', ok: Boolean(convos?.available), error: convos?.available ? null : convos?.reason },
     health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 

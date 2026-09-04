@@ -361,7 +361,7 @@ test('each signal fails independently rather than losing the rest', () => {
 test('the expected build is the one NOVA shipped', () => {
   // If NOVA bumps its stamp, this fails here rather than rendering figures from
   // a build whose new fields are quietly undefined.
-  assert.equal(people.BUILD_EXPECTED, '2026-09-03-people-a');
+  assert.equal(people.BUILD_EXPECTED, '2026-09-03-people-b');
 });
 
 test('the SLA basis is carried, not smoothed', () => {
