@@ -48,7 +48,7 @@ test('a booking whose date has passed is NOT coverage', () => {
   assert.equal(a.covered.length, 0, 'a past date must never count as covered');
   assert.equal(a.staleBookings.length, 1);
   assert.equal(a.lapsedUnbooked.length, 1, 'and it is still a gap');
-  const [card] = oto.toRadarItems({ available: true, ...a });
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 coverage');
   assert.match(card.detail, /still open/);
   assert.match(card.detail, /look booked and are not/);
 });
@@ -129,7 +129,7 @@ test('the card reports what is covered as well as what is missing', () => {
       agent('Isabel Busk', { lastHeld: ymd(-1) }),
     ],
   });
-  const [card] = oto.toRadarItems({ available: true, ...a });
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 coverage');
   assert.match(card.detail, /2 of 3 have a 1:1 in the diary or are within cadence/);
   assert.match(card.title, /1 of 3 have no 1:1 coming up/);
 });
@@ -138,7 +138,7 @@ test('the card names one person and writes the message, rather than listing work
   // Awareness without a first move produces avoidance. The starting-from-nothing
   // part is the part that does not happen, so the card does it.
   const a = oto.assess({ agents: [agent('Hope Goodall'), agent('Zoe Rees')] });
-  const [card] = oto.toRadarItems({ available: true, ...a });
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 coverage');
   assert.match(card.remedy, /Book 30 minutes with (Hope Goodall|Zoe Rees)/);
   assert.match(card.remedy, /one-to-ones back on a regular footing/);
   assert.doesNotMatch(card.remedy, /consider|reflect|make time/i);
@@ -148,13 +148,46 @@ test('never-held outranks lapsed for severity and for who to start with', () => 
   const a = oto.assess({
     agents: [agent('Hope Goodall'), agent('Arman Shazad', { lastHeld: ymd(-60) })],
   });
-  const [card] = oto.toRadarItems({ available: true, ...a });
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 coverage');
   assert.equal(card.severity, 'high');
   assert.match(card.remedy, /Hope Goodall/);
 });
 
+test('the two-week booking rule fires separately from the cadence gap', () => {
+  // Different question, different remedy. Cadence asks "is a conversation
+  // overdue"; this asks "is the next one arranged". Someone 15 days out with
+  // nothing booked breaches this while cadence still says they have a fortnight.
+  const a = oto.assess({
+    agents: [
+      agent('Hope Goodall', { lastHeld: ymd(-15) }),
+      agent('Zoe Rees', { lastHeld: ymd(-20), booked: ymd(+10) }),
+    ],
+  });
+  assert.equal(a.unbookedTooLong.length, 1);
+  assert.equal(a.unbookedTooLong[0].person, 'Hope Goodall');
+  assert.equal(a.lapsedUnbooked.length, 0, 'cadence is 28d, so neither is overdue yet');
+
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 booking');
+  assert.equal(card.tense, 'could', 'not yet gone wrong — the next one is merely unarranged');
+  assert.match(card.detail, /Hope Goodall/);
+  assert.doesNotMatch(card.detail, /Zoe Rees/);
+  assert.match(card.remedy, /it does not need to be soon, it needs to exist/);
+});
+
+test('a stale booking does not satisfy the booking rule', () => {
+  // A session whose date has passed and is still open is not an arrangement.
+  const a = oto.assess({ agents: [agent('Stephen Mitchell', { lastHeld: ymd(-20), booked: ymd(-5) })] });
+  assert.equal(a.unbookedTooLong.length, 1);
+});
+
+test('everyone booked ahead raises no booking card', () => {
+  const a = oto.assess({ agents: [agent('Naomi Wentworth', { lastHeld: ymd(-17), booked: ymd(+21) })] });
+  assert.equal(a.unbookedTooLong.length, 0);
+  assert.equal(oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 booking').length, 0);
+});
+
 test('lapsed-only is medium, because it is a slip rather than an absence', () => {
   const a = oto.assess({ agents: [agent('Arman Shazad', { lastHeld: ymd(-60) })] });
-  const [card] = oto.toRadarItems({ available: true, ...a });
+  const [card] = oto.toRadarItems({ available: true, ...a }).filter(i => i.source === '1:1 coverage');
   assert.equal(card.severity, 'medium');
 });

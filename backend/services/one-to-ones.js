@@ -50,6 +50,23 @@ const DEFAULT_GRACE_DAYS = 3;
 const graceDays = () => threshold('ONE_TO_ONE_GRACE_DAYS') ?? DEFAULT_GRACE_DAYS;
 
 /**
+ * Nick's own standard, 4 Sep 2026: nobody should go more than two weeks past
+ * their last 1:1 without the next one in the diary.
+ *
+ * DISTINCT FROM CADENCE, and deliberately stricter in one direction. Cadence
+ * (28 days) asks "is this person overdue a conversation". This asks "is the next
+ * one arranged" — a person 20 days out with a date in three weeks is fine on
+ * this rule and fine on cadence; a person 15 days out with nothing booked
+ * breaches this one while cadence still says they have a fortnight in hand.
+ *
+ * It is the earlier warning of the two, which is the point: booking is the part
+ * that gets deferred, and by the time cadence notices, the conversation is
+ * already late rather than merely unarranged.
+ */
+const DEFAULT_BOOK_AHEAD_DAYS = 14;
+const bookAheadDays = () => threshold('ONE_TO_ONE_BOOK_AHEAD_DAYS') ?? DEFAULT_BOOK_AHEAD_DAYS;
+
+/**
  * A configured threshold, or null.
  *
  * Lazily required and failure-tolerant on purpose. `settings` reaches the store,
@@ -109,7 +126,7 @@ async function fetchState(days = 60) {
  * is not a stylistic preference, it is the difference between a tool he uses
  * and one he avoids.
  */
-function assess({ agents }, now = Date.now(), grace = graceDays()) {
+function assess({ agents }, now = Date.now(), grace = graceDays(), bookAhead = bookAheadDays()) {
   const today = new Date(now).toISOString().slice(0, 10);
 
   const people = agents
@@ -161,6 +178,11 @@ function assess({ agents }, now = Date.now(), grace = graceDays()) {
     // Past cadence, but a real future date exists. Not a gap, and not raised.
     lapsedButBooked: people.filter(p => !!p.bookedAhead && lapsed(p)),
     covered: people.filter(p => !!p.bookedAhead || (p.overdueBy !== null && !lapsed(p))),
+    // Nick's two-week booking rule. Measured from the last one HELD, and only a
+    // FUTURE date counts — a stale open session is not an arrangement.
+    bookAheadDays: bookAhead,
+    unbookedTooLong: people.filter(p =>
+      !p.bookedAhead && (p.daysSinceHeld === null || p.daysSinceHeld > bookAhead)),
     people,
   };
 }
@@ -218,6 +240,13 @@ function summarise(c) {
     lines.push(`- ${c.staleBookings.length} carry a booking whose date has passed and is still open `
       + `(${c.staleBookings.map(p => p.person).join(', ')}). They look booked and are not.`);
   }
+  if (c.unbookedTooLong.length) {
+    lines.push(`- BREACHES HIS OWN RULE (nothing booked more than ${c.bookAheadDays} days after the last 1:1): `
+      + c.unbookedTooLong.map(p => `${p.person} (${p.lastHeld ? `${p.daysSinceHeld}d since` : 'never held'})`).join(', ') + '.');
+  } else {
+    lines.push(`- Everyone has their next 1:1 in the diary within ${c.bookAheadDays} days of the last one. `
+      + 'His own standard, and he is meeting it — say so if it is relevant, do not dwell on it.');
+  }
   if (c.lapsedButBooked.length) {
     lines.push(`- Past cadence but a real date IS booked: ${c.lapsedButBooked.map(p => p.person).join(', ')}. `
       + 'Do not tell him to book these.');
@@ -235,10 +264,32 @@ function toRadarItems(coverage) {
   if (!coverage?.available) return [];
 
   const items = [];
+
+  // Nick's two-week booking rule. Separate card from the cadence gap, because
+  // the remedy is different and so is the tense: this is "the next one is not
+  // arranged", which is a thing to do in thirty seconds, not a conversation
+  // that is already late.
+  const unbooked = coverage.unbookedTooLong || [];
+  if (unbooked.length) {
+    const worst = unbooked[0];
+    items.push({
+      tense: 'could',
+      severity: 'medium',
+      title: `${unbooked.length} past ${coverage.bookAheadDays} days with no next 1:1 booked`,
+      detail: `${unbooked.map(p => `${p.person} (${p.lastHeld ? `${p.daysSinceHeld}d since their last` : 'none on record'})`).join(', ')}. `
+        + `Your own rule: nobody goes more than ${coverage.bookAheadDays} days past a 1:1 without the next one in the diary. `
+        + `${coverage.total - unbooked.length} of ${coverage.total} are booked ahead.`,
+      source: '1:1 booking',
+      remedy: `Put a date in for ${worst.person} now — it does not need to be soon, it needs to exist.`,
+    });
+  }
   const { neverHeldUnbooked: never, lapsedUnbooked: lapsed, staleBookings: stale, total } = coverage;
   const gapPeople = [...never, ...lapsed];
   const gaps = gapPeople.length;
-  if (!gaps) return [];
+  // `items`, not `[]` — the booking card above is independent of the coverage
+  // gap and must survive when there is no gap. Returning a bare [] here silently
+  // discarded it, which is the failure mode of every early return in a builder.
+  if (!gaps) return items;
 
   const names = gapPeople
     .sort((a, b) => (b.daysSinceHeld ?? 9999) - (a.daysSinceHeld ?? 9999))
@@ -282,4 +333,7 @@ function toRadarItems(coverage) {
   return items;
 }
 
-module.exports = { current, assess, summarise, toRadarItems, isConfigured, DEFAULT_CADENCE_DAYS, DEFAULT_GRACE_DAYS, graceDays };
+module.exports = {
+  current, assess, summarise, toRadarItems, isConfigured,
+  DEFAULT_CADENCE_DAYS, DEFAULT_GRACE_DAYS, DEFAULT_BOOK_AHEAD_DAYS, graceDays, bookAheadDays,
+};

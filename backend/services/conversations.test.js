@@ -99,6 +99,28 @@ test('conversations from before the column existed are shown but never scored', 
   assert.equal(a.overdueUnconfirmed.every(r => r.occurredOn >= conv.MEASURED_FROM), true);
 });
 
+test('confirming an older conversation counts, even though it cannot be scored', () => {
+  // Nick ticked 11 historical conversations and the first version reported
+  // NOTHING — preSeries rows were excluded from scoring and then from every
+  // count. Timeliness is unscoreable for them; completeness is not, and showing
+  // only the outstanding column is lying by omission to somebody who
+  // systematically under-registers what he has finished.
+  const a = conv.classify([
+    rec({ id: 1, occurredOn: '2026-08-20', completedAt: '2026-08-20T10:00:00.000Z',
+      peoplehrLoggedAt: '2026-09-04T09:00:00.000Z' }),
+    rec({ id: 2, occurredOn: '2026-08-21', completedAt: '2026-08-21T10:00:00.000Z' }),
+  ], at('2026-09-04T18:00:00Z'));
+
+  assert.equal(a.scored, 0, 'neither can be scored for timeliness');
+  assert.equal(a.preSeries, 2);
+  assert.equal(a.confirmedPreSeries, 1, 'but the confirmation is real and is counted');
+  assert.equal(a.unconfirmedPreSeries, 1);
+  assert.equal(a.confirmedTotal, 1);
+  // And it must never be counted as a LATE log — the window had already closed.
+  assert.equal(a.lateLogged.length, 0);
+  assert.equal(a.overdueUnconfirmed.length, 0);
+});
+
 // ── The clock runs from when it happened ─────────────────────────────────────
 
 test('a wizard-completed session is measured from completedAt, not the booked date', () => {

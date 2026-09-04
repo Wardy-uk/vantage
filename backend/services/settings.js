@@ -44,6 +44,11 @@ const FIELDS = {
     label: '1:1 grace period (days)',
     hint: 'How far past the cadence before a 1:1 counts as overdue. Stops a meeting one day late reading as a failure.',
   },
+  ONE_TO_ONE_BOOK_AHEAD_DAYS: {
+    secret: false, numeric: true, min: 1, max: 90, default: '14',
+    label: 'Book the next 1:1 within (days)',
+    hint: "Nobody should go longer than this after a 1:1 without the next one in the diary. Nick's own rule, 4 Sep 2026.",
+  },
   QA_SCORE_FLOOR: {
     secret: false, numeric: true, min: 0, max: 10,
     label: 'QA score floor (0-10)',

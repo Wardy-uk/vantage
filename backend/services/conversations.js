@@ -194,8 +194,21 @@ function classify(records, now = Date.now()) {
   });
 
   const scored = rows.filter(r => r.inSeries);
+  const pre = rows.filter(r => !r.inSeries);
   return {
     all: rows,
+    // COMPLETENESS, which is a different question from TIMELINESS and applies to
+    // every conversation regardless of when it happened.
+    //
+    // Nothing before the PeopleHR column existed can be scored for "logged
+    // within 2 working days" — that window had already closed. But confirming an
+    // older one is still a real act, and the first version threw it away
+    // entirely: Nick ticked 11 historical conversations and the tool reported
+    // nothing at all. A tool that shows only the outstanding column is lying by
+    // omission to a man who under-registers what he has finished.
+    confirmedTotal: rows.filter(r => r.logged).length,
+    confirmedPreSeries: pre.filter(r => r.logged).length,
+    unconfirmedPreSeries: pre.filter(r => !r.logged).length,
     // Everything below is the SERIES only — conversations that could have been
     // confirmed. `preSeries` is carried so the total is never quietly smaller.
     preSeries: rows.filter(r => !r.inSeries).length,
@@ -287,8 +300,10 @@ function summarise(p) {
     + ` ${a.pending.length} still inside it.`,
   ];
   if (a.preSeries) {
-    lines.push(`- ${a.preSeries} earlier conversation(s) are shown but NOT scored: the PeopleHR column did not exist,`
-      + ' so they could not have been confirmed and a failure there would be one nobody could have avoided.');
+    lines.push(`- ${a.preSeries} earlier conversation(s) predate the PeopleHR column and are NOT scored for timeliness:`
+      + ' that window had already closed, so a failure there would be one nobody could have avoided.'
+      + ` He has confirmed ${a.confirmedPreSeries} of them anyway, with ${a.unconfirmedPreSeries} still unconfirmed —`
+      + ' that is catch-up work he chose to do, not a requirement, and it counts.');
   }
   if (a.overdueUnconfirmed.length) {
     lines.push(`- Unconfirmed past the window: ${a.overdueUnconfirmed.slice(0, 6)
