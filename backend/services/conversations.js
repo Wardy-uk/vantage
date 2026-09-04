@@ -55,6 +55,24 @@ const LOG_WITHIN_WORKING_DAYS = 2;
  */
 const MEASURED_FROM = '2026-09-03';
 
+/**
+ * How far back to FETCH, which is a different question from how far back to
+ * SCORE, and conflating the two hid the entire history.
+ *
+ * The first version fetched from MEASURED_FROM. That made `preSeries` — the
+ * count carried so the total is never quietly smaller — structurally always
+ * zero, and emptied `unmatchedNames` with it: live, NOVA held 43 conversations
+ * and VANTAGE asked for none of them. The reader reported "0 scored" and looked
+ * correct, which is the worst way for it to be wrong.
+ *
+ * 180 days matches NEURO's own sweep window. Bounded rather than open-ended
+ * because every record carries a 2000-char excerpt.
+ */
+const HISTORY_DAYS = 180;
+
+const historyFrom = (now = Date.now()) =>
+  new Date(now - HISTORY_DAYS * 86_400_000).toISOString().slice(0, 10);
+
 let cache = { at: 0, data: null };
 
 function isConfigured() {
@@ -111,7 +129,7 @@ function workingDaysBetween(fromIso, toIso) {
   return days;
 }
 
-async function fetchConversations(since = MEASURED_FROM) {
+async function fetchConversations(since = historyFrom()) {
   const base = (process.env.NOVA_BRIDGE_URL || '')
     .replace(/\/api\/neuro-bridge\/?$/, '')
     .replace(/\/$/, '');
@@ -193,7 +211,7 @@ function classify(records, now = Date.now()) {
 }
 
 /** Current conversations, cached. NEVER throws; refuses an unknown build. */
-async function current({ force = false, since = MEASURED_FROM } = {}) {
+async function current({ force = false, since = historyFrom() } = {}) {
   if (!isConfigured()) {
     return { available: false, reason: 'NOVA bridge not configured (NOVA_BRIDGE_URL / NOVA_BRIDGE_SECRET)' };
   }
@@ -311,6 +329,6 @@ function toRadarItems(p) {
 }
 
 module.exports = {
-  current, classify, summarise, toRadarItems, floorNote, workingDaysBetween, asUtc,
-  isConfigured, BUILD_EXPECTED, LOG_WITHIN_WORKING_DAYS, MEASURED_FROM,
+  current, classify, summarise, toRadarItems, floorNote, workingDaysBetween, asUtc, historyFrom,
+  isConfigured, BUILD_EXPECTED, LOG_WITHIN_WORKING_DAYS, MEASURED_FROM, HISTORY_DAYS,
 };

@@ -180,6 +180,16 @@ test('nothing here computes or reports cadence', () => {
   assert.doesNotMatch(src, /cadenceDays|lastHeld|overdueBy|bookedAhead/);
 });
 
+test('the fetch window is wider than the scoring window', () => {
+  // These are different questions and conflating them hid the whole history:
+  // fetching from MEASURED_FROM made preSeries structurally always zero and
+  // emptied unmatchedNames with it. Live, NOVA held 43 conversations and
+  // VANTAGE asked for none of them, then reported "0 scored" and looked right.
+  assert.ok(conv.historyFrom() < conv.MEASURED_FROM,
+    'the fetch window must reach back past the date scoring begins');
+  assert.equal(conv.HISTORY_DAYS, 180);
+});
+
 test('the expected build is the one NOVA shipped', () => {
   assert.equal(conv.BUILD_EXPECTED, '2026-09-04-conversations-c');
   assert.equal(conv.LOG_WITHIN_WORKING_DAYS, 2);
