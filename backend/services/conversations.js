@@ -31,7 +31,9 @@
  * of that tick is that a person made it.
  */
 
-const BUILD_EXPECTED = '2026-09-03-conversations-b';
+// -c, NOT -b. See people.js: style 127 is a no-op on datetime2, so -b ships
+// unmarked instants that JS parses as LOCAL time. -c marks them in code.
+const BUILD_EXPECTED = '2026-09-04-conversations-c';
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
 
@@ -60,18 +62,41 @@ function isConfigured() {
 }
 
 /**
+ * Read an instant as UTC even when it forgot to say it was.
+ *
+ * DEFENCE IN DEPTH, and it should be a no-op. NOVA writes every one of these
+ * with GETUTCDATE() and, from build `-c`, marks them in code. But an unmarked
+ * `2026-08-25T00:00:00` is parsed by JS as LOCAL time, which silently shifts the
+ * day near midnight — and this exact bug has now been shipped three times in two
+ * days, twice in a field that had just been "fixed": SQL Server's CONVERT style
+ * 127 appends the Z only for `datetimeoffset`, so on `datetime2` it does nothing
+ * at all and the fix looked applied.
+ *
+ * The stamp catches a build whose SHAPE changed. It cannot catch one whose
+ * timestamps quietly stopped saying what they mean, so this does.
+ *
+ * Safe because the assumption is documented on NOVA's side and holds for every
+ * field VANTAGE reads. If a genuinely LOCAL timestamp is ever added to a feed,
+ * this becomes wrong — which is why it is here, loudly, rather than inline.
+ */
+function asUtc(iso) {
+  if (typeof iso !== 'string' || !iso) return iso;
+  return /[Zz]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+}
+
+/**
  * Whole working days between two instants, Mon–Fri.
  *
- * BANK HOLIDAYS ARE NOT HANDLED, and that is a real limitation rather than an
- * oversight: VANTAGE has no holiday calendar, and inventing one would make a
- * conversation logged on the Tuesday after a bank-holiday Monday read as late
- * when it was not. The count therefore OVERSTATES lateness by at most one day
- * per holiday in the window, so anything it flags is flagged conservatively —
- * a borderline case is stated as borderline rather than asserted.
+ * BANK HOLIDAYS ARE NOT HANDLED YET. NEURO has a real calendar
+ * (`GET /api/time/working-days`, gov.uk feed with a cached and compiled-in
+ * fallback, and it reports which source answered) and this should consume it.
+ * Until then the count OVERSTATES lateness by at most one day per holiday in
+ * the window — conservative, so it flags rather than hides, and it is stated
+ * here rather than left for someone to discover.
  */
 function workingDaysBetween(fromIso, toIso) {
-  const from = new Date(fromIso);
-  const to = new Date(toIso);
+  const from = new Date(asUtc(fromIso));
+  const to = new Date(asUtc(toIso));
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
   if (to < from) return 0;
 
@@ -114,9 +139,9 @@ function classify(records, now = Date.now()) {
   const nowIso = new Date(now).toISOString();
 
   const rows = (records || []).map(r => {
-    const happenedAt = r.completedAt || `${r.occurredOn}T12:00:00.000Z`;
+    const happenedAt = asUtc(r.completedAt) || `${r.occurredOn}T12:00:00.000Z`;
     const basis = r.completedAt ? 'completedAt' : 'occurredOn';
-    const loggedAt = r.peoplehrLoggedAt || null;
+    const loggedAt = asUtc(r.peoplehrLoggedAt) || null;
 
     // Only conversations that happened once confirming was possible can carry a
     // confirmation. Everything earlier is reported, never scored.
@@ -286,6 +311,6 @@ function toRadarItems(p) {
 }
 
 module.exports = {
-  current, classify, summarise, toRadarItems, floorNote, workingDaysBetween,
+  current, classify, summarise, toRadarItems, floorNote, workingDaysBetween, asUtc,
   isConfigured, BUILD_EXPECTED, LOG_WITHIN_WORKING_DAYS, MEASURED_FROM,
 };

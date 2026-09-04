@@ -35,6 +35,25 @@ test('working days skip the weekend', () => {
   assert.equal(conv.workingDaysBetween('2026-09-04T10:00:00Z', '2026-09-04T23:00:00Z'), 0);
 });
 
+test('an unmarked instant is read as UTC, not as local time', () => {
+  // Shipped three times in two days, twice in a field just "fixed": CONVERT
+  // style 127 appends the Z only for datetimeoffset, so on datetime2 it is a
+  // no-op and the fix looks applied. JS parses the unmarked string as LOCAL,
+  // which shifts the DAY near midnight — and this is a day-granularity measure.
+  assert.equal(conv.asUtc('2026-08-25T00:00:00'), '2026-08-25T00:00:00Z');
+  // Already marked, in any form: left alone.
+  assert.equal(conv.asUtc('2026-08-25T00:00:00Z'), '2026-08-25T00:00:00Z');
+  assert.equal(conv.asUtc('2026-08-25T00:00:00.000Z'), '2026-08-25T00:00:00.000Z');
+  assert.equal(conv.asUtc('2026-08-25T01:00:00+01:00'), '2026-08-25T01:00:00+01:00');
+  assert.equal(conv.asUtc(null), null);
+
+  // And it changes the answer where it matters. Unmarked midnight in a UTC+1
+  // zone would parse to the previous day; both must count the same here.
+  const marked = conv.classify([rec({ completedAt: '2026-09-07T00:00:00.000Z' })], at('2026-09-09T09:00:00Z'));
+  const bare = conv.classify([rec({ completedAt: '2026-09-07T00:00:00.000' })], at('2026-09-09T09:00:00Z'));
+  assert.equal(bare.all[0].ageWorkingDays, marked.all[0].ageWorkingDays);
+});
+
 // ── The window ───────────────────────────────────────────────────────────────
 
 test('a conversation held today is not late', () => {
@@ -162,6 +181,6 @@ test('nothing here computes or reports cadence', () => {
 });
 
 test('the expected build is the one NOVA shipped', () => {
-  assert.equal(conv.BUILD_EXPECTED, '2026-09-03-conversations-b');
+  assert.equal(conv.BUILD_EXPECTED, '2026-09-04-conversations-c');
   assert.equal(conv.LOG_WITHIN_WORKING_DAYS, 2);
 });

@@ -31,10 +31,12 @@
  *     0" is not a fact about anybody.
  */
 
-// -b: capturedAt and lastSubmittedAt now carry the Z. Both were always UTC
-// (GETUTCDATE) and never said so; VANTAGE consumes neither today, which is why
-// it was the right moment to remove the ambiguity rather than document it.
-const BUILD_EXPECTED = '2026-09-03-people-b';
+// -c, NOT -b. The -b fix did not work and -b is ON PROD: CONVERT style 127 only
+// appends the Z for `datetimeoffset`, not for `datetime2`, so it emitted exactly
+// what 126 did. -c appends the marker in code instead of trusting a conversion
+// style's fine print. Refusing -b is the point — it is a build whose timestamps
+// lie by omission, and rendering from it is worse than rendering nothing.
+const BUILD_EXPECTED = '2026-09-04-people-c';
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
 
