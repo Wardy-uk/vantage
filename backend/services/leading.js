@@ -750,7 +750,16 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
       // The reason is per-detector because the reasons are genuinely different,
       // and collapsing them would tell Nick that a detector nobody could test
       // had been tested and failed.
-      blocked.push({ id: d.id, name: d.name, reason: DISABLED_REASON[d.id] || 'disabled by configuration' });
+      // `disabled: true` distinguishes a STANDING DECISION from a detector that
+      // could not run today. The radar renders them differently and must: a
+      // transient fault belongs in the blind-spots warning, and a thing that was
+      // measured and switched off belongs in a quiet line stated once. Putting a
+      // permanent entry in a warning banner is how a banner becomes wallpaper —
+      // on the screen of someone who stops reading screens that are always red.
+      blocked.push({
+        id: d.id, name: d.name, disabled: true,
+        reason: DISABLED_REASON[d.id] || 'disabled by configuration',
+      });
       continue;
     }
     let result;

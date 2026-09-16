@@ -195,6 +195,24 @@ export default function Radar() {
     <div className="wrap">
       {error && <div className="banner bad">{error}</div>}
 
+      {/* Switched off by decision, not by fault. Quiet, small, and OUTSIDE the
+          blind-spots banner above — a permanent entry in a warning is how the
+          warning stops being read, and that banner has to keep working for the
+          transient failures it exists for. Still shown, because a detector
+          nobody is told about is one nobody can ask to have fixed. */}
+      {data?.notWatched?.length > 0 && (
+        <div className="small" style={{ color: 'var(--muted)', margin: '0 0 10px' }}>
+          <strong>Not watched:</strong>{' '}
+          {data.notWatched.map(d => d.name).join(', ')}.{' '}
+          <span title={data.notWatched.map(d => `${d.name}: ${d.reason}`).join('
+
+')}
+            style={{ borderBottom: '1px dotted var(--line)', cursor: 'help' }}>
+            why
+          </span>
+        </div>
+      )}
+
       {data?.blind?.length > 0 && (
         <div className="banner warn">
           <strong>Blind spots.</strong> {data.blind.length} source

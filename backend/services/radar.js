@@ -448,10 +448,16 @@ async function compute({ force = false } = {}) {
     { name: 'people-signals', ok: Boolean(perPerson?.available), error: perPerson?.available ? null : perPerson?.reason },
     { name: 'conversations', ok: Boolean(convos?.available), error: convos?.available ? null : convos?.reason },
     { name: 'leading-indicators', ok: Boolean(early?.available), error: early?.available ? null : early?.reason },
-    // Each blocked detector is its own blind entry. One line saying "leading
-    // indicators: ok" while three of the five could not run would be exactly
-    // the false all-clear this file exists to prevent.
-    ...(early?.blocked || []).map(b => ({ name: `detector ${b.id} (${b.name})`, ok: false, error: b.reason })),
+    // A detector that could not RUN today is its own blind entry. One line
+    // saying "leading indicators: ok" while two of the five silently could not
+    // run would be exactly the false all-clear this file exists to prevent.
+    //
+    // ⚠ Detectors DISABLED by decision are deliberately NOT here. They are a
+    // standing fact, not a fault, and a permanent entry in a warning banner is
+    // how the banner stops being read — which would cost the transient failures
+    // it exists for. They render separately, through `notWatched` below.
+    ...(early?.blocked || []).filter(b => !b.disabled)
+      .map(b => ({ name: `detector ${b.id} (${b.name})`, ok: false, error: b.reason })),
     health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
@@ -472,6 +478,11 @@ async function compute({ force = false } = {}) {
     // separately, because a tool that only ever shows the outstanding column is
     // lying by omission to someone who under-registers completion.
     normalised: early?.available ? early.normalised : [],
+    // What is switched off and why — said once, plainly, outside the fault
+    // banner. Still visible, because a detector nobody is told about is one
+    // nobody can ask to have fixed.
+    notWatched: (early?.blocked || []).filter(b => b.disabled)
+      .map(b => ({ id: b.id, name: b.name, reason: b.reason })),
     leading: early?.available
       ? { asOf: early.asOf, suppressed: early.suppressed, quiet: early.quiet, excluded: early.excluded, capacity: early.capacity }
       : { available: false, reason: early?.reason || null },
