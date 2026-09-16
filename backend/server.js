@@ -172,6 +172,15 @@ app.get('/api/leading/log', wrap(() => ({ indicators: require('./services/indica
 // scored: choosing a measure before seeing an outcome is how a scorer comes to
 // flatter the thing it scores.
 app.get('/api/leading/claims', wrap(() => ({ claims: require('./services/indicator-log').prospectiveClaims() })));
+// How each detector is doing on LIVE evidence — useful / false / inconclusive,
+// with pending shown alongside so a precision figure cannot be read off three
+// settled warnings out of twenty.
+app.get('/api/leading/scoreboard', wrap(() => ({ scoreboard: require('./services/indicator-log').scoreboard() })));
+// A human verdict on one warning, which outranks the automatic label. The
+// automatic one cannot see that Nick acted and prevented the thing — which
+// otherwise records as a false positive, punishing the warnings that worked.
+app.post('/api/leading/log/:id/verdict', wrap(req =>
+  require('./services/indicator-log').label(Number(req.params.id), req.body || {})));
 
 // ── Findings register ────────────────────────────────────────────────────────
 

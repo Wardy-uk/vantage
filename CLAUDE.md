@@ -161,21 +161,48 @@ down is simply absent from `kpi_org_daily`; read as zero it looks like the desk
 received nothing, so a net-flow detector sees an outage as a triumph and the
 baseline is poisoned for a month. Any gap in the 35-day window stops the claim.
 
-**What the 285-day replay actually found** (scored against NOVA's own RAG bands,
-so it cannot mark its own homework; a fire ON the day the wallboard turns red
-scores lead ZERO and counts as description, not warning):
+### The outcome label, and the correction of 17 Sep 2026
 
-| | | |
+**The canonical measure is a RISE EPISODE**, not a RAG crossing: a stock KPI
+climbing its entire green-to-red span within 14 days. A fire ON the day the
+outcome becomes visible scores lead ZERO and counts as description, not warning.
+
+⚠ **V1 measured against RAG crossings and that was wrong.** `nt_production` is
+above its red line **69%** of the time and `nt_incidents` **65%**, so a
+"crossing" is usually the series dipping under the line and coming back — not a
+problem arriving. Several occurred while the stock was *falling* (2026-08-11:
+Production at 83 on a 14-day slope of −3.3, then red). Only **6 of the 19**
+V1 events were preceded by a sustained rise, and two thirds of genuine rises
+never produce a crossing at all because the series is already red.
+
+The original figure is kept below rather than overwritten. It is also carried in
+code as `VALIDATED.supersedes`, so anything rendering the claim renders its
+history with it.
+
+| detector | | corrected result (rise episodes) |
 |---|---|---|
-| **A** net flow | ON | 9 warnings, 0 coincident, 3 FPs, **median lead 11 days** |
-| **D** dev drift | OFF | measured and FAILED — 2 fires, both false, missed both crossings |
-| **B** ageing | OFF | UNMEASURABLE: `nt_oldest_*` is RAG red on all 320 days, no transition to score |
+| **A** net flow | ON | **6 of 19 rise episodes warned, median lead 12 days, 1 FP** — plus 3 fires that landed on the episode day and scored zero. On the 6 genuinely rising members of the old RAG set: 3 warned, median lead 7 |
+| **D** dev drift | OFF | measured and FAILED — 2 fires, both false, missed both Development events |
+| **B** ageing | OFF | UNMEASURABLE **and built on a counter**: `nt_oldest_development` rises +1 on 316 of 319 days and has fallen twice in 320 |
 | **C** escalation | OFF | UNMEASURABLE: `nt_rejected` is RAG green on all 320 days |
-| **E** capacity | ON | unreplayable (availability has no history) but makes no statistical claim |
+| **E** capacity | ON | advisory; availability history exists but carries no booking date, so a replay cannot prove the fact was knowable in advance |
+
+| superseded | |
+|---|---|
+| measured | 2026-09-16, against RAG crossings (stock red 3+ consecutive days) |
+| said | 9 warnings, 0 coincident, 3 false positives, median lead 11 days |
+| corrected | 2026-09-17 — the label was noise; **A stays ENABLED**, its evidence was restated, not withdrawn |
 
 "Measured and failed" and "could not be measured" are kept apart in
 `DISABLED_REASON` and never collapsed into the word "disabled" — the fixes are
 different, and B needs a target its KPI can cross, not a threshold change.
+
+⚠ Note on E: V1 said "availability has no history". That was wrong —
+`agent_availability` holds 311 past rows over 156 days back to 2026-02-02. But
+`updated_at` is a SYNC stamp, not a booking date, so nothing records when a row
+first appeared. Annual leave is bookable in advance and could be replayed under
+a stated assumption; sickness is recorded on the day and replaying it would be
+pure hindsight. E therefore remains advisory.
 
 **E is ON as an UNVALIDATED ADVISORY, and that status is load-bearing.** Every
 indicator carries `validation`; the default is `unvalidated-advisory`, so a new
@@ -208,6 +235,54 @@ ZERO rows. `agent_incidents` was to have been the independent outcome label for
 the back-test. A reader that outlives its writer looks exactly like coverage —
 `scripts/validate-kpi-org-series.ts` is the gate that asks, and it should be run
 on AAPP01 before anything new is built on a NOVA table.
+
+### V2: the outcome label, the ledger, and one detector in shadow
+
+**`episodes.js` owns what counts as a problem arriving**, and both the replay
+and the live ledger call it — so a prospective lead time and a historical one
+are measured with the same ruler. A RISE EPISODE is a stock climbing its whole
+green-to-red span within 14 days, dated when the climb COMPLETES. The old RAG
+measure is still runnable as `node tools/replay-indicators.js --rag`, because a
+correction nobody can reproduce is just an assertion.
+
+**The ledger labels live warnings** — useful / false / inconclusive, with the
+actual lead. The rules are all about when NOT to label: nothing is scored while
+its window is open (scoring early makes any detector look bad; leaving the
+window open until something happens makes any detector look good). A human
+verdict outranks the automatic one, because the automatic label cannot see that
+Nick read the card and prevented the thing — which otherwise records as a false
+positive and systematically punishes the warnings that worked. Detector E is
+`settledBy: 'human'`: it predicts a thin rota, not a backlog rise, and scoring
+it against stock episodes would mark it false every time the department coped.
+
+**S1 is a SHADOW detector — no card, no finding, no NEURO action.** It combines
+four EVIDENCE FAMILIES that cannot be derived from one another: flow, ownership
+(`nt_legacy_unassigned`), rejection rate, and booked capacity. **Stocks are
+deliberately excluded from the corroboration set** — stock is the integral of
+net flow, and the discovery-era composite that counted them as separate
+agreement was one fact counted four times, which on inspection was just detector
+A at a lower bar. Shadows live in their own `SHADOW_DETECTORS` list and are
+filtered at two layers, so "no card" is structural rather than a filter someone
+can forget. S1 earns promotion on PROSPECTIVE evidence only: the holdout was
+consumed during discovery, so any back-test of it now would be fitted to history
+already seen.
+
+**Findings from discovery worth not re-deriving:**
+- `nt_oldest_*` are COUNTERS. `nt_oldest_development` rises +1 on 316 of 319
+  days and has fallen twice in 320 — one ancient ticket nobody will clear. Any
+  age-based detector on them measures the calendar.
+- D's hypothesis was wrong, not mistuned: the CC-flat veto suppressed the real
+  March event, and z-against-its-own-changes is defeated by a persistent trend.
+- `agent_availability` DOES hold history (311 rows, 156 days) but `updated_at`
+  is a sync stamp, so nothing records when a booking became knowable.
+- `escalation_type='rejection'` IS being written — 183 rows since April. The
+  comment in `flow-signals.ts` saying it never would is stale.
+- **No independent outcome source is populated.** `agent_incidents` is empty,
+  and it is NOT a writer defect: the job runs every 15 minutes, its query
+  returns ~48 tickets per 4h against a threshold of 5, and the LLM confirmation
+  gate has simply never said yes. `portal_escalations` is empty too;
+  `agent_alerts` has 15,386 rows but fires ~40/day and is derived from the same
+  queue data. Every outcome today is a KPI scored against a KPI.
 
 ### The finding lifecycle
 

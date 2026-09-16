@@ -252,7 +252,32 @@ function confidence(seriesList, asOf, extra = []) {
 const VALIDATED = {
   status: 'validated',
   label: 'Historically validated',
-  detail: 'Replayed over 285 days against NOVA\'s own RAG bands: 9 warnings, 0 fired on the day the board turned red, 3 false positives, median lead 11 days.',
+  detail: 'Replayed over 285 days against sustained RISE EPISODES — a stock climbing its whole green-to-red span inside a fortnight. '
+    + '6 of 19 rise episodes warned with a MEDIAN LEAD OF 12 DAYS, 3 fired on the day itself and scored zero, 1 false positive. '
+    + 'On the narrower set of 6 genuinely rising RAG crossings from the original V1 measurement it warned on 3, median lead 7 days.',
+  // ⚠ SUPERSEDED MEASUREMENT, carried rather than deleted.
+  //
+  // V1 reported "9 warnings, 0 coincident, 3 false positives, median lead 11
+  // days" against RAG CROSSINGS. That label was largely noise: `nt_production`
+  // is above its red line 69% of the time and `nt_incidents` 65%, so most
+  // "crossings" are the series dipping under the line and coming back rather
+  // than a problem arriving — and several happened while the stock was FALLING
+  // (2026-08-11: Production at 83 on a 14-day slope of -3.3, then red). Only 6
+  // of the 19 were preceded by a sustained rise.
+  //
+  // THE DETECTOR IS NOT WITHDRAWN and its performance did not get worse: against
+  // a sound label it still warns on 9 of 19 with the same median lead. What
+  // changed is what the eleven days is EVIDENCE OF — the original figure
+  // averaged real warnings together with coin-flips. A number like that, in a
+  // document Nick's manager may read, gets corrected in the open with the old
+  // one still visible, rather than quietly restated.
+  supersedes: {
+    measuredOn: '2026-09-16',
+    correctedOn: '2026-09-17',
+    label: 'RAG crossings — a stock KPI red for 3+ consecutive days',
+    result: '9 warnings, 0 coincident, 3 false positives, median lead 11 days',
+    why: 'the stock KPIs are already red most of the time, so two thirds of the crossings were threshold chatter and some occurred while the stock was falling',
+  },
   autoActionable: true,
 };
 
@@ -328,6 +353,9 @@ function detectNetFlow({ series, asOf }) {
     indicator: indicator({
       key: 'net-flow',
       detector: 'A',
+      // A claims the department's queues generally rather than one of them, so
+      // any stock rise episode inside the window settles it.
+      subject: null,
       // The ONLY detector that has earned this. See the replay result in
       // `DISABLED_BY_DEFAULT` above.
       validation: VALIDATED,
@@ -663,6 +691,11 @@ function detectCapacityCollision({ series, capacity, asOf }) {
     indicator: indicator({
       key: `capacity:${worst.day}`,
       detector: 'E',
+      // No stock episode can confirm or refute a rota claim, so this is never
+      // auto-labelled. It waits for a human verdict — which is also the only
+      // honest way to score a warning whose success looks like nothing
+      // happening.
+      settledBy: 'human',
       severity: worst.share >= 0.4 ? 'high' : 'medium',
       title: `${worst.off} of ${capacity.rosterCount} are off on ${worst.day}, normally one of the busier days`,
       change: `${Math.round(worst.share * 100)}% of the roster is booked off on ${worst.day}, which typically takes ${worst.expected} new tickets — at or above the working-day median of ${overallBusy}.`,
@@ -703,7 +736,155 @@ function detectCapacityCollision({ series, capacity, asOf }) {
   };
 }
 
+
+// ── SHADOW: the independent-family composite (S1) ────────────────────────────
+
+/**
+ * Four EVIDENCE FAMILIES that are not derived from one another.
+ *
+ * ⚠ This constraint is the whole reason the discovery-era composite was thrown
+ * away. That one corroborated net flow with the three stock KPIs — and stock is
+ * the INTEGRAL of net flow. Of course they agreed: it was one fact counted four
+ * times, dressed up as four weak signals converging. On its firing days it was
+ * typically net flow at z = 1.79-1.97 — detector A at a lower bar wearing a
+ * composite's clothes — and against rise episodes it underperformed A outright.
+ *
+ * So a family here has to be able to move while the others do not:
+ *
+ *   FLOW        net arrivals against throughput. What A already watches.
+ *   OWNERSHIP   unassigned work. A queue can grow with everything owned, or
+ *               shrink while nothing is. Not derivable from flow.
+ *   REJECTION   the share of escalations coming back. A behaviour of two tiers,
+ *               independent of how much work arrives.
+ *   CAPACITY    leave booked in the next working week. Exogenous — caused by
+ *               holidays, not by the queue.
+ *
+ * Stocks are DELIBERATELY ABSENT from the corroboration set. They are the thing
+ * being predicted, and using them as evidence for their own future is how the
+ * last attempt fooled itself.
+ *
+ * ── Shadow mode ─────────────────────────────────────────────────────────────
+ *
+ * NO card, NO finding, NO NEURO action. It runs, it is recorded in the ledger,
+ * and it earns promotion on PROSPECTIVE evidence only. The holdout that would
+ * have validated it historically has been consumed — it was looked at during
+ * discovery — so any back-test of it now would be a curve fitted to history
+ * already seen. Saying so is cheaper than pretending otherwise and being caught
+ * by the live numbers later.
+ */
+const SHADOW_FAMILY_Z = 1.0;
+const SHADOW_FAMILIES_TO_FIRE = 2;
+const SHADOW_MIN_FAMILIES_AVAILABLE = 3;
+
+function familyFlow(series, asOf) {
+  const arrivals = byDay(series.nt_new_tickets);
+  const team = byDay(series.nt_solved_team);
+  const nova = byDay(series.nt_solved_nova);
+  const net = new Map();
+  for (const [day, v] of arrivals) {
+    if (team.has(day) && nova.has(day)) net.set(day, v - team.get(day) - nova.get(day));
+  }
+  const b = weekBuckets(net, asOf, BASELINE_WEEKS + 1);
+  if (!b.every(x => x.complete)) return null;
+  const zz = zScore(b[0].sum, b.slice(1).map(x => x.sum));
+  if (zz === null) return null;
+  return { name: 'flow', z: round(zz, 2), detail: `net ${b[0].sum} this week against a four-week mean of ${round(mean(b.slice(1).map(x => x.sum)))}` };
+}
+
+function familyOwnership(series, asOf) {
+  const s = series.nt_legacy_unassigned;
+  if (!s) return null;
+  const b = weekBuckets(byDay(s), asOf, BASELINE_WEEKS + 1);
+  if (!b.every(x => x.complete)) return null;
+  const zz = zScore(b[0].mean, b.slice(1).map(x => x.mean));
+  if (zz === null) return null;
+  return { name: 'ownership', z: round(zz, 2), detail: `${round(b[0].mean)} unassigned on average this week against ${round(mean(b.slice(1).map(x => x.mean)))}` };
+}
+
+function familyRejection(series, asOf) {
+  const esc = weekBuckets(byDay(series.nt_escalated), asOf, BASELINE_WEEKS + 1);
+  const rej = weekBuckets(byDay(series.nt_rejected), asOf, BASELINE_WEEKS + 1);
+  if (!esc.every(x => x.complete) || !rej.every(x => x.complete)) return null;
+  // A week with nothing escalated has no rate. Measured live: nt_rejected is 0
+  // on 29 of the last 30 days, so this family is weekly or it is nothing.
+  if (esc.some(x => x.sum === 0)) return null;
+  const rates = esc.map((x, i) => rej[i].sum / x.sum);
+  const zz = zScore(rates[0], rates.slice(1));
+  if (zz === null) return null;
+  return { name: 'rejection', z: round(zz, 2), detail: `${Math.round(rates[0] * 100)}% of escalations returned this week against ${Math.round(mean(rates.slice(1)) * 100)}% normally` };
+}
+
+function familyCapacity(capacity, asOf) {
+  if (!capacity?.available || !capacity.rosterCount) return null;
+  const off = new Map();
+  for (const a of capacity.absences || []) off.set(a.date, (off.get(a.date) || 0) + 1);
+  let worst = 0;
+  let worstDay = null;
+  for (let i = 1; i <= 7; i += 1) {
+    const day = addDays(asOf, i);
+    if (!isWorkingDay(day)) continue;
+    const share = (off.get(day) || 0) / capacity.rosterCount;
+    if (share > worst) { worst = share; worstDay = day; }
+  }
+  // Put on the same scale as the others so families can be compared: a quarter
+  // of the roster off is one unit of concern.
+  return {
+    name: 'capacity',
+    z: round(worst / THIN_TEAM_SHARE, 2),
+    detail: worstDay ? `${Math.round(worst * 100)}% of the roster off on ${worstDay}` : 'nobody booked off in the next working week',
+  };
+}
+
+function detectShadowComposite({ series, capacity, asOf }) {
+  const fams = [
+    familyFlow(series, asOf),
+    familyOwnership(series, asOf),
+    familyRejection(series, asOf),
+    familyCapacity(capacity, asOf),
+  ];
+  const available = fams.filter(Boolean);
+  if (available.length < SHADOW_MIN_FAMILIES_AVAILABLE) {
+    return {
+      blocked: {
+        id: 'S1', name: 'Independent-family composite (shadow)', shadow: true,
+        reason: `only ${available.length} of 4 evidence families could be computed; ${SHADOW_MIN_FAMILIES_AVAILABLE} are required`,
+      },
+    };
+  }
+  const elevated = available.filter(f => f.z >= SHADOW_FAMILY_Z);
+  if (elevated.length < SHADOW_FAMILIES_TO_FIRE) return { quiet: 'S1' };
+
+  return {
+    indicator: indicator({
+      key: `shadow-composite:${elevated.map(f => f.name).sort().join('+')}`,
+      detector: 'S1',
+      shadow: true,
+      severity: 'medium',
+      title: `${elevated.length} independent signals are elevated together`,
+      change: `${elevated.map(f => `${f.name} z=${f.z}`).join(', ')}.`,
+      whyItMatters: 'Each of these alone is below the bar any single detector fires at. They come from families that do not derive from one another — flow, ownership, escalation behaviour and booked capacity — so agreement between them is not one fact counted several times, which is exactly how the first composite fooled itself.',
+      evidence: available.map(f => ({ label: f.name, value: `z=${f.z} — ${f.detail}` })),
+      horizonDays: 10,
+      confidence: confidence([series.nt_new_tickets].filter(Boolean), asOf),
+      confirm: 'A stock KPI subsequently rises its whole green-to-red span inside a fortnight. The ledger records that automatically.',
+      disprove: 'The families move apart again within the week, or one turns out to be a one-off — a bulk import, or a single bounced ticket inflating the rejection rate.',
+      action: 'Nothing. This is in SHADOW and produces no card; it is accumulating a prospective record so it can be judged on live evidence rather than on history already looked at.',
+    }),
+  };
+}
+
 // ── Assembly ─────────────────────────────────────────────────────────────────
+
+/**
+ * Shadow detectors. Run every pass, recorded in the ledger, NEVER rendered.
+ *
+ * Kept in their own list rather than flagged inside `DETECTORS`, so the one
+ * thing that must not happen — a shadow reaching the radar — is prevented by
+ * the shape of the code rather than by a filter somebody could later forget.
+ */
+const SHADOW_DETECTORS = [
+  { id: 'S1', name: 'Independent-family composite', run: detectShadowComposite },
+];
 
 const DETECTORS = [
   { id: 'A', name: 'Net flow divergence', run: detectNetFlow },
@@ -720,7 +901,7 @@ const DETECTORS = [
  * different fixes, and a single word like "disabled" would hide which is which.
  */
 const DISABLED_REASON = {
-  B: 'not measurable — the oldest-ticket KPIs are RAG red on every day of the history, so the replay had no outcome to score against. Off until there is a target they can cross.',
+  B: 'not measurable, and built on a counter — nt_oldest_development rises +1 on 316 of 319 days and has fallen twice in 320, so the "frozen tail" it looks for is the permanent default state rather than a signal. Its KPI is also RAG red on every day, so there was no outcome to score against either.',
   C: 'not measurable — nt_rejected is RAG green on every day of the history, and 34 of 285 replay days had no escalations to take a rate from.',
   D: 'measured and failed — over 285 days it fired twice, both false, and missed both Development backlog crossings. Off until the approach changes, not until the threshold does.',
 };
@@ -777,6 +958,21 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
     if (result.quiet) quiet.push(result.quiet);
   }
 
+  // Shadows run in their own pass and NEVER join `indicators`.
+  const shadow = [];
+  for (const d of SHADOW_DETECTORS) {
+    let r;
+    try {
+      r = d.run({ series, capacity, asOf });
+    } catch (err) {
+      blocked.push({ id: d.id, name: d.name, shadow: true, reason: `threw: ${err.message}` });
+      continue;
+    }
+    if (r.indicator) shadow.push(r.indicator);
+    if (r.blocked) blocked.push(...(Array.isArray(r.blocked) ? r.blocked : [r.blocked]));
+    if (r.quiet) quiet.push(r.quiet);
+  }
+
   indicators.sort((a, b) =>
     (SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
     || (b.confidence.score - a.confidence.score)
@@ -785,6 +981,9 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
   return {
     asOf,
     indicators: indicators.slice(0, MAX_INDICATORS),
+    // Returned so `current()` can record them and a test can assert they exist.
+    // No caller renders this.
+    shadow,
     // Ranked out rather than lost. Five is a display limit, not a claim that
     // nothing else fired.
     suppressed: indicators.slice(MAX_INDICATORS).map(i => ({ key: i.key, title: i.title })),
@@ -805,13 +1004,20 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
  * Detectors switched OFF, and why — measured, not assumed.
  *
  * From `tools/replay-indicators.js` over 285 days of history (2025-12-06 to
- * 2026-09-16), scored against NOVA's own RAG bands so this could not mark its
- * own homework:
+ * 2026-09-16).
  *
- *   A  net flow        9 runs, 9 warnings, 0 coincident, 3 false positives,
- *                      MEDIAN LEAD 11 DAYS. Warned before 9 of the 17 backlog
- *                      crossings it claims to predict, and never once fired on
- *                      the day the wallboard turned red. ON.
+ * ⚠ THE OUTCOME LABEL CHANGED ON 17 SEP 2026 and the numbers below are the
+ * corrected ones. V1 scored against RAG CROSSINGS; discovery showed that label
+ * is mostly noise, because `nt_production` sits above its red line 69% of the
+ * time and `nt_incidents` 65% — so a "crossing" is usually the series dipping
+ * under the line and coming back, and several happened while the stock was
+ * FALLING. The canonical measure is now a RISE EPISODE: a stock climbing its
+ * whole green-to-red span within 14 days. See `VALIDATED.supersedes`.
+ *
+ *   A  net flow        6 of 19 rise episodes warned, MEDIAN LEAD 12 DAYS,
+ *                      1 false positive — and 3 fires landed ON the episode
+ *                      day, scoring zero. Against the 6 genuinely rising
+ *                      members of the old RAG set: 3 warned, median lead 7. ON.
  *
  *   D  dev drift       2 runs, BOTH false positives, and it missed both
  *                      Development crossings in the window. Measured and
@@ -819,8 +1025,13 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
  *                      until it passes; a detector fitted to two events is not
  *                      a detector.
  *
- *   B  ageing          UNMEASURABLE. `nt_oldest_*` carries RAG red on every one
- *                      of 320 days, so there is no transition to score against.
+ *   B  ageing          UNMEASURABLE, and now also known to be BUILT ON A
+ *                      COUNTER. `nt_oldest_development` rises +1 on 316 of 319
+ *                      days and has fallen TWICE in 320 — there is one ancient
+ *                      ticket nobody will ever clear (109 days in February,
+ *                      235 in July). B's "frozen tail" is the permanent default
+ *                      state, not a signal. The KPI is also RAG red on every
+ *                      day, so there was no transition to score against either.
  *                      It fired 17 times in 285 days, which is not spam, but
  *                      "did not fire often" is not "gave useful warning".
  *
@@ -894,7 +1105,15 @@ async function current({ force = false } = {}) {
 
   let lifecycle;
   try {
-    lifecycle = require('./indicator-log').reconcile(result.indicators, asOf);
+    const log = require('./indicator-log');
+    // Shadows are reconciled in the SAME ledger and in the same call, so a
+    // shadow run accumulates history exactly as a live one does. They are then
+    // dropped from what this function returns.
+    lifecycle = log.reconcile([...result.indicators, ...(result.shadow || [])], asOf);
+    // Label whatever the department has since done. Runs AFTER reconcile so a
+    // warning first seen today can be settled by an episode that completed
+    // today — which is a zero-lead coincidence, and has to be recorded as one.
+    log.settle(history.series, asOf);
   } catch (err) {
     // The register failing must not lose the detection, and must not look like
     // a clean history either.
@@ -906,7 +1125,12 @@ async function current({ force = false } = {}) {
     asOf,
     dataAsOf: history.asOf,
     stale: Boolean(history.stale),
-    indicators: lifecycle.active,
+    // ⚠ Shadows are filtered OUT of what anything renders. They went into the
+    // ledger above; they do not come back out to a screen.
+    indicators: lifecycle.active.filter(i => i.shadow !== true),
+    // Counted, not shown. "Two shadow detectors fired" is worth knowing on the
+    // admin page without any of them becoming a card.
+    shadowFired: (result.shadow || []).length,
     normalised: lifecycle.normalised,
     suppressed: result.suppressed,
     blocked: result.blocked,
@@ -947,7 +1171,12 @@ function latestCommonDay(series) {
 function toRadarItems(state) {
   if (!state?.available) return [];
 
-  return (state.indicators || []).map(i => ({
+  return (state.indicators || [])
+    // Second guard. `current()` already filters shadows out; this makes the
+    // radar independently incapable of rendering one, because "no card" is the
+    // promise that makes shadow mode mean anything.
+    .filter(i => i.shadow !== true)
+    .map(i => ({
     tense: i.tense,
     severity: i.severity,
     title: i.title,
@@ -983,6 +1212,7 @@ module.exports = {
   // Exported for the tests and the replay, which have to be able to drive each
   // detector alone to know which one produced a result.
   detectNetFlow, detectAgeing, detectEscalationQuality, detectDevDrift, detectCapacityCollision,
+  detectShadowComposite, SHADOW_DETECTORS,
   weekBuckets, zScore, windowUsable, confidence, byDay,
   Z_FIRE, BASELINE_WEEKS, REQUIRED_DAYS, AGE_SLOPE_FROZEN, THIN_TEAM_SHARE, MIN_CONFIDENCE, MAX_INDICATORS,
 };

@@ -49,6 +49,8 @@ const QUIET_DAYS_TO_CLOSE = 3;
 const SHOW_NORMALISED_DAYS = 14;
 
 const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (day, n) =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const daysBetween = (from, to) =>
   Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
@@ -125,6 +127,29 @@ function plan(records, fired, day) {
         validationStatus: ind.validation?.status ?? null,
         prospective: ind.prospective ?? null,
         claimedOn: ind.prospective ? day : null,
+        // A shadow detector's run is recorded exactly like a live one and never
+        // rendered. That is the whole mechanism by which it earns promotion: it
+        // has to accumulate a prospective record first.
+        shadow: ind.shadow === true,
+        // The subject it claims, so an outcome can be matched without guessing.
+        // Null for a detector that claims the department generally.
+        subject: ind.subject ?? null,
+        // WHAT would settle this. 'rise-episode' for anything claiming a queue
+        // will deteriorate; 'human' for a claim no stock KPI can answer.
+        //
+        // Detector E is the reason this exists. It predicts a thin day on the
+        // rota, not a backlog rise, so settling it against stock episodes would
+        // score it on something it never claimed — and it would come out as a
+        // false positive every time the department coped, which is precisely
+        // the outcome it was warning about being avoided.
+        settledBy: ind.settledBy ?? 'rise-episode',
+        // Filled later, by observeOutcomes() or by a human verdict.
+        outcome: null,
+        outcomeSource: null,
+        outcomeOn: null,
+        episodeDay: null,
+        actualLeadDays: null,
+        actionTaken: null,
       });
     }
   }
@@ -232,6 +257,137 @@ function present(records, fired, day) {
   return { active, normalised };
 }
 
+/**
+ * How long after a warning an episode may still be "the thing it warned about".
+ *
+ * The same 21 days the replay uses, and deliberately the same number rather
+ * than a second one that could drift: a prospective lead time has to be
+ * comparable with a historical one or the ledger settles nothing.
+ */
+const ATTRIBUTION_DAYS = 21;
+
+/**
+ * Label warnings against what actually happened. PURE.
+ *
+ * USEFUL       an episode this warning claims arrived AFTER it fired, inside
+ *              the window. Lead is measured from the FIRST sighting, because a
+ *              warning is dated when it first became available to act on.
+ *
+ * INCONCLUSIVE the episode landed on the day the warning first fired. Zero lead
+ *              is description, not warning — but it is not a false alarm
+ *              either, and calling it one would punish a detector for being
+ *              right too late.
+ *
+ * FALSE        the warning closed, the window elapsed, and no episode it claims
+ *              ever arrived.
+ *
+ * NOTHING is labelled while its window is still open. The easiest way to make a
+ * detector look bad is to score it before the thing it predicted has had time
+ * to happen; the easiest way to flatter it is to leave the window open until
+ * something does. One rule avoids both: a verdict needs an elapsed window, and
+ * until then the record says pending.
+ */
+function observeOutcomes(records, eps, day) {
+  const updates = [];
+  for (const rec of records) {
+    if (rec.outcome) continue;
+    if (rec.outcomeSource === 'human') continue;
+    // A claim no episode can answer waits for a person. Left PENDING rather
+    // than guessed, and `scoreboard()` shows the denominator so a pile of
+    // pending records cannot be mistaken for a pile of failures.
+    if (rec.settledBy === 'human') continue;
+
+    const windowEnd = addDays(rec.firstSeenOn, ATTRIBUTION_DAYS);
+    const match = eps
+      .filter(e => (rec.subject ? e.kpi === rec.subject : true))
+      .filter(e => e.day >= rec.firstSeenOn && e.day <= windowEnd)
+      .sort((a, b) => a.day.localeCompare(b.day))[0];
+
+    if (match) {
+      const lead = daysBetween(rec.firstSeenOn, match.day);
+      updates.push({ id: rec.id, patch: {
+        outcome: lead > 0 ? 'useful' : 'inconclusive',
+        outcomeSource: 'auto',
+        outcomeOn: day,
+        episodeDay: match.day,
+        actualLeadDays: lead,
+      } });
+      continue;
+    }
+
+    if (rec.status === 'normalised' && day > windowEnd) {
+      updates.push({ id: rec.id, patch: {
+        outcome: 'false', outcomeSource: 'auto', outcomeOn: day,
+        episodeDay: null, actualLeadDays: null,
+      } });
+    }
+  }
+  return updates;
+}
+
+/** Fold today's episodes into the register. The impure half of the above. */
+function settle(seriesByKey, day = today()) {
+  const episodes = require('./episodes');
+  const eps = episodes.recent(seriesByKey, day, ATTRIBUTION_DAYS + 7);
+  const updates = observeOutcomes(all(), eps, day);
+  for (const u of updates) db.update(COLLECTION, u.id, u.patch);
+  return { episodes: eps, settled: updates.length };
+}
+
+/**
+ * A human verdict, which always outranks the automatic one.
+ *
+ * The automatic label can only see whether a number moved. It cannot see that
+ * Nick read the card, made two phone calls and stopped the thing happening —
+ * which registers automatically as a FALSE POSITIVE, because the episode it
+ * predicted never arrived. That would systematically punish the warnings that
+ * worked best, so a person can overrule it, and the override records that an
+ * action was taken.
+ */
+function label(id, { verdict, actionTaken = null, note = null, by = 'nick' } = {}) {
+  const ok = ['useful', 'false', 'inconclusive'];
+  if (!ok.includes(verdict)) throw new Error(`verdict must be one of: ${ok.join(', ')}`);
+  const rec = db.find(COLLECTION, r => r.id === id)[0];
+  if (!rec) throw new Error(`no indicator record ${id}`);
+  return db.update(COLLECTION, id, {
+    outcome: verdict,
+    outcomeSource: 'human',
+    outcomeOn: today(),
+    actionTaken,
+    outcomeNote: note,
+    outcomeBy: by,
+  });
+}
+
+/**
+ * What the ledger can say about each detector so far.
+ *
+ * Reports `pending` alongside the verdicts on purpose. A precision figure
+ * computed over three settled warnings out of twenty is not a precision
+ * figure, and showing the denominator is the only thing that stops it being
+ * read as one.
+ */
+function scoreboard() {
+  const by = new Map();
+  for (const r of all()) {
+    const k = r.detector || '?';
+    if (!by.has(k)) by.set(k, { detector: k, shadow: Boolean(r.shadow), runs: 0, useful: 0, falsePositive: 0, inconclusive: 0, pending: 0, leads: [] });
+    const e = by.get(k);
+    e.runs += 1;
+    if (r.outcome === 'useful') { e.useful += 1; if (r.actualLeadDays) e.leads.push(r.actualLeadDays); }
+    else if (r.outcome === 'false') e.falsePositive += 1;
+    else if (r.outcome === 'inconclusive') e.inconclusive += 1;
+    else e.pending += 1;
+  }
+  return [...by.values()].map(e => ({
+    ...e,
+    medianLeadDays: e.leads.length
+      ? [...e.leads].sort((a, b) => a - b)[Math.floor(e.leads.length / 2)]
+      : null,
+    settled: e.useful + e.falsePositive + e.inconclusive,
+  })).sort((a, b) => String(a.detector).localeCompare(String(b.detector)));
+}
+
 /** Every record, for the admin view and the tests. */
 const list = () => all().sort((a, b) => String(b.lastSeenOn).localeCompare(String(a.lastSeenOn)));
 
@@ -273,5 +429,6 @@ module.exports = {
   // machine that cannot build `better-sqlite3` — which is most of them, and so
   // is where these would otherwise have gone untested.
   plan, present, worse, prospectiveClaims,
+  observeOutcomes, settle, label, scoreboard, ATTRIBUTION_DAYS,
   QUIET_DAYS_TO_CLOSE, SHOW_NORMALISED_DAYS,
 };

@@ -165,3 +165,82 @@ test('worse() keeps the higher severity whichever way round it is given', () => 
   assert.equal(log.worse('low', 'high'), 'high');
   assert.equal(log.worse(null, 'medium'), 'medium');
 });
+
+// ── Outcome labelling ────────────────────────────────────────────────────────
+//
+// This is how a detector will eventually be judged on live evidence instead of
+// on history that has already been looked at. The rules that matter are the
+// ones about when NOT to label: scoring a warning before the thing it predicted
+// has had time to happen makes any detector look bad, and leaving the window
+// open until something does makes any detector look good.
+
+const rec = (over = {}) => ({
+  id: 1, key: 'net-flow', detector: 'A', status: 'open',
+  firstSeenOn: '2026-09-01', lastSeenOn: '2026-09-01', sightings: 1, quietDays: 0,
+  subject: 'nt_production', outcome: null, outcomeSource: null, ...over,
+});
+const ep = (day, kpi = 'nt_production') => ({ kpi, day, rose: 20 });
+
+test('an episode after the warning, inside the window, is a USEFUL warning with its lead', () => {
+  const u = log.observeOutcomes([rec()], [ep('2026-09-13')], '2026-09-20');
+  assert.equal(u.length, 1);
+  assert.equal(u[0].patch.outcome, 'useful');
+  assert.equal(u[0].patch.actualLeadDays, 12);
+  assert.equal(u[0].patch.outcomeSource, 'auto');
+});
+
+test('an episode on the day the warning first fired is INCONCLUSIVE, not a hit', () => {
+  // Zero lead is description, not warning — but it is not a false alarm either,
+  // and calling it one would punish a detector for being right too late.
+  const u = log.observeOutcomes([rec()], [ep('2026-09-01')], '2026-09-20');
+  assert.equal(u[0].patch.outcome, 'inconclusive');
+  assert.equal(u[0].patch.actualLeadDays, 0);
+});
+
+test('an OPEN warning whose window has not elapsed is left alone', () => {
+  // The single easiest way to make a detector look bad is to score it early.
+  assert.deepEqual(log.observeOutcomes([rec()], [], '2026-09-05'), []);
+});
+
+test('a CLOSED warning whose window elapsed with no episode is a FALSE positive', () => {
+  const u = log.observeOutcomes([rec({ status: 'normalised' })], [], '2026-09-30');
+  assert.equal(u[0].patch.outcome, 'false');
+  assert.equal(u[0].patch.actualLeadDays, null);
+});
+
+test('a closed warning is still not scored until the window elapses', () => {
+  // Closed early does not mean wrong: the evidence normalised, and the episode
+  // it warned about may still be days away.
+  assert.deepEqual(log.observeOutcomes([rec({ status: 'normalised' })], [], '2026-09-10'), []);
+});
+
+test('an episode for a DIFFERENT subject does not settle the warning', () => {
+  assert.deepEqual(log.observeOutcomes([rec()], [ep('2026-09-10', 'nt_development')], '2026-09-30'), []);
+});
+
+test('a warning that claims no subject can be settled by any episode', () => {
+  // A detector about the department generally, rather than one queue.
+  const u = log.observeOutcomes([rec({ subject: null })], [ep('2026-09-10', 'nt_development')], '2026-09-30');
+  assert.equal(u[0].patch.outcome, 'useful');
+});
+
+test('a human verdict is never overwritten by the automatic one', () => {
+  // The automatic label cannot see that Nick read the card and stopped the
+  // thing happening — which registers as a false positive and would punish the
+  // warnings that worked best.
+  const settled = rec({ outcome: 'useful', outcomeSource: 'human' });
+  assert.deepEqual(log.observeOutcomes([settled], [], '2026-10-30'), []);
+});
+
+test('a settled record is not re-settled', () => {
+  assert.deepEqual(log.observeOutcomes([rec({ outcome: 'false', outcomeSource: 'auto' })], [ep('2026-09-10')], '2026-09-30'), []);
+});
+
+test('a rota claim is never auto-settled by a backlog episode', () => {
+  // Detector E predicts a thin day, not a queue rise. Scoring it against stock
+  // episodes would mark it false every time the department coped — which is
+  // the outcome it warned about being avoided.
+  const r = rec({ detector: 'E', settledBy: 'human', subject: null });
+  assert.deepEqual(log.observeOutcomes([r], [ep('2026-09-10')], '2026-09-30'), []);
+  assert.deepEqual(log.observeOutcomes([{ ...r, status: 'normalised' }], [], '2026-10-30'), []);
+});

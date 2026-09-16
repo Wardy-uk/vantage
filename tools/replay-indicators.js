@@ -17,19 +17,29 @@
  *
  * ── What counts as the problem becoming obvious ─────────────────────────────
  *
- * NOVA's OWN RAG bands, not a line drawn here. The point of using someone
- * else's threshold is that this cannot then mark its own homework: the day a
- * KPI turns red is the day it goes red on the board the team looks at, decided
- * by targets that were set long before this file existed.
+ * A RISE EPISODE: a stock KPI climbing its ENTIRE green-to-red span within 14
+ * days. The span comes from NOVA's own RAG bands, so the size of a move that
+ * matters is still someone else's number and this cannot mark its own homework
+ * — but the EVENT is the climb, not the line-crossing.
  *
- * Two restrictions on that, both measured rather than assumed:
+ * ⚠ THIS REPLACED RAG CROSSINGS ON 17 SEP 2026, and the change mattered more
+ * than any detector. Measured over 320 days: `nt_production` is above its red
+ * line 69% of the time and `nt_incidents` 65%. A "crossing" on a series that
+ * lives above its own line is usually the series dipping under and coming back,
+ * not a problem arriving — several of V1's events occurred while the stock was
+ * FALLING (2026-08-11: Production at 83 on a 14-day slope of -3.3, then red).
+ * Only 6 of V1's 19 events were preceded by a sustained rise, and two thirds of
+ * genuine rises never produced a crossing at all because the series was already
+ * red. So the old label was BOTH noisy and incomplete, and every lead time
+ * measured against it averaged real warnings together with coin-flips.
+ *
+ * Two restrictions, both measured rather than assumed:
  *
  *  - STOCK KPIs ONLY. The daily FLOW KPIs cross their daily target constantly —
  *    `nt_new_tickets` turned red 21 times in 120 days, `nt_escalated` 19. A
- *    marker that fires every six days is not an event, and scoring against it
- *    would reward a detector for firing permanently.
- *  - IT HAS TO STICK. Red for at least `RED_RUN_DAYS` consecutive days, so a
- *    one-day flip over a threshold is not counted as a problem arriving.
+ *    marker that fires every six days is not an event.
+ *  - EPISODES ARE SEPARATED by `EPISODE_GAP_DAYS`, so one long climb counts once
+ *    rather than as a new event every day it continues.
  *
  * ── The rule that matters most ──────────────────────────────────────────────
  *
@@ -56,10 +66,17 @@ const path = require('node:path');
 
 const leading = require('../backend/services/leading');
 const indicatorLog = require('../backend/services/indicator-log');
+const episodes = require('../backend/services/episodes');
 
 // ── Scoring parameters, fixed ────────────────────────────────────────────────
 
-/** Consecutive red days before a crossing counts as a problem arriving. */
+/** The episode definition is shared with the live ledger — see episodes.js. */
+const { RISE_WINDOW_DAYS, EPISODE_GAP_DAYS } = episodes;
+
+/**
+ * Kept for the superseded measure, which `--rag` still reports so the old
+ * numbers can be reproduced rather than taken on trust.
+ */
 const RED_RUN_DAYS = 3;
 /**
  * How long a warning is allowed to be "about" an outcome. 21 days: three weeks
@@ -77,10 +94,23 @@ const ATTRIBUTION_DAYS = 21;
  * claimed to predict.
  */
 const OUTCOMES = [
-  { kpi: 'nt_incidents', label: 'Incident backlog crossed target', detectors: ['A'] },
-  { kpi: 'nt_production', label: 'Production backlog crossed target', detectors: ['A'] },
-  { kpi: 'nt_development', label: 'Development backlog crossed target', detectors: ['D'] },
+  { kpi: 'nt_incidents', label: 'Incident backlog rose sharply', detectors: ['A'] },
+  { kpi: 'nt_production', label: 'Production backlog rose sharply', detectors: ['A'] },
+  // D is off, so nothing currently claims Development. Left mapped so a
+  // replacement can be scored against the same episodes without the mapping
+  // being reinvented — and so the absence shows as a MISS rather than as an
+  // outcome nobody was measured on.
+  { kpi: 'nt_development', label: 'Development backlog rose sharply', detectors: ['D'] },
 ];
+
+/**
+ * `--rag` reproduces the SUPERSEDED measure.
+ *
+ * Kept runnable rather than deleted, because a correction nobody can reproduce
+ * is an assertion. The old numbers should stay obtainable by anyone who wants
+ * to check that the label really was the thing that changed.
+ */
+const USE_RAG = process.argv.includes('--rag');
 
 const DAY_MS = 86_400_000;
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
@@ -132,7 +162,15 @@ function asOfView(seriesByKey, day) {
   return out;
 }
 
-/** Red runs of at least RED_RUN_DAYS, returned as the day each run started. */
+/**
+ * Rise episodes come from `backend/services/episodes.js`, NOT from a copy here.
+ *
+ * The live ledger labels prospective warnings with the same function. If the
+ * replay used its own implementation, a historical lead time and a prospective
+ * one would be measured with different rulers and could never be compared —
+ * which is the entire point of building the ledger.
+ */
+/** Red runs of at least RED_RUN_DAYS — the SUPERSEDED measure, kept for `--rag`. */
 function redRuns(series) {
   if (!series) return [];
   const pts = series.points;
@@ -221,11 +259,14 @@ function score(runs, seriesByKey, { from, to }) {
 
   const outcomes = [];
   for (const o of OUTCOMES) {
-    for (const run of redRuns(seriesByKey[o.kpi])) {
+    const eps = USE_RAG
+      ? redRuns(seriesByKey[o.kpi])
+      : episodes.forSeries(seriesByKey[o.kpi]).map(e => ({ start: e.day, rose: e.rose }));
+    for (const run of eps) {
       // Only outcomes inside the scored window — one before `from` cannot
       // possibly have been warned about by a replay that had not started.
       if (run.start < from || run.start > to) continue;
-      outcomes.push({ ...o, obviousOn: run.start, redDays: run.days });
+      outcomes.push({ ...o, obviousOn: run.start, redDays: run.days ?? null, rose: run.rose ?? null });
     }
   }
 
@@ -342,7 +383,9 @@ async function main() {
 
   console.log(`\nreplay-indicators — ${source}`);
   console.log(`scored ${days} days, ${from} → ${to}`);
-  console.log(`outcome = a stock KPI red for ${RED_RUN_DAYS}+ consecutive days (NOVA's own RAG bands)`);
+  console.log(USE_RAG
+    ? `outcome = SUPERSEDED MEASURE: a stock KPI red for ${RED_RUN_DAYS}+ consecutive days`
+    : `outcome = a stock KPI rising its whole green-to-red span within ${RISE_WINDOW_DAYS} days (episodes ${EPISODE_GAP_DAYS}+ days apart)`);
   console.log(`attribution window = ${ATTRIBUTION_DAYS} days; a fire ON the outcome day scores lead 0\n`);
 
   console.log('POSITIVE CONTROL');
@@ -367,12 +410,17 @@ async function main() {
   }
 
   console.log('\nDETECTORS THAT COULD NOT BE SCORED AT ALL');
-  console.log('  B  Ageing acceleration      nt_oldest_* carries RAG red on EVERY day of the history.');
-  console.log('                              There is no transition, so there is no independent outcome');
-  console.log('                              to score against. Not "weak" — unmeasurable with what exists.');
-  console.log('  C  Escalation quality       nt_rejected is RAG green on every day. Same problem.');
-  console.log('  E  Capacity collision       availability has no history anywhere — agent_availability holds');
-  console.log('                              forward-looking approved leave and is overwritten. Cannot replay.');
+  console.log('  B  Ageing acceleration      built on a COUNTER: nt_oldest_development rises +1 on 316 of');
+  console.log('                              319 days and has fallen twice in 320, so the "frozen tail" it');
+  console.log('                              looks for is the default state. Its KPI is also red every day.');
+  console.log('  C  Escalation quality       nt_rejected is RAG green on every day, and a flow KPI has no');
+  console.log('                              rise episode to score against either. Unmeasurable.');
+  console.log('  E  Capacity collision       agent_availability DOES hold history — 311 past rows over 156');
+  console.log('                              days back to 2026-02-02. V1 said otherwise and was WRONG. But');
+  console.log('                              updated_at is a SYNC stamp, not a booking date, so nothing');
+  console.log('                              records when a row first appeared: annual leave is bookable in');
+  console.log('                              advance, sickness is recorded on the day, and replaying that');
+  console.log('                              would be hindsight. Advisory until prospective data decides.');
 
   if (blockedDays.size) {
     console.log('\nDAYS EACH DETECTOR COULD NOT RUN (out of ' + days + ')');

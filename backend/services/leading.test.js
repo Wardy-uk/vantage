@@ -400,3 +400,85 @@ test('E records a dated, checkable claim so it can be scored prospectively', () 
   assert.ok(Array.isArray(p.scoreAgainst) && p.scoreAgainst.length,
     'the measure is fixed when the claim is made, not chosen later with hindsight');
 });
+
+// ── Shadow mode ──────────────────────────────────────────────────────────────
+//
+// The promise is narrow and absolute: a shadow detector produces no card, no
+// finding and no NEURO action, however loudly it fires. These pin it at both
+// layers, because the value of shadow mode is entirely in that promise.
+
+const capacityFor = (absences, over = {}) => ({
+  available: true, rosterCount: 12, unsyncable: [], absences, approvedOnly: true, ...over,
+});
+
+/**
+ * ⚠ The ownership baseline must VARY, and for the same reason the flow fixture
+ * had to: `(i * 3) % 7` repeats exactly every week, so all four baseline weeks
+ * had identical means, the standard deviation was zero, and `zScore` correctly
+ * returned null — which silently dropped the family and made the composite look
+ * quiet when it should have fired. 5 and 11 are coprime, so the pattern does not
+ * align to the week.
+ */
+const UNASSIGNED_BASE = i => 10 + ((i * 5) % 11);
+
+function shadowSeries(extra = {}) {
+  return steadyFlow({
+    nt_legacy_unassigned: series('nt_legacy_unassigned', UNASSIGNED_BASE),
+    ...extra,
+  });
+}
+
+test('S1 blocks rather than guesses when too few evidence families can be computed', () => {
+  // No unassigned series and no capacity: only flow and rejection remain.
+  const r = leading.detectShadowComposite({ series: steadyFlow(), capacity: null, asOf: ASOF });
+  assert.ok(r.blocked);
+  assert.match(r.blocked.reason, /of 4 evidence families/);
+  assert.equal(r.blocked.shadow, true);
+});
+
+test('S1 fires when two INDEPENDENT families are elevated together', () => {
+  const s = shadowSeries({
+    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
+  });
+  const r = leading.detectShadowComposite({ series: s, capacity: capacityFor([]), asOf: ASOF });
+  assert.ok(r.indicator, 'flow and ownership rising together must register');
+  assert.equal(r.indicator.shadow, true);
+  assert.equal(r.indicator.detector, 'S1');
+});
+
+test('S1 never corroborates flow with a stock, because stock is the integral of flow', () => {
+  // The defect that killed the discovery-era composite: it counted net flow and
+  // three stocks as four agreeing signals when they are one fact. If a stock
+  // ever appears in the evidence families, this fails.
+  const s = shadowSeries({
+    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
+  });
+  const r = leading.detectShadowComposite({ series: s, capacity: capacityFor([]), asOf: ASOF });
+  const families = r.indicator.evidence.map(e => e.label);
+  for (const forbidden of ['inc', 'prod', 'dev', 'incidents', 'production', 'development']) {
+    assert.ok(!families.includes(forbidden), `stock "${forbidden}" must never be an evidence family`);
+  }
+  assert.deepEqual([...families].sort(), ['capacity', 'flow', 'ownership', 'rejection']);
+});
+
+test('detect() keeps shadow output out of indicators entirely', () => {
+  const s = shadowSeries({
+    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
+  });
+  const r = leading.detect({ series: s, capacity: capacityFor([]), asOf: ASOF });
+  assert.ok(r.shadow.length >= 1, 'the shadow ran');
+  assert.ok(r.indicators.every(i => i.shadow !== true), 'and none of it reached the indicator list');
+});
+
+test('toRadarItems refuses a shadow even if one is handed to it directly', () => {
+  // Independent of detect()'s filtering. Shadow mode is a promise about what
+  // reaches the screen, so the screen has to be incapable of rendering one on
+  // its own account.
+  const card = { key: 'x', detector: 'S1', shadow: true, severity: 'high', title: 'should never render',
+    change: 'x', whyItMatters: 'x', evidence: [], horizonDays: 1,
+    confidence: { level: 'high', score: 1, basis: [] }, confirm: 'x', disprove: 'x', action: 'x', tense: 'could' };
+  assert.deepEqual(leading.toRadarItems({ available: true, indicators: [card] }), []);
+});
