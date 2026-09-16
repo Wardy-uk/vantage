@@ -84,6 +84,11 @@ const DETECTOR_KEYS = [
   'nt_oldest_incident', 'nt_oldest_production', 'nt_oldest_development',
   'nt_escalated', 'nt_rejected',
   'nt_development', 'nt_incidents', 'nt_production', 'nt_tpj_dev_t3',
+  // The shadow composite's OWNERSHIP family. Added after S1 shipped blocked on
+  // "only 2 of 4 evidence families could be computed" — which read as a data
+  // problem and was a wiring one, exactly as the note above predicted. Pinned
+  // by a test now, so the next detector cannot repeat it.
+  'nt_legacy_unassigned',
 ];
 
 function isConfigured() {

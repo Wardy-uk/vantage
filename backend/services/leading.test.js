@@ -482,3 +482,19 @@ test('toRadarItems refuses a shadow even if one is handed to it directly', () =>
     confidence: { level: 'high', score: 1, basis: [] }, confirm: 'x', disprove: 'x', action: 'x', tense: 'could' };
   assert.deepEqual(leading.toRadarItems({ available: true, indicators: [card] }), []);
 });
+
+test('every KPI a detector reads is one the reader actually asks NOVA for', () => {
+  // S1 shipped blocked on "only 2 of 4 evidence families could be computed",
+  // which reads as missing data and was a missing REQUEST: nt_legacy_unassigned
+  // was never in DETECTOR_KEYS, so the ownership family got undefined and the
+  // detector correctly refused to guess. Safe, but silently wrong for a week if
+  // nobody looked. This is the check that was a one-off command and should have
+  // been a test.
+  const fs = require('node:fs');
+  const src = fs.readFileSync(require.resolve('./leading.js'), 'utf8');
+  const used = [...new Set([...src.matchAll(/series\.(nt_[a-z0-9_]+)/g)].map(m => m[1]))];
+  const asked = new Set(require('./kpi-series').DETECTOR_KEYS);
+  const missing = used.filter(k => !asked.has(k));
+  assert.deepEqual(missing, [], `these are read but never requested: ${missing.join(', ')}`);
+  assert.ok(used.length >= 9, 'positive control: the scan actually found the reads');
+});
