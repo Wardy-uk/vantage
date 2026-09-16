@@ -204,9 +204,7 @@ export default function Radar() {
         <div className="small" style={{ color: 'var(--muted)', margin: '0 0 10px' }}>
           <strong>Not watched:</strong>{' '}
           {data.notWatched.map(d => d.name).join(', ')}.{' '}
-          <span title={data.notWatched.map(d => `${d.name}: ${d.reason}`).join('
-
-')}
+          <span title={data.notWatched.map(d => `${d.name}: ${d.reason}`).join('\n\n')}
             style={{ borderBottom: '1px dotted var(--line)', cursor: 'help' }}>
             why
           </span>
