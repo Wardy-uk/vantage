@@ -244,6 +244,31 @@ export default function Radar() {
         </div>
       )}
 
+      {/* Indicators whose evidence went back to normal.
+          NOT collapsed, and deliberately above the fold of the closed sections.
+          Every other part of this screen is an outstanding column, and this tool
+          is built for someone who systematically under-registers completion —
+          a warning that quietly evaporates when the number recovers teaches him
+          nothing at all. The wording is careful: the EVIDENCE normalised. What
+          anybody did about it is not something this can see, and saying
+          otherwise would be the same inference-from-silence the rest of this
+          codebase keeps having to unlearn. */}
+      {data?.normalised?.length > 0 && (
+        <div className="card">
+          <h2>Went back to normal ({data.normalised.length})</h2>
+          {data.normalised.map(n => (
+            <div key={n.key} style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
+              <div className="row" style={{ gap: 8 }}>
+                <strong style={{ fontSize: 14, flex: 1 }}>{n.title}</strong>
+                <span className="small muted">{n.firstSeenOn} → {n.closedOn}</span>
+                <span className="pill">{n.detector}</span>
+              </div>
+              <div className="small" style={{ color: 'var(--good)', marginTop: 3 }}>{n.note}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {data?.registerRead === false && (
         <div className="banner warn">
           The findings register could not be read — {data.registerError}. Nothing logged is shown

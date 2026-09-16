@@ -139,6 +139,61 @@ were combined, and "you have been sitting for two hours" is neither.
 NOTHING. A client function with no caller looks like coverage and is not — the
 same species as a reader outliving its writer. Wire them up or delete them.
 
+### Leading indicators — the `could` tense's first real source
+
+`leading.js` takes DERIVATIVES of `kpi_org_daily`, read over the new
+`/api/neuro-bridge/kpi-org-series` (daily rows; `kpi-org-trend` averages away
+the granularity early warning needs). Deterministic, department-only, **no LLM
+in the detector path** — a warning Nick cannot reproduce by hand from the
+evidence line is one he cannot take to Chris. Nothing here reads health,
+readiness, desktop or location; that stayed true after Nick was asked, because
+those inputs improve none of the five detectors and would let a card about the
+DESK explain itself with facts about HIM.
+
+`detect()` is PURE, and that is load-bearing: `tools/replay-indicators.js`
+replays it over history, so a back-tested detector and a live one cannot be
+different code. `indicator-log.js` splits the same way — `plan()`/`present()`
+are pure so the dedupe and the decay test without `better-sqlite3`, which is
+how they came to be tested at all.
+
+**A HOLE IS NOT A ZERO, and here it BLOCKS rather than caveats.** A day NOVA was
+down is simply absent from `kpi_org_daily`; read as zero it looks like the desk
+received nothing, so a net-flow detector sees an outage as a triumph and the
+baseline is poisoned for a month. Any gap in the 35-day window stops the claim.
+
+**What the 285-day replay actually found** (scored against NOVA's own RAG bands,
+so it cannot mark its own homework; a fire ON the day the wallboard turns red
+scores lead ZERO and counts as description, not warning):
+
+| | | |
+|---|---|---|
+| **A** net flow | ON | 9 warnings, 0 coincident, 3 FPs, **median lead 11 days** |
+| **D** dev drift | OFF | measured and FAILED — 2 fires, both false, missed both crossings |
+| **B** ageing | OFF | UNMEASURABLE: `nt_oldest_*` is RAG red on all 320 days, no transition to score |
+| **C** escalation | OFF | UNMEASURABLE: `nt_rejected` is RAG green on all 320 days |
+| **E** capacity | ON | unreplayable (availability has no history) but makes no statistical claim |
+
+"Measured and failed" and "could not be measured" are kept apart in
+`DISABLED_REASON` and never collapsed into the word "disabled" — the fixes are
+different, and B needs a target its KPI can cross, not a threshold change.
+**Thresholds were fixed before the first replay and are not to be moved to
+improve a score.** Pinned by `leading.test.js`, which carries a positive control
+beside every refusal, and by the replay's own injected-surge control.
+
+Two series are excluded BY NAME in `kpi-series.js`: the `no_reply` KPIs (history
+is `backfill-legacy`, from the table NOVA calls inflated 2-3x, and it holds a
+130 between a 0 and a 2) and `nt_csat` (30 days of value in 120, with an 11-day
+hole). Every long series also changes capture method around 30 Jul 2026
+(`reconstruct` → live `jira`); `sourceBreaks` carries it and confidence drops
+when one falls inside the measured window.
+
+**Empty writers found while validating, and they matter as precedent:**
+`ticket_trend_snapshots` and `agent_incidents` both have writers in NOVA and
+ZERO rows. `agent_incidents` was to have been the independent outcome label for
+the back-test. A reader that outlives its writer looks exactly like coverage —
+`scripts/validate-kpi-org-series.ts` is the gate that asks, and it should be run
+on AAPP01 before anything new is built on a NOVA table.
+
 ### The finding lifecycle
 
 Radar → `+ log` → Findings → `log to NEURO` → resolve. Every step is Nick

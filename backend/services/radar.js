@@ -35,6 +35,7 @@ const sentiment = require('./sentiment');
 const oneToOnes = require('./one-to-ones');
 const people = require('./people');
 const conversations = require('./conversations');
+const leading = require('./leading');
 const cache = require('./cache');
 const findings = require('./findings');
 
@@ -402,6 +403,10 @@ async function compute({ force = false } = {}) {
   const perPerson = await people.current({ force });
   // Competency 3: was the conversation written up, within two working days.
   const convos = await conversations.current({ force });
+  // Leading indicators — the `could` tense's first real source. Deterministic,
+  // department-only, and never fatal: it returns an unavailable state with a
+  // reason rather than throwing, same contract as everything else here.
+  const early = await leading.current({ force });
 
   const neuroReady = neuro.isConfigured();
   // Two sources dropped with the cards that used them: nothing reads them any
@@ -427,6 +432,7 @@ async function compute({ force = false } = {}) {
     ...oneToOnes.toRadarItems(coverage),
     ...people.toRadarItems(perPerson),
     ...conversations.toRadarItems(convos),
+    ...leading.toRadarItems(early),
     ...fromNeuro({ health, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
@@ -441,6 +447,11 @@ async function compute({ force = false } = {}) {
     { name: '1to1-coverage', ok: Boolean(coverage?.available), error: coverage?.available ? null : coverage?.reason },
     { name: 'people-signals', ok: Boolean(perPerson?.available), error: perPerson?.available ? null : perPerson?.reason },
     { name: 'conversations', ok: Boolean(convos?.available), error: convos?.available ? null : convos?.reason },
+    { name: 'leading-indicators', ok: Boolean(early?.available), error: early?.available ? null : early?.reason },
+    // Each blocked detector is its own blind entry. One line saying "leading
+    // indicators: ok" while three of the five could not run would be exactly
+    // the false all-clear this file exists to prevent.
+    ...(early?.blocked || []).map(b => ({ name: `detector ${b.id} (${b.name})`, ok: false, error: b.reason })),
     health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
@@ -457,6 +468,13 @@ async function compute({ force = false } = {}) {
       could: items.filter(i => i.tense === 'could').length,
     },
     meetingsRead: (meetings.data || []).map(m => m.title),
+    // What went back to normal. Carried out of the detector layer and rendered
+    // separately, because a tool that only ever shows the outstanding column is
+    // lying by omission to someone who under-registers completion.
+    normalised: early?.available ? early.normalised : [],
+    leading: early?.available
+      ? { asOf: early.asOf, suppressed: early.suppressed, quiet: early.quiet, excluded: early.excluded, capacity: early.capacity }
+      : { available: false, reason: early?.reason || null },
     sentiment: mood?.available ? mood.raw : null,
   };
 

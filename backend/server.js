@@ -161,6 +161,13 @@ app.post('/api/settings/test/:what', wrap(async req => {
 app.get('/api/signals', wrap(req => signals.current({ force: req.query.refresh === '1' })));
 app.get('/api/radar', wrap(req => radar.build({ force: req.query.refresh === '1' })));
 
+// Leading indicators on their own, with the full evidence and confidence
+// working attached. The radar renders a summary of these; this is what the
+// summary was made from, for when a card needs to be checked rather than read.
+app.get('/api/leading', wrap(req => require('./services/leading').current({ force: req.query.refresh === '1' })));
+// The lifecycle register — every indicator, open and normalised, with its run.
+app.get('/api/leading/log', wrap(() => ({ indicators: require('./services/indicator-log').list() })));
+
 // ── Findings register ────────────────────────────────────────────────────────
 
 app.get('/api/findings', wrap(req => findings.list({ status: req.query.status, since: req.query.since })));
