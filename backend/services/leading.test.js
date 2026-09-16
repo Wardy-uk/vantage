@@ -498,3 +498,25 @@ test('every KPI a detector reads is one the reader actually asks NOVA for', () =
   assert.deepEqual(missing, [], `these are read but never requested: ${missing.join(', ')}`);
   assert.ok(used.length >= 9, 'positive control: the scan actually found the reads');
 });
+
+test('a radar card exposes what the verdict buttons need, or nothing at all', () => {
+  // The buttons render only when `logId` is present, so a card with no ledger
+  // row must not offer a control that would post nowhere.
+  const withRow = leading.toRadarItems({
+    available: true,
+    indicators: [{ key: 'k', detector: 'A', severity: 'medium', title: 't', change: 'c',
+      whyItMatters: 'w', evidence: [], horizonDays: 5, confidence: { level: 'high', score: 1, basis: [] },
+      confirm: 'x', disprove: 'y', action: 'z', tense: 'could', recordId: 42, outcome: 'useful', outcomeSource: 'human' }],
+  })[0];
+  assert.equal(withRow.logId, 42);
+  assert.equal(withRow.verdict, 'useful');
+  assert.equal(withRow.verdictSource, 'human');
+
+  const withoutRow = leading.toRadarItems({
+    available: true,
+    indicators: [{ key: 'k', detector: 'A', severity: 'medium', title: 't', change: 'c',
+      whyItMatters: 'w', evidence: [], horizonDays: 5, confidence: { level: 'high', score: 1, basis: [] },
+      confirm: 'x', disprove: 'y', action: 'z', tense: 'could' }],
+  })[0];
+  assert.equal(withoutRow.logId, null, 'no row, no button');
+});

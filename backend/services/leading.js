@@ -1198,6 +1198,13 @@ function toRadarItems(state) {
     // re-deriving it.
     leadingKey: i.key,
     detector: i.detector,
+    // What the verdict buttons post against, and what they show instead once a
+    // verdict exists. A card nobody can judge is a data point lost for good —
+    // the ledger only ever sees warnings somebody looked at.
+    logId: i.recordId ?? null,
+    verdict: i.outcome ?? null,
+    verdictSource: i.outcomeSource ?? null,
+    actionTaken: i.actionTaken ?? null,
     // Travels onto the card and, through `+ log`, onto the finding. This is
     // what stops an unvalidated advisory being written into NEURO unattended.
     validation: i.validation,

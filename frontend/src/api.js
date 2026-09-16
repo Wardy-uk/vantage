@@ -58,6 +58,13 @@ export const api = {
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
   radar: (refresh = false) => call(`/radar${refresh ? '?refresh=1' : ''}`),
 
+  // Leading indicators. `leadingVerdict` is the one control that makes the
+  // prospective ledger work: without it a warning is never judged, and the
+  // automatic label records a prevented problem as a false alarm.
+  leading: (refresh = false) => call(`/leading${refresh ? '?refresh=1' : ''}`),
+  leadingScoreboard: () => call('/leading/scoreboard'),
+  leadingVerdict: (id, body) => call(`/leading/log/${id}/verdict`, { method: 'POST', body }),
+
   plan: () => call('/plan'),
   setPlanStatus: (id, patch) => call(`/plan/${id}`, { method: 'PUT', body: patch }),
   planTasks: (rematch = false) => call(`/plan/tasks${rematch ? '?rematch=1' : ''}`),

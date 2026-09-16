@@ -222,6 +222,15 @@ function present(records, fired, day) {
     const runDays = daysBetween(rec.firstSeenOn, day) + 1;
     return {
       ...ind,
+      // The ledger row this card IS, so a verdict can be posted against it.
+      // Without this the card and its record are only connected by a key, and
+      // a human verdict would have to be matched by string — which would break
+      // the moment a title was reworded.
+      recordId: rec.id,
+      outcome: rec.outcome ?? null,
+      outcomeSource: rec.outcomeSource ?? null,
+      actionTaken: rec.actionTaken ?? null,
+      settledBy: rec.settledBy ?? 'rise-episode',
       firstSeenOn: rec.firstSeenOn,
       sightings: rec.sightings,
       runDays,

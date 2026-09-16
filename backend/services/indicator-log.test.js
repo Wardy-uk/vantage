@@ -244,3 +244,26 @@ test('a rota claim is never auto-settled by a backlog episode', () => {
   assert.deepEqual(log.observeOutcomes([r], [ep('2026-09-10')], '2026-09-30'), []);
   assert.deepEqual(log.observeOutcomes([{ ...r, status: 'normalised' }], [], '2026-10-30'), []);
 });
+
+test('a live card carries the ledger row it can be judged against', () => {
+  // Without recordId the card and its record are joined only by a title
+  // string, and the verdict button would post against the wrong row the first
+  // time a title was reworded.
+  const s = makeStore();
+  const out = s.apply([card('net-flow')], '2026-09-01');
+  assert.equal(out.active[0].recordId, 1);
+  assert.equal(out.active[0].outcome, null, 'unjudged, and saying so');
+});
+
+test('a card that has already been judged says so instead of asking again', () => {
+  const s = makeStore();
+  s.apply([card('net-flow')], '2026-09-01');
+  const rows = s.all();
+  rows[0].outcome = 'useful';
+  rows[0].outcomeSource = 'human';
+  rows[0].actionTaken = 'acted on it';
+  const out = log.present(rows, [card('net-flow')], '2026-09-02');
+  assert.equal(out.active[0].outcome, 'useful');
+  assert.equal(out.active[0].outcomeSource, 'human');
+  assert.equal(out.active[0].actionTaken, 'acted on it');
+});

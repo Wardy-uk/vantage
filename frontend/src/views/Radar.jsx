@@ -55,6 +55,27 @@ function Item({ it }) {
   const [open, setOpen] = useState(false);
   const [logged, setLogged] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [verdict, setVerdict] = useState(it.verdict || null);
+  const [judging, setJudging] = useState(false);
+
+  /**
+   * Judge this warning.
+   *
+   * The only control in VANTAGE that produces INDEPENDENT evidence about
+   * whether a detector is any good. Everything else scores a KPI against
+   * another KPI; this is a person saying what actually happened. It matters
+   * most for the case the automatic label gets backwards — Nick reads a
+   * warning, acts on it, the problem never arrives, and the ledger records a
+   * false positive for the warning that worked.
+   */
+  const judge = async (v, actionTaken) => {
+    setJudging(true);
+    try {
+      await api.leadingVerdict(it.logId, { verdict: v, actionTaken });
+      setVerdict(v);
+    } catch { /* the buttons stay; the radar is not the place to shout */ }
+    finally { setJudging(false); }
+  };
 
   const log = async () => {
     setBusy(true);
@@ -116,6 +137,50 @@ function Item({ it }) {
             }}>
               <strong style={{ color: 'var(--muted)' }}>Suggested: </strong>
               {it.remedy}
+            </div>
+          )}
+
+          {/* Judging a live warning. Only on Leading cards, and only when the
+              ledger actually has a row to attach the verdict to.
+
+              Deliberately NOT a modal and not required: a warning nobody
+              judges stays pending for ever, which is honest. Forcing a verdict
+              would get one clicked to clear the prompt, and a coerced label is
+              worse than none — it looks exactly like evidence. */}
+          {it.source === 'Leading' && it.logId && (
+            <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--line)' }}>
+              {verdict
+                ? (
+                  <span className="small" style={{ color: 'var(--muted)' }}>
+                    Judged <strong>{verdict === 'false' ? 'a false alarm' : verdict}</strong>
+                    {it.verdictSource === 'auto' && ' automatically, from what the queues did next'}.
+                    {it.actionTaken && <> You noted: {it.actionTaken}</>}
+                  </span>
+                )
+                : (
+                  <>
+                    <div className="small" style={{ color: 'var(--muted)', marginBottom: 6 }}>
+                      Was this worth telling you? It is the only way this detector gets judged on
+                      real evidence rather than on history.
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <button className="ghost small" disabled={judging}
+                        onClick={() => judge('useful', null)}
+                        title="It told me something I could act on">useful</button>
+                      <button className="ghost small" disabled={judging}
+                        onClick={() => judge('useful', 'acted on it')}
+                        title="I acted on it — so the problem it predicted may never arrive, and the automatic label would call that a false positive">
+                        useful — I acted
+                      </button>
+                      <button className="ghost small" disabled={judging}
+                        onClick={() => judge('false', null)}
+                        title="Nothing was wrong">false alarm</button>
+                      <button className="ghost small" disabled={judging}
+                        onClick={() => judge('inconclusive', null)}
+                        title="Cannot tell either way">can't tell</button>
+                    </div>
+                  </>
+                )}
             </div>
           )}
 

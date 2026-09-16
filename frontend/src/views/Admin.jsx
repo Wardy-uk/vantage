@@ -74,6 +74,103 @@ function ChangePin() {
  *    screens later, inside a coaching reply, is worse than no form.
  */
 
+
+/**
+ * How each detector is doing on LIVE evidence.
+ *
+ * The point of this block is the PENDING column. A precision figure computed
+ * over two settled warnings is not a precision figure, and the only thing that
+ * stops it being read as one is showing how few there are. Early on this table
+ * will be almost entirely pending, and that is the honest picture — a detector
+ * earns promotion slowly or not at all.
+ *
+ * Shadow detectors appear here and NOWHERE else. They produce no card by
+ * design, so this is the only place their record is visible while they are
+ * accumulating one.
+ */
+function Scoreboard() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.leadingScoreboard()
+      .then(d => setRows(d.scoreboard || []))
+      .catch(e => setError(e.message));
+  }, []);
+
+  return (
+    <div className="card">
+      <h2>Detector scoreboard</h2>
+      <div className="small" style={{ color: 'var(--muted)', marginBottom: 10 }}>
+        Live performance, from warnings that have actually been judged — by you, or
+        automatically once a queue either did or did not deteriorate. This is
+        separate from the historical replay, and it is the evidence that decides
+        whether a shadow detector is ever promoted.
+      </div>
+
+      {error && <div className="banner bad">{error}</div>}
+
+      {rows === null && !error && <div className="small muted">Loading…</div>}
+
+      {rows && rows.length === 0 && (
+        <div className="small" style={{ color: 'var(--muted)' }}>
+          Nothing has fired yet, so there is nothing to judge. That is a starting
+          state, not a verdict — an empty ledger says only that the desk has been
+          quiet since this began recording.
+        </div>
+      )}
+
+      {rows && rows.length > 0 && (
+        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr className="small" style={{ color: 'var(--muted)', textAlign: 'left' }}>
+              <th style={{ padding: '4px 6px 4px 0' }}>detector</th>
+              <th style={{ padding: '4px 6px' }}>runs</th>
+              <th style={{ padding: '4px 6px' }}>useful</th>
+              <th style={{ padding: '4px 6px' }}>false</th>
+              <th style={{ padding: '4px 6px' }}>unclear</th>
+              <th style={{ padding: '4px 6px' }}>pending</th>
+              <th style={{ padding: '4px 6px' }}>median lead</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.detector} style={{ borderTop: '1px solid var(--line)' }}>
+                <td style={{ padding: '6px 6px 6px 0' }}>
+                  <strong>{r.detector}</strong>
+                  {r.shadow && (
+                    <span className="pill" style={{ marginLeft: 6 }} title="Runs and is recorded, but never produces a card. It has to earn promotion on this table.">
+                      shadow
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: '6px' }}>{r.runs}</td>
+                <td style={{ padding: '6px', color: r.useful ? 'var(--good)' : 'inherit' }}>{r.useful}</td>
+                <td style={{ padding: '6px', color: r.falsePositive ? 'var(--warn)' : 'inherit' }}>{r.falsePositive}</td>
+                <td style={{ padding: '6px' }}>{r.inconclusive}</td>
+                <td style={{ padding: '6px', color: 'var(--muted)' }}>{r.pending}</td>
+                <td style={{ padding: '6px' }}>
+                  {r.medianLeadDays === null
+                    ? <span className="muted">—</span>
+                    : `${r.medianLeadDays}d`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {rows && rows.some(r => r.settled < 5) && rows.length > 0 && (
+        <div className="small" style={{ color: 'var(--muted)', marginTop: 10 }}>
+          ⚠ Fewer than five settled warnings for at least one detector. Read the
+          columns, not a ratio — there is not yet enough here to call anything a
+          hit rate.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const [fields, setFields] = useState([]);
   const [edits, setEdits] = useState({});
@@ -188,6 +285,8 @@ export default function Admin() {
           </div>
         ))}
       </div>
+
+      <Scoreboard />
 
       <ChangePin />
     </div>
