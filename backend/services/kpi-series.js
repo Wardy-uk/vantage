@@ -65,6 +65,27 @@ const EXCLUDED = {
   nt_csat: 'measured 16 Sep 2026: 30 days of value in 120, with an 11-day hole. The sample cannot support a trend',
 };
 
+/**
+ * The KPIs the detectors actually read, asked for BY NAME.
+ *
+ * Not an optimisation for its own sake. Asking for everything returns 132
+ * series — around 900KB at 120 days — on a path the radar calls, and it makes
+ * a missing KPI silent: an unrequested key that has no data is simply not in
+ * the response, which is indistinguishable from one that was never wanted.
+ * `kpi-org-series` answers a NAMED key with an empty series and a coverage
+ * block saying why, which is the difference between "no data" and "not asked".
+ *
+ * Keep in step with the detectors in `leading.js`. A detector reading a key
+ * absent from this list gets `undefined` and blocks itself, which is safe but
+ * looks like a data problem rather than a wiring one.
+ */
+const DETECTOR_KEYS = [
+  'nt_new_tickets', 'nt_solved_team', 'nt_solved_nova',
+  'nt_oldest_incident', 'nt_oldest_production', 'nt_oldest_development',
+  'nt_escalated', 'nt_rejected',
+  'nt_development', 'nt_incidents', 'nt_production', 'nt_tpj_dev_t3',
+];
+
 function isConfigured() {
   return Boolean(process.env.NOVA_BRIDGE_URL && process.env.NOVA_BRIDGE_SECRET);
 }
@@ -113,14 +134,15 @@ function sourceBreaks(points) {
  */
 let cache = { at: 0, data: null };
 
-async function current({ force = false, days = DEFAULT_DAYS } = {}) {
+async function current({ force = false, days = DEFAULT_DAYS, keys = DETECTOR_KEYS } = {}) {
   if (!isConfigured()) {
     return { available: false, reason: 'NOVA bridge not configured (NOVA_BRIDGE_URL / NOVA_BRIDGE_SECRET)' };
   }
   if (!force && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   try {
-    const raw = await bridge(`kpi-org-series?days=${days}`);
+    const raw = await bridge(`kpi-org-series?days=${days}`
+      + (keys?.length ? `&keys=${encodeURIComponent(keys.join(','))}` : ''));
 
     // Same refusal as `signals.js`. A build we do not recognise may have
     // renamed or dropped a coverage field, and a coverage field read as
@@ -218,5 +240,5 @@ async function capacity({ force = false, days = 14 } = {}) {
 
 module.exports = {
   current, capacity, isConfigured, sourceBreaks,
-  BUILD_EXPECTED, EXCLUDED, DEFAULT_DAYS,
+  BUILD_EXPECTED, EXCLUDED, DEFAULT_DAYS, DETECTOR_KEYS,
 };
