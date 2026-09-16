@@ -73,6 +73,27 @@ function alreadySent(f) {
 }
 
 /**
+ * A finding that came from a detector nobody has been able to back-test.
+ *
+ * Nick's condition on shipping detector E (16 Sep 2026): it may appear on the
+ * radar and run through the normal strengthen/decay lifecycle, but it must not
+ * cross into ACTION without a human saying so. This is the line where crossing
+ * happens — the only place in VANTAGE that writes to NEURO with nobody watching.
+ *
+ * ⚠ **Belt and braces, on purpose.** Every leading indicator carries
+ * `tense: 'could'`, and `criticality` already refuses to route ANY `could`
+ * direct however severe it looks — so on today's rules an advisory finding
+ * cannot reach NEURO unattended anyway. That is an emergent property of a
+ * threshold table, not a guarantee, and it would disappear silently the day
+ * somebody decides a high-severity `could` deserves to go straight through.
+ * A constraint Nick asked for in words should not rest on a number somebody
+ * else is free to change. So it is stated here, independently, and tested.
+ */
+function isAdvisory(f) {
+  return f?.advisory === true || f?.validation_status === 'unvalidated-advisory';
+}
+
+/**
  * Which findings this pass would push, in order.
  *
  * Pure, so what the timer will do is answerable without a timer, a clock or a
@@ -82,6 +103,8 @@ function selectFor(findings = []) {
   return findings
     .filter((f) => f && LIVE_STATUSES.has(f.status))
     .filter((f) => !alreadySent(f))
+    // Never unattended, whatever its severity or tense. See `isAdvisory`.
+    .filter((f) => !isAdvisory(f))
     // ⚠ Through the published predicate, not by calling `assess` again.
     // `criticality.assess` is meant to have exactly ONE caller — the write
     // funnel in `neuro.js` — so that a grep for it finds the whole of the
@@ -164,6 +187,7 @@ module.exports = {
   run,
   selectFor,
   alreadySent,
+  isAdvisory,
   ENABLED,
   MAX_PER_PASS,
   LIVE_STATUSES,

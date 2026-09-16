@@ -176,6 +176,21 @@ scores lead ZERO and counts as description, not warning):
 "Measured and failed" and "could not be measured" are kept apart in
 `DISABLED_REASON` and never collapsed into the word "disabled" — the fixes are
 different, and B needs a target its KPI can cross, not a threshold change.
+
+**E is ON as an UNVALIDATED ADVISORY, and that status is load-bearing.** Every
+indicator carries `validation`; the default is `unvalidated-advisory`, so a new
+detector that declares nothing is treated as untested rather than inheriting A's
+credibility. E's status is rendered as EVIDENCE next to its numbers, not buried
+in metadata. It may reach the radar and the findings register, but the flag
+travels onto the finding (`advisory`) and `auto-push.isAdvisory()` refuses to
+write it to NEURO unattended — **stated independently of the fact that
+`criticality` already refuses every `could`**, because a constraint Nick asked
+for in words must not rest on a threshold somebody else is free to change.
+E writes a dated, never-updated claim to `indicator-log.prospectiveClaims()`
+(`/api/leading/claims`) so it can be scored FORWARD. There is deliberately no
+scorer yet: choosing the measure before seeing an outcome is how a scorer comes
+to flatter the thing it scores, and `prospective.scoreAgainst` fixes that choice
+at the moment the claim is made.
 **Thresholds were fixed before the first replay and are not to be moved to
 improve a score.** Pinned by `leading.test.js`, which carries a positive control
 beside every refusal, and by the replay's own injected-surge control.

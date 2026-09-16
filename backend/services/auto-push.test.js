@@ -92,3 +92,45 @@ test('nothing here re-words, resolves or re-severities a finding', () => {
   assert.strictEqual(updates.length, 1);
   assert.match(src, /neuro_auto_pushed_on/);
 });
+
+// ── The advisory guard ───────────────────────────────────────────────────────
+//
+// Nick's condition on shipping detector E (16 Sep 2026): an unvalidated
+// advisory may reach the radar and the findings register, but it must not cross
+// into NEURO without a human. This is the crossing, so this is where it is
+// pinned.
+
+const HAPPENED_HIGH = { status: 'open', severity: 'high', tense: 'happened', source: 'NOVA', found_on: '2026-09-01' };
+
+test('an advisory finding is never pushed unattended, however severe', () => {
+  const advisory = { ...HAPPENED_HIGH, id: 1, title: 'Capacity collision', advisory: true };
+  assert.deepEqual(selectFor([advisory]), []);
+});
+
+test('the same finding WITHOUT the flag is pushed — the guard is doing the work', () => {
+  // Positive control. Without this, a `selectFor` that had stopped returning
+  // anything at all would pass the test above and look like a working guard.
+  const normal = { ...HAPPENED_HIGH, id: 2, title: 'Capacity collision' };
+  assert.equal(selectFor([normal]).length, 1);
+});
+
+test('validation_status alone is enough — the flag does not have to be set twice', () => {
+  const byStatus = { ...HAPPENED_HIGH, id: 3, title: 'x', validation_status: 'unvalidated-advisory' };
+  assert.deepEqual(selectFor([byStatus]), []);
+});
+
+test('the guard does not depend on the tense rule that currently also blocks it', () => {
+  // Every leading indicator is tense `could`, and `criticality` already refuses
+  // to route any `could` direct — so today an advisory cannot reach NEURO by
+  // either path. That is an emergent property of a threshold table, not a
+  // guarantee: it would vanish silently the day somebody decides a high `could`
+  // should go straight through. This asserts the advisory filter holds on a
+  // finding the tense rule WOULD let past.
+  const wouldOtherwisePass = { ...HAPPENED_HIGH, id: 4, title: 'x', advisory: true };
+  assert.ok(require('./criticality').isDirect({
+    severity: wouldOtherwisePass.severity,
+    tense: wouldOtherwisePass.tense,
+    source: wouldOtherwisePass.source,
+  }), 'fixture check: criticality would route this direct');
+  assert.deepEqual(selectFor([wouldOtherwisePass]), [], 'and the advisory filter still stops it');
+});

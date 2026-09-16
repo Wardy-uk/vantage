@@ -339,3 +339,64 @@ test('the card carries every field the brief asks for', () => {
   }
   assert.ok(Array.isArray(card.evidence) && card.evidence.length, 'evidence must be checkable, not a sentence');
 });
+
+// ── The advisory constraint ──────────────────────────────────────────────────
+//
+// Nick's condition on shipping E (16 Sep 2026): it may appear on the radar and
+// run the normal lifecycle, but it must not cross into ACTION without a human.
+// These pin both halves — that it says so, and that it cannot.
+
+test('E declares itself an unvalidated advisory, on the card and in metadata', () => {
+  const absences = Array.from({ length: 4 }, (_, n) => ({ date: '2026-09-16', name: `P${n}`, status: 'annual_leave' }));
+  const r = leading.detectCapacityCollision({ series: steadyFlow(), capacity: capacity(absences), asOf: ASOF });
+
+  assert.equal(r.indicator.validation.status, 'unvalidated-advisory');
+  assert.equal(r.indicator.validation.autoActionable, false, 'the machine-readable half is what auto-push reads');
+  assert.match(r.indicator.validation.detail, /has NOT been validated|not a predictor/);
+  // And visibly, next to the numbers it qualifies — not only in metadata a
+  // reader never sees.
+  assert.ok(r.indicator.evidence.some(e => /ADVISORY/.test(String(e.value))),
+    'the status is evidence, because it is a fact about what the card is worth');
+});
+
+test('A does NOT claim to be advisory — the distinction has to cut both ways', () => {
+  // Positive control for the test above. If everything were advisory the flag
+  // would carry no information and the auto-push filter would be a no-op.
+  const s = steadyFlow({ nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)) });
+  const r = leading.detectNetFlow({ series: s, asOf: ASOF });
+  assert.equal(r.indicator.validation.status, 'validated');
+  assert.equal(r.indicator.validation.autoActionable, true);
+});
+
+test('an indicator that declares nothing is treated as untested, not as trusted', () => {
+  // The default falls the safe way. A future detector whose author forgets to
+  // declare itself must not inherit A's credibility by silence.
+  const r = leading.detectAgeing({
+    series: steadyFlow({ nt_oldest_development: series('nt_oldest_development', i => (i < 7 ? 47 - i : 40)) }),
+    asOf: ASOF,
+  });
+  assert.equal(r.indicators[0].validation.status, 'unvalidated-advisory');
+});
+
+test('the advisory flag reaches the radar card, which is what carries it to the finding', () => {
+  const absences = Array.from({ length: 4 }, (_, n) => ({ date: '2026-09-16', name: `P${n}`, status: 'annual_leave' }));
+  const state = {
+    available: true,
+    indicators: [leading.detectCapacityCollision({ series: steadyFlow(), capacity: capacity(absences), asOf: ASOF }).indicator],
+  };
+  const [card] = leading.toRadarItems(state);
+  assert.equal(card.advisory, true);
+  assert.equal(card.validation.status, 'unvalidated-advisory');
+  assert.match(card.detail, /ADVISORY/, 'a reader who never opens the metadata still sees it');
+  assert.match(card.detail, /Nothing acts on this until you decide/);
+});
+
+test('E records a dated, checkable claim so it can be scored prospectively', () => {
+  const absences = Array.from({ length: 4 }, (_, n) => ({ date: '2026-09-16', name: `P${n}`, status: 'annual_leave' }));
+  const r = leading.detectCapacityCollision({ series: steadyFlow(), capacity: capacity(absences), asOf: ASOF });
+  const p = r.indicator.prospective;
+  assert.equal(p.forDay, '2026-09-16', 'a claim about a day still in the future');
+  assert.equal(p.predictedOff, 4);
+  assert.ok(Array.isArray(p.scoreAgainst) && p.scoreAgainst.length,
+    'the measure is fixed when the claim is made, not chosen later with hindsight');
+});

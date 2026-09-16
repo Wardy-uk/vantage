@@ -167,6 +167,11 @@ app.get('/api/radar', wrap(req => radar.build({ force: req.query.refresh === '1'
 app.get('/api/leading', wrap(req => require('./services/leading').current({ force: req.query.refresh === '1' })));
 // The lifecycle register — every indicator, open and normalised, with its run.
 app.get('/api/leading/log', wrap(() => ({ indicators: require('./services/indicator-log').list() })));
+// Dated, unrevised claims from detectors that could not be back-tested — the
+// only route by which detector E will ever be validated. Accumulating, not yet
+// scored: choosing a measure before seeing an outcome is how a scorer comes to
+// flatter the thing it scores.
+app.get('/api/leading/claims', wrap(() => ({ claims: require('./services/indicator-log').prospectiveClaims() })));
 
 // ── Findings register ────────────────────────────────────────────────────────
 

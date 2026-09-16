@@ -110,6 +110,21 @@ function plan(records, fired, day) {
         lastConfidence: ind.confidence?.score ?? null,
         peakSeverity: ind.severity,
         closedOn: null,
+        // ── The prospective ledger ────────────────────────────────────────
+        //
+        // Detector E can never be back-tested: availability is stored
+        // forward-looking and overwritten, so there is no record of who was off
+        // on a past day. The only way it will ever be scored is FORWARD, by
+        // writing down the checkable claim on the day it is made and reading
+        // back what happened afterwards.
+        //
+        // Written at INSERT and never updated. A claim that can be revised
+        // after the outcome is known is not a claim, and the temptation to
+        // "correct" it later is exactly what would make a prospective score
+        // worthless.
+        validationStatus: ind.validation?.status ?? null,
+        prospective: ind.prospective ?? null,
+        claimedOn: ind.prospective ? day : null,
       });
     }
   }
@@ -220,6 +235,33 @@ function present(records, fired, day) {
 /** Every record, for the admin view and the tests. */
 const list = () => all().sort((a, b) => String(b.lastSeenOn).localeCompare(String(a.lastSeenOn)));
 
+/**
+ * Every claim an unvalidated detector has made, with the day it was made about.
+ *
+ * This is the whole prospective-validation apparatus: a list of dated,
+ * unrevised predictions waiting for enough of them to be worth scoring. There
+ * is deliberately no scorer yet — writing one now would mean choosing the
+ * measure before seeing a single outcome, which is how a scorer comes to
+ * flatter the thing it scores. `prospective.scoreAgainst` names the KPIs the
+ * claim was made against so that choice is already fixed when the time comes.
+ */
+const prospectiveClaims = () => all()
+  .filter(r => r.prospective)
+  .map(r => ({
+    key: r.key,
+    detector: r.detector,
+    validationStatus: r.validationStatus,
+    claimedOn: r.claimedOn,
+    firstSeenOn: r.firstSeenOn,
+    title: r.lastTitle,
+    ...r.prospective,
+    // Whether the day it was about has actually arrived yet. A claim about
+    // next Tuesday is not a miss, it is pending, and a scorer that cannot tell
+    // the difference would count every open claim as a failure.
+    due: r.prospective?.forDay ? r.prospective.forDay <= today() : null,
+  }))
+  .sort((a, b) => String(b.claimedOn).localeCompare(String(a.claimedOn)));
+
 /** Used by the replay so a run starts from nothing rather than from live state. */
 function reset() {
   return db.remove(COLLECTION, () => true);
@@ -230,6 +272,6 @@ module.exports = {
   // The pure half, exported so the dedupe and the decay are testable on a
   // machine that cannot build `better-sqlite3` — which is most of them, and so
   // is where these would otherwise have gone untested.
-  plan, present, worse,
+  plan, present, worse, prospectiveClaims,
   QUIET_DAYS_TO_CLOSE, SHOW_NORMALISED_DAYS,
 };

@@ -57,7 +57,7 @@ function list({ status, since, limit = 200 } = {}) {
     .slice(0, limit);
 }
 
-function add({ title, detail, source, severity = 'medium', foundOn, action, raisedWith, raisedOn, tense } = {}) {
+function add({ title, detail, source, severity = 'medium', foundOn, action, raisedWith, raisedOn, tense, advisory, validationStatus } = {}) {
   if (!title?.trim()) throw new Error('A finding needs a title.');
   if (!SEVERITIES.includes(severity)) throw new Error(`severity must be one of: ${SEVERITIES.join(', ')}`);
 
@@ -72,6 +72,18 @@ function add({ title, detail, source, severity = 'medium', foundOn, action, rais
     // "already gone wrong" and "could go wrong" demand different responses and
     // a wrong one is worse than an unplaced card.
     tense: TENSES.includes(tense) ? tense : null,
+    // Did this come from a detector nobody has been able to back-test?
+    //
+    // Stored on the finding rather than re-derived, because by the time
+    // `auto-push` reads it the card it came from is long gone — the radar is
+    // recomputed every ten minutes. A flag that has to be looked up again is a
+    // flag that will one day be looked up wrongly.
+    //
+    // Only ever set TRUE from the payload. A caller that says nothing gets a
+    // normal finding, which is right: the advisory route is the exception and
+    // has to be asserted, not assumed away.
+    advisory: advisory === true,
+    validation_status: validationStatus || null,
     // Defaults to today, but explicitly settable — a finding spotted on Tuesday
     // and logged on Thursday should say Tuesday.
     found_on: foundOn || today(),

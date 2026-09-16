@@ -240,8 +240,45 @@ function confidence(seriesList, asOf, extra = []) {
   };
 }
 
+/**
+ * How a detector's claim has actually been tested.
+ *
+ * Carried ON THE CARD, not held in a document nobody opens. A detector with
+ * eleven days of measured median lead and one that has never been scored
+ * against anything are both "an indicator on the radar" unless the card itself
+ * says which it is — and the second one, presented as the first, is precisely
+ * the manufactured certainty this feature was told not to produce.
+ */
+const VALIDATED = {
+  status: 'validated',
+  label: 'Historically validated',
+  detail: 'Replayed over 285 days against NOVA\'s own RAG bands: 9 warnings, 0 fired on the day the board turned red, 3 false positives, median lead 11 days.',
+  autoActionable: true,
+};
+
+const UNVALIDATED_ADVISORY = {
+  status: 'unvalidated-advisory',
+  label: 'ADVISORY — never back-tested',
+  detail: 'This has NOT been validated against history and is not a predictor. '
+    + 'Availability is stored forward-looking and overwritten, so there is no record of who was off on a past day and nothing to replay against. '
+    + 'It is a lookup — the rota against the arrival pattern — offered for your judgement, not a measured forecast. '
+    + 'Its live fires are being recorded so it can be scored prospectively later.',
+  // The machine-readable half of the same statement. Read by `auto-push`.
+  autoActionable: false,
+};
+
 function indicator(fields) {
-  return { tense: TENSE, source: 'Leading', ...fields };
+  return {
+    tense: TENSE,
+    source: 'Leading',
+    // ADVISORY BY DEFAULT. A detector has to claim validation explicitly, and
+    // the default falls the safe way: a new detector whose author forgets to
+    // say anything is treated as untested, because it IS untested. The reverse
+    // default would mean every future detector arrived silently carrying A's
+    // credibility.
+    validation: UNVALIDATED_ADVISORY,
+    ...fields,
+  };
 }
 
 // ── Detector A — net flow divergence ─────────────────────────────────────────
@@ -291,6 +328,9 @@ function detectNetFlow({ series, asOf }) {
     indicator: indicator({
       key: 'net-flow',
       detector: 'A',
+      // The ONLY detector that has earned this. See the replay result in
+      // `DISABLED_BY_DEFAULT` above.
+      validation: VALIDATED,
       severity: currentWeek.sum > 50 ? 'high' : 'medium',
       title: `The queue took on ${currentWeek.sum} more tickets than it cleared this week`,
       change: `Net arrivals ran ${round(z)} standard deviations above the previous four weeks — ${currentWeek.sum} this week against a four-week average of ${round(mean(baseline))}.`,
@@ -633,7 +673,27 @@ function detectCapacityCollision({ series, capacity, asOf }) {
         { label: 'Typical arrivals that weekday', value: worst.expected },
         { label: 'Working-day median', value: overallBusy },
         { label: 'Next five working days', value: ahead.map(d => `${d.day.slice(5)}: ${d.off} off, ~${d.expected ?? '?'} in`).join('; ') },
+        // Stated as EVIDENCE rather than buried in metadata, because it is a
+        // fact about how much this card is worth and belongs next to the
+        // numbers it qualifies.
+        { label: 'Status', value: 'ADVISORY — never back-tested, needs your judgement before it becomes an action' },
       ],
+      // The checkable claim, kept so this detector can be scored PROSPECTIVELY
+      // — which is the only way it will ever be scored, there being no history
+      // to replay. Recorded on the day of the fire, about a day still in the
+      // future, so what it said cannot be revised after the fact.
+      prospective: {
+        forDay: worst.day,
+        predictedOff: worst.off,
+        rosterCount: capacity.rosterCount,
+        expectedArrivals: worst.expected,
+        workingDayMedian: overallBusy,
+        // What would have to be read back from kpi_org_daily on the day, to
+        // decide whether this was worth saying. Named here so a later scorer
+        // uses the measure the claim was made against, not one chosen with
+        // hindsight to suit the answer.
+        scoreAgainst: ['nt_new_tickets', 'nt_solved_team', 'nt_solved_nova'],
+      },
       horizonDays: Math.max(1, between(asOf, worst.day)),
       confidence: conf,
       confirm: 'Check the same day in NOVA\'s Team Availability. If more names appear there than here, the extra leave was approved after this read or set manually.',
@@ -888,6 +948,9 @@ function toRadarItems(state) {
       i.standing && i.strengthened ? i.standing : null,
       `Evidence: ${(i.evidence || []).map(e => `${e.label} ${e.value}`).join(' · ')}.`,
       `Useful for about ${i.horizonDays} day${i.horizonDays === 1 ? '' : 's'}. Confidence ${i.confidence.level} (${i.confidence.score}) — ${i.confidence.basis.join('; ')}.`,
+      i.validation?.autoActionable === false
+        ? `⚠ ${i.validation.label}. ${i.validation.detail} Nothing acts on this until you decide it should.`
+        : null,
       `Confirms it: ${i.confirm}`,
       `Rules it out: ${i.disprove}`,
     ].filter(Boolean).join(' '),
@@ -897,6 +960,10 @@ function toRadarItems(state) {
     // re-deriving it.
     leadingKey: i.key,
     detector: i.detector,
+    // Travels onto the card and, through `+ log`, onto the finding. This is
+    // what stops an unvalidated advisory being written into NEURO unattended.
+    validation: i.validation,
+    advisory: i.validation?.autoActionable === false,
     firstSeenOn: i.firstSeenOn || null,
     sightings: i.sightings || 1,
   }));

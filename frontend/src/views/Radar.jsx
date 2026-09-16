@@ -65,6 +65,10 @@ function Item({ it }) {
         source: it.source,
         severity: it.severity,
         tense: it.tense,
+        // An unvalidated advisory stays an advisory once logged. Without this
+        // the flag dies at the card and the finding looks like any other.
+        advisory: it.advisory === true,
+        validationStatus: it.validation?.status || null,
       });
       setLogged(true);
     } catch { /* the button reverts; the radar is not the place to shout */ }
