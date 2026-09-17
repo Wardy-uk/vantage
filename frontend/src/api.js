@@ -63,7 +63,13 @@ export const api = {
   // automatic label records a prevented problem as a false alarm.
   leading: (refresh = false) => call(`/leading${refresh ? '?refresh=1' : ''}`),
   leadingScoreboard: () => call('/leading/scoreboard'),
-  leadingVerdict: (id, body) => call(`/leading/log/${id}/verdict`, { method: 'POST', body }),
+  // `by: 'nick'` is stated explicitly, not defaulted server-side. The default
+  // was removed deliberately: a verdict with no stated source would be recorded
+  // as his, and this ledger is what decides whether the detectors are worth
+  // trusting — a forged verdict corrupts the measurement in the flattering
+  // direction, which is the one nobody checks. This call comes from a button in
+  // his own browser, so the attribution is a fact rather than an assumption.
+  leadingVerdict: (id, body) => call(`/leading/log/${id}/verdict`, { method: 'POST', body: { by: 'nick', ...body } }),
 
   plan: () => call('/plan'),
   setPlanStatus: (id, patch) => call(`/plan/${id}`, { method: 'PUT', body: patch }),

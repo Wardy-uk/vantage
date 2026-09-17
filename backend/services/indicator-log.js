@@ -350,7 +350,7 @@ function observeOutcomes(records, eps, day) {
     // that he acted and the predicted episode never arrived — so letting the
     // automatic label overwrite it would throw away the very thing the relay
     // exists to carry, and record a warning that worked as a false positive.
-    if (rec.outcomeSource === 'human') continue;
+    if (PERSON_SOURCED.has(rec.outcomeSource)) continue;
     // A claim no episode can answer waits for a person. Left PENDING rather
     // than guessed, and `scoreboard()` shows the denominator so a pile of
     // pending records cannot be mistaken for a pile of failures.

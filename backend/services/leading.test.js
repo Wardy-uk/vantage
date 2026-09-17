@@ -520,3 +520,14 @@ test('a radar card exposes what the verdict buttons need, or nothing at all', ()
   })[0];
   assert.equal(withoutRow.logId, null, 'no row, no button');
 });
+
+test('the browser client states who is judging, because the server no longer assumes', () => {
+  // `label()` had `by` defaulting to 'nick'. That default was removed so an
+  // assistant omitting the field cannot record a human verdict in his name —
+  // which means a client that does not send `by` now FAILS. The buttons shipped
+  // without it and were broken in production for as long as it took to notice.
+  const fs = require('node:fs');
+  const client = fs.readFileSync(require.resolve('../../frontend/src/api.js'), 'utf8');
+  const call = client.match(/leadingVerdict:[^\n]*\n?[^\n]*/)[0];
+  assert.match(call, /by:\s*'nick'/, 'the verdict call must state its provenance');
+});

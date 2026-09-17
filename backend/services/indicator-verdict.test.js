@@ -157,12 +157,35 @@ test('the automatic label never overwrites a RELAYED verdict', () => {
   // does — that he acted, so the predicted episode never arrived. Letting the
   // automatic path overwrite it would record a warning that WORKED as a false
   // positive, which is exactly what the human override exists to prevent.
+  //
+  // This is the REALISTIC shape (label() always sets both fields) and it is the
+  // `if (rec.outcome)` guard that catches it — see the next test for the one
+  // that pins PERSON_SOURCED itself.
   const relayed = {
     id: 1, detector: 'A', subject: 'nt_open_stock', firstSeenOn: '2026-09-01',
     status: 'normalised', outcome: 'useful', outcomeSource: 'assistant',
   };
-  const updates = log.observeOutcomes([relayed], [], '2026-10-01');
-  assert.equal(updates.length, 0, 'the automatic path overruled a person');
+  assert.equal(log.observeOutcomes([relayed], [], '2026-10-01').length, 0,
+    'the automatic path overruled a person');
+});
+
+test('PERSON_SOURCED holds even for a source with no outcome yet', () => {
+  // ⚠⚠ This is the state the second guard actually defends, and it is
+  // currently UNREACHABLE — `label()` always writes outcome and outcomeSource
+  // together, so the `if (rec.outcome)` guard above catches every real relayed
+  // record first. Tested anyway, and said plainly: the guard is belt-and-braces,
+  // and a belt-and-braces guard nothing exercises is one that silently stops
+  // working. Without this the mutation "narrow it back to 'human' only" passes.
+  const sourcedNotSettled = {
+    id: 2, detector: 'A', subject: 'nt_open_stock', firstSeenOn: '2026-09-01',
+    status: 'normalised', outcome: null, outcomeSource: 'assistant',
+  };
+  assert.equal(log.observeOutcomes([sourcedNotSettled], [], '2026-10-01').length, 0,
+    'a relayed source was not treated as final');
+
+  // And Nick's own, the case the guard was originally written for.
+  const humanNotSettled = { ...sourcedNotSettled, id: 3, outcomeSource: 'human' };
+  assert.equal(log.observeOutcomes([humanNotSettled], [], '2026-10-01').length, 0);
 });
 
 test('a pending record with no verdict is still settled automatically', () => {
