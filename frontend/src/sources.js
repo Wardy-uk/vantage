@@ -106,13 +106,20 @@ export function familyFor(source) {
 }
 
 /**
- * Counts per family, in the fixed slot order, for the families actually
- * present.
+ * Counts per family, in the fixed slot order, INCLUDING the empty ones.
  *
- * Empty families are dropped rather than shown as zero: this strip sits above a
- * list, and a row of zeroes reads as "nothing is wrong there" when it means
- * "nothing came from there today", which are different claims and only one of
- * them is true.
+ * ⚠ The first cut dropped zero families, reasoning that a row of zeroes reads
+ * as "nothing is wrong there" when it means "nothing came from there today".
+ * Nick asked for the zeroes and he is right, for a reason specific to this
+ * reader: he knows what the six families are, so `Leading 0` tells him the
+ * detectors are QUIET — which is different from, and much better than, the
+ * strip silently not mentioning them. A row that changes shape day to day
+ * cannot be read at a glance; a fixed one can, and the positions become
+ * learnable.
+ *
+ * `Other` is the exception and still only appears when it has something in it.
+ * An always-present "Other 0" would be a permanent slot for a bug that is not
+ * currently happening.
  */
 export function countByFamily(items = []) {
   const counts = new Map();
@@ -121,6 +128,6 @@ export function countByFamily(items = []) {
     counts.set(f.key, (counts.get(f.key) || 0) + 1);
   }
   return [...FAMILIES, OTHER]
-    .filter(f => counts.get(f.key))
-    .map(f => ({ ...f, count: counts.get(f.key) }));
+    .filter(f => f.key !== 'other' || counts.get(f.key))
+    .map(f => ({ ...f, count: counts.get(f.key) || 0 }));
 }

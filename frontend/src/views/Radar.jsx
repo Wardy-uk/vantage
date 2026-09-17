@@ -72,7 +72,12 @@ function Item({ it }) {
   const judge = async (v, actionTaken) => {
     setJudging(true);
     try {
-      await api.leadingVerdict(it.logId, { verdict: v, actionTaken });
+      // ⚠ `by` is REQUIRED and has no default: it used to fall back to 'nick',
+      // which was safe while this was the only caller and became unsafe the
+      // moment the route was exposed over MCP, where an omitted field would
+      // have recorded an assistant's judgement as his. This IS Nick — he is
+      // pressing the button — so it says so explicitly.
+      await api.leadingVerdict(it.logId, { verdict: v, actionTaken, by: 'nick' });
       setVerdict(v);
     } catch { /* the buttons stay; the radar is not the place to shout */ }
     finally { setJudging(false); }
@@ -236,22 +241,29 @@ function Item({ it }) {
  */
 function SourceStrip({ items, active, onPick }) {
   const families = countByFamily(items);
-  if (families.length < 2) return null;
 
   return (
     <div className="card" style={{ padding: '10px 12px' }}>
       <div className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {families.map(f => {
           const on = active === f.key;
+          // An empty family is SHOWN but not clickable — filtering to nothing
+          // is not a thing anyone wants, and a dead button that looks live is
+          // worse than one that looks dead. It dims rather than disappearing,
+          // so the row keeps its shape and the positions stay learnable.
+          const empty = f.count === 0;
           return (
             <button
               key={f.key}
-              onClick={() => onPick(on ? null : f.key)}
-              title={f.blurb}
+              onClick={() => !empty && onPick(on ? null : f.key)}
+              title={empty ? `${f.blurb} — nothing from here today` : f.blurb}
               aria-pressed={on}
+              disabled={empty}
               style={{
-                all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                all: 'unset', display: 'flex', alignItems: 'center', gap: 6,
                 padding: '5px 10px', borderRadius: 999,
+                cursor: empty ? 'default' : 'pointer',
+                opacity: empty ? 0.45 : 1,
                 border: `1px solid ${on ? f.colour : 'var(--line)'}`,
                 background: on ? 'var(--panel-2)' : 'transparent',
               }}
@@ -260,7 +272,7 @@ function SourceStrip({ items, active, onPick }) {
               {/* Text wears text tokens, never the series colour — the swatch
                   beside it carries identity. */}
               <span className="small" style={{ color: on ? 'var(--text)' : 'var(--muted)' }}>{f.label}</span>
-              <strong style={{ fontSize: 13 }}>{f.count}</strong>
+              <strong style={{ fontSize: 13, color: empty ? 'var(--muted)' : 'var(--text)' }}>{f.count}</strong>
             </button>
           );
         })}
@@ -348,6 +360,8 @@ export default function Radar() {
         </div>
       )}
 
+      <SourceStrip items={data?.items || []} active={family} onPick={setFamily} />
+
       <div className="row" style={{ marginBottom: 14 }}>
         <div style={{ flex: 1 }}>
           <div className="small muted">
@@ -433,8 +447,6 @@ export default function Radar() {
           {refreshing ? 'Re-reading…' : 'Refresh now'}
         </button>
       </div>
-
-      <SourceStrip items={data?.items || []} active={family} onPick={setFamily} />
 
       {TENSES.map(t => {
         const all = (data?.items || []).filter(i => i.tense === t.key);

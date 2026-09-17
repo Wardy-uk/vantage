@@ -43,6 +43,51 @@ const db = require('../db');
 
 const COLLECTION = 'indicators';
 
+/**
+ * Who a verdict came from, as a CLOSED SET.
+ *
+ * ⚠⚠ `by` USED TO DEFAULT TO `'nick'`. That was safe while the only caller was
+ * his own browser and became unsafe the moment this route was proposed for the
+ * MCP gateway: an assistant that omitted the field would have recorded a HUMAN
+ * verdict attributed to Nick that Nick never gave — and this ledger is what
+ * assesses whether the detectors are worth trusting, so a wrong verdict
+ * corrupts the measurement rather than just a row. There is no default now.
+ * Omission is a refusal.
+ *
+ * The three cases are kept APART because they are different evidence:
+ *
+ *   nick       he said it himself, in the UI or confirmed in person.
+ *              Stores 'human' — existing rows carry that value and
+ *              `observeOutcomes` keys on it, so renaming it would silently
+ *              un-stick every historical verdict.
+ *   assistant  an assistant recorded what he told it. Outranks the automatic
+ *              label for the same reason his own does (it carries the fact that
+ *              he acted), but stays separable: a detector's precision measured
+ *              partly on relayed verdicts is a different claim from one
+ *              measured on his own, and `scoreboard()` reports the split.
+ *
+ * ⚠ 'auto' is NOT in here. The automatic path writes its own label in
+ * `observeOutcomes`; accepting it through this door would let a caller forge a
+ * system outcome, which is the same forgery in the other direction.
+ *
+ * ⚠ AND THE HONEST LIMIT, stated rather than implied: VANTAGE has ONE
+ * credential (`VANTAGE_PIN`), shared by the browser and the MCP gateway, so the
+ * backend CANNOT tell an assistant from Nick. Nothing here can stop a caller
+ * claiming `nick`. What it can do — and now does — is make the claim explicit
+ * and deliberate rather than the consequence of leaving a field out. The rest of
+ * the guard is the gateway's: the operation is classified `action`, so it needs
+ * a scope ordinary reads do not, and its note tells the assistant to use
+ * `assistant` and confirm with the user first.
+ */
+const VERDICT_PROVENANCE = { nick: 'human', assistant: 'assistant' };
+const VERDICTS = ['useful', 'false', 'inconclusive'];
+
+// Every stored source that means "a person decided this". Derived from the
+// map rather than listed again, so adding a provenance cannot forget to make
+// it final — the failure would be silent, and in the direction of the
+// automatic label quietly overruling a human one.
+const PERSON_SOURCED = new Set(Object.values(VERDICT_PROVENANCE));
+
 /** Consecutive days with no sighting before an indicator is called normalised. */
 const QUIET_DAYS_TO_CLOSE = 3;
 /** How long a closed indicator keeps its place on the screen. */
@@ -300,6 +345,11 @@ function observeOutcomes(records, eps, day) {
   const updates = [];
   for (const rec of records) {
     if (rec.outcome) continue;
+    // ⚠ Any PERSON-SOURCED verdict is final, relayed or not. An
+    // assistant-recorded verdict carries the same information Nick's own does —
+    // that he acted and the predicted episode never arrived — so letting the
+    // automatic label overwrite it would throw away the very thing the relay
+    // exists to carry, and record a warning that worked as a false positive.
     if (rec.outcomeSource === 'human') continue;
     // A claim no episode can answer waits for a person. Left PENDING rather
     // than guessed, and `scoreboard()` shows the denominator so a pile of
@@ -343,6 +393,7 @@ function settle(seriesByKey, day = today()) {
   return { episodes: eps, settled: updates.length };
 }
 
+
 /**
  * A human verdict, which always outranks the automatic one.
  *
@@ -353,14 +404,41 @@ function settle(seriesByKey, day = today()) {
  * worked best, so a person can overrule it, and the override records that an
  * action was taken.
  */
-function label(id, { verdict, actionTaken = null, note = null, by = 'nick' } = {}) {
-  const ok = ['useful', 'false', 'inconclusive'];
-  if (!ok.includes(verdict)) throw new Error(`verdict must be one of: ${ok.join(', ')}`);
+function label(id, { verdict, by, actionTaken = null, note = null } = {}) {
+  if (!VERDICTS.includes(verdict)) {
+    throw new Error(`verdict must be one of: ${VERDICTS.join(', ')}`);
+  }
+  // ⚠ Named separately from "not a known value", because the two need different
+  // fixes: one caller forgot the field, the other is trying to forge a system
+  // outcome or invent an attribution.
+  if (by === undefined || by === null || by === '') {
+    throw new Error(
+      `by is required and must be one of: ${Object.keys(VERDICT_PROVENANCE).join(', ')} `
+      + '— a verdict with no stated source would be recorded as Nick\'s, and an '
+      + 'assistant must never attribute its own judgement to him');
+  }
+  if (!Object.prototype.hasOwnProperty.call(VERDICT_PROVENANCE, by)) {
+    throw new Error(
+      `by must be one of: ${Object.keys(VERDICT_PROVENANCE).join(', ')} (got "${by}") `
+      + '— "auto" is the automatic path\'s own label and cannot be set here');
+  }
+  // ⚠ The note is REQUIRED for a relayed verdict and is the only thing that
+  // makes "based on Nick's explicit instruction" checkable rather than asserted.
+  // Nick's own verdict needs none: he is the evidence.
+  if (by === 'assistant' && !String(note || '').trim()) {
+    throw new Error(
+      'note is required when by="assistant": record what Nick actually said, '
+      + 'so a relayed verdict can be audited rather than taken on trust');
+  }
+
   const rec = db.find(COLLECTION, r => r.id === id)[0];
   if (!rec) throw new Error(`no indicator record ${id}`);
+
   return db.update(COLLECTION, id, {
     outcome: verdict,
-    outcomeSource: 'human',
+    // Derived, never passed: a caller cannot say by="assistant" and have it
+    // stored as a verdict of Nick's.
+    outcomeSource: VERDICT_PROVENANCE[by],
     outcomeOn: today(),
     actionTaken,
     outcomeNote: note,
@@ -375,18 +453,39 @@ function label(id, { verdict, actionTaken = null, note = null, by = 'nick' } = {
  * computed over three settled warnings out of twenty is not a precision
  * figure, and showing the denominator is the only thing that stops it being
  * read as one.
+ *
+ * ⚠ AND IT REPORTS WHO SETTLED THEM. A verdict Nick gave himself, one an
+ * assistant relayed on his instruction, and one the automatic path derived are
+ * three different kinds of evidence about a detector, and a precision figure
+ * that folds them together hides its own basis — which is the same failure as
+ * hiding the denominator, one level in. Without this split the provenance
+ * `label()` now records would be stored and read by nothing.
  */
 function scoreboard() {
   const by = new Map();
   for (const r of all()) {
     const k = r.detector || '?';
-    if (!by.has(k)) by.set(k, { detector: k, shadow: Boolean(r.shadow), runs: 0, useful: 0, falsePositive: 0, inconclusive: 0, pending: 0, leads: [] });
+    if (!by.has(k)) by.set(k, {
+      detector: k, shadow: Boolean(r.shadow), runs: 0,
+      useful: 0, falsePositive: 0, inconclusive: 0, pending: 0, leads: [],
+      // Who settled the ones that are settled. `settledUnattributed` is not a
+      // tidy-up: rows written before provenance was required carry an outcome
+      // with no source this can name, and counting them as Nick's would be the
+      // exact attribution this change exists to stop.
+      settledByNick: 0, settledByAssistant: 0, settledAuto: 0, settledUnattributed: 0,
+    });
     const e = by.get(k);
     e.runs += 1;
     if (r.outcome === 'useful') { e.useful += 1; if (r.actualLeadDays) e.leads.push(r.actualLeadDays); }
     else if (r.outcome === 'false') e.falsePositive += 1;
     else if (r.outcome === 'inconclusive') e.inconclusive += 1;
     else e.pending += 1;
+    if (r.outcome) {
+      if (r.outcomeSource === 'human') e.settledByNick += 1;
+      else if (r.outcomeSource === 'assistant') e.settledByAssistant += 1;
+      else if (r.outcomeSource === 'auto') e.settledAuto += 1;
+      else e.settledUnattributed += 1;
+    }
   }
   return [...by.values()].map(e => ({
     ...e,
