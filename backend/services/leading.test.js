@@ -28,6 +28,20 @@ const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS
 const ASOF = '2026-09-15';
 
 /**
+ * Day-to-day noise whose period is NOT a week.
+ *
+ * ⚠ This has now caught three fixtures. `(i * 5) % 7` repeats exactly every
+ * seven days, so every baseline week gets an IDENTICAL mean, the standard
+ * deviation is zero, and `zScore` correctly returns null — the detector then
+ * reads as quiet and the test passes for the wrong reason, or fails
+ * mysteriously. 5 and 11 are coprime, so this never aligns to the week.
+ *
+ * Any fixture feeding a weekly-bucket detector must use it.
+ */
+const wobble = i => ((i * 5) % 11) - 5;
+
+
+/**
  * A series of `days` daily values ending on `asOf`.
  *
  * `valueFor(i)` receives 0 for `asOf`, 1 for the day before, and so on — so a
@@ -530,4 +544,107 @@ test('the browser client states who is judging, because the server no longer ass
   const client = fs.readFileSync(require.resolve('../../frontend/src/api.js'), 'utf8');
   const call = client.match(/leadingVerdict:[^\n]*\n?[^\n]*/)[0];
   assert.match(call, /by:\s*'nick'/, 'the verdict call must state its provenance');
+});
+
+// ── The Daily KPI Tracker: T1 tactical, T2 strategic ─────────────────────────
+
+const trackerRow = (kpiKey, label) => ({ kpiKey, label });
+function trackerFeed({ liveValue, key = 'nt_legacy_cc_incidents', label = 'CC Incidents', over = {} } = {}) {
+  return {
+    available: true,
+    rows: [trackerRow(key, label), trackerRow(null, 'Number of TPJ Tickets in Dev')],
+    measurable: [trackerRow(key, label)],
+    unmeasured: ['Number of TPJ Tickets in Dev'],
+    totalRows: 2,
+    live: {
+      available: true, error: null, day: ASOF, ageSeconds: 30,
+      byKey: new Map([[key, { key, value: liveValue }]]),
+    },
+    hourly: { available: true, error: null, daysCovered: 0, ready: false, readySoon: false, needed: 10, series: [] },
+    baselineTrustedFrom: '2026-09-11',
+    ...over,
+  };
+}
+// The live day is ASOF, so daily history must stop the day before.
+function histBefore(values, key = 'nt_legacy_cc_incidents') {
+  return series(key, i => values(i + 1), { days: 121 });
+}
+
+test('T1 fires when today has moved far beyond this KPI\'s normal daily move', () => {
+  const s = { [ 'nt_legacy_cc_incidents' ]: histBefore(() => 22) };
+  // A flat history has no variance to score against, so give it some.
+  s.nt_legacy_cc_incidents = histBefore(i => 22 + wobble(i));
+  const r = leading.detectTacticalDrift({ tracker: trackerFeed({ liveValue: 60 }), series: s, asOf: ASOF });
+  assert.ok(r.indicators?.length, 'a move of ~+40 on a queue that swings by 3 must fire');
+  assert.equal(r.indicators[0].tense, 'happening', 'tactical is steerable TODAY, not a could');
+  assert.equal(r.indicators[0].detector, 'T1');
+});
+
+test('T1 does not fire on a move in the GOOD direction', () => {
+  const s = { nt_legacy_cc_incidents: histBefore(i => 22 + wobble(i)) };
+  const r = leading.detectTacticalDrift({ tracker: trackerFeed({ liveValue: 2 }), series: s, asOf: ASOF });
+  assert.equal(r.quiet, 'T1', 'a backlog collapsing is not something to warn about');
+});
+
+test('T1 states that it is comparing against yesterday, NOT against this hour', () => {
+  // The claim Nick asked for is "unusual for 11am". Until ten weekdays of
+  // hourly readings exist that claim cannot be made, and the card must not let
+  // a reader assume the stronger one.
+  const s = { nt_legacy_cc_incidents: histBefore(i => 22 + wobble(i)) };
+  const r = leading.detectTacticalDrift({ tracker: trackerFeed({ liveValue: 60 }), series: s, asOf: ASOF });
+  const scope = r.indicators[0].evidence.find(e => e.label === 'Compared against');
+  assert.match(String(scope.value), /yesterday's close only/);
+  assert.match(String(scope.value), /need 10 days/);
+  assert.ok(r.indicators[0].confidence.basis.some(b => /not against this hour/.test(b)));
+});
+
+test('T1 blocks — never guesses — when the live snapshot failed', () => {
+  const s = { nt_legacy_cc_incidents: histBefore(() => 22) };
+  const feed = trackerFeed({ liveValue: 60 });
+  feed.live = { available: false, error: 'Jira timed out', byKey: new Map() };
+  const r = leading.detectTacticalDrift({ tracker: feed, series: s, asOf: ASOF });
+  assert.ok(r.blocked);
+  assert.match(r.blocked.reason, /Jira timed out/);
+});
+
+test('T2 scans at a HIGHER bar than the single-series detectors', () => {
+  // Thirty-one series at z>=2 is roughly a false card every week from chance
+  // alone. The bar is set from that arithmetic, not from looking at results.
+  assert.ok(leading.TRACKER_SCAN_Z > leading.Z_FIRE);
+  assert.equal(leading.TRACKER_SCAN_Z, 3);
+});
+
+test('T2 fires on a sustained drift and quotes the five weeks', () => {
+  const s = { nt_legacy_cc_incidents: series('nt_legacy_cc_incidents', i => (i < 7 ? 60 : 22 + wobble(i))) };
+  const feed = trackerFeed({ liveValue: 22 });
+  const r = leading.detectTrackerDrift({ tracker: feed, series: s, asOf: ASOF });
+  assert.ok(r.indicators?.length);
+  assert.equal(r.indicators[0].tense, 'could', 'a fortnight-long drift is not steerable today');
+  assert.ok(r.indicators[0].evidence.some(e => e.label === 'Previous four weeks'));
+});
+
+test('T2 respects direction — a higher-better KPI falling is the bad case', () => {
+  const s = { nt_legacy_solved_today: series('nt_legacy_solved_today', i => (i < 7 ? 40 : 120 + wobble(i))) };
+  s.nt_legacy_solved_today.direction = 'higher-better';
+  const feed = trackerFeed({ liveValue: 40, key: 'nt_legacy_solved_today', label: 'Total Solved' });
+  const r = leading.detectTrackerDrift({ tracker: feed, series: s, asOf: ASOF });
+  assert.ok(r.indicators?.length, 'solved collapsing must fire even though the number went DOWN');
+  assert.match(r.indicators[0].evidence.find(e => e.label === 'Direction').value, /higher is better/);
+});
+
+test('both tracker detectors block rather than guess when the feed is unavailable', () => {
+  for (const fn of [leading.detectTacticalDrift, leading.detectTrackerDrift]) {
+    const r = fn({ tracker: { available: false, reason: 'bridge down' }, series: {}, asOf: ASOF });
+    assert.ok(r.blocked);
+    assert.match(r.blocked.reason, /bridge down/);
+  }
+});
+
+test('the tracker rows with no KPI key are carried, not dropped', () => {
+  // The tracker has 34 rows and 31 are measurable. A monitor covering 31 must
+  // never be able to read as one covering the tracker.
+  const feed = trackerFeed({ liveValue: 22 });
+  assert.equal(feed.totalRows, 2);
+  assert.equal(feed.measurable.length, 1);
+  assert.deepEqual(feed.unmeasured, ['Number of TPJ Tickets in Dev']);
 });

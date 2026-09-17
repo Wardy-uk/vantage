@@ -89,6 +89,45 @@ const DETECTOR_KEYS = [
   // problem and was a wiring one, exactly as the note above predicted. Pinned
   // by a test now, so the next detector cannot repeat it.
   'nt_legacy_unassigned',
+
+  // ── The Daily KPI Tracker ──────────────────────────────────────────────────
+  //
+  // The thirty-one measurable rows of the sheet Nick reports to the business
+  // every day. T1 and T2 need DAILY history for each of them — the live value
+  // alone cannot say whether today's move is unusual.
+  //
+  // ⚠ These are the LEGACY keys, and that is not a detail. Confirmed twice:
+  // NOVA's own TRACKER_ROWS maps the sheet to them, and matching Nick's actual
+  // reported numbers to the series by VALUE arrives at the same answer
+  // independently. The newer `nt_*` equivalents are different numbers —
+  // `nt_development` runs 16-28 higher than the `nt_legacy_development` he
+  // reports, every single day. A detector on the wrong one would warn about a
+  // number he has never seen.
+  'nt_legacy_new_tickets', 'nt_legacy_solved_today',
+  'nt_legacy_cc_incidents', 'nt_legacy_cc_service_requests', 'nt_legacy_cc_tpj',
+  'nt_legacy_production', 'nt_legacy_tier2', 'nt_legacy_tier3', 'nt_legacy_development',
+  'nt_lg_noreply_cc_incidents_over_sla_actionable',
+  'nt_lg_noreply_cc_service_requests_over_sla_actionable',
+  'nt_lg_noreply_cc_tpj_over_sla_actionable',
+  'nt_lg_noreply_tier_2_over_sla_actionable',
+  'nt_lg_noreply_tier_3_over_sla_actionable',
+  'nt_lg_oversla_cc_incidents_over_sla_actionable',
+  'nt_lg_oversla_cc_service_requests_over_sla_actionable',
+  'nt_lg_oversla_cc_tpj_over_sla_actionable',
+  'nt_lg_oversla_tier_2_over_sla_actionable',
+  'nt_lg_oversla_tier_3_over_sla_actionable',
+  'nt_lg_oversla_notact_cc_incidents_over_sla_actionable',
+  'nt_lg_oversla_notact_cc_service_requests_over_sla_actionable',
+  'nt_lg_oversla_notact_cc_tpj_over_sla_actionable',
+  'nt_lg_oversla_notact_tier_2_over_sla_actionable',
+  'nt_lg_oversla_notact_tier_3_over_sla_actionable',
+  'nt_lg_oldest_cc_incidents_over_sla_actionable',
+  'nt_lg_oldest_cc_service_requests_over_sla_actionable',
+  'nt_lg_oldest_cc_tpj_over_sla_actionable',
+  'nt_lg_oldest_production_over_sla_actionable',
+  'nt_lg_oldest_tier_2_over_sla_actionable',
+  'nt_lg_oldest_tier_3_over_sla_actionable',
+  'nt_csat',
 ];
 
 function isConfigured() {

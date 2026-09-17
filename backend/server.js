@@ -176,6 +176,17 @@ app.get('/api/leading/claims', wrap(() => ({ claims: require('./services/indicat
 // with pending shown alongside so a precision figure cannot be read off three
 // settled warnings out of twenty.
 app.get('/api/leading/scoreboard', wrap(() => ({ scoreboard: require('./services/indicator-log').scoreboard() })));
+
+// The Daily KPI Tracker — the rows Nick reports to the business daily,
+// with today's live value beside the daily history. Exposed on its own (rather
+// than only inside /api/leading) so the question "what is CC Incidents doing
+// right now" can be asked directly, including over MCP, without rebuilding the
+// whole radar to find out.
+//
+// It reports the rows it CANNOT measure BY NAME, and serves the counts rather
+// than asserting them: a feed returning only the measurable rows would read as
+// the whole tracker.
+app.get('/api/tracker', wrap(req => require('./services/tracker').current({ force: req.query.refresh === '1' })));
 // A human verdict on one warning, which outranks the automatic label. The
 // automatic one cannot see that Nick acted and prevented the thing — which
 // otherwise records as a false positive, punishing the warnings that worked.

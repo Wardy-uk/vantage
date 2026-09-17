@@ -737,6 +737,217 @@ function detectCapacityCollision({ series, capacity, asOf }) {
 }
 
 
+
+// ── The Daily KPI Tracker: two detectors, two different claims ───────────────
+//
+// These watch the rows Nick reports to the business every day. They
+// are deliberately SEPARATE detectors rather than one, because "this is slipping
+// right now" and "this has been drifting for a fortnight" call for different
+// actions, arrive on different evidence, and belong in different radar tenses.
+//
+//   T1  TACTICAL   tense `happening`. Today's live value against where the day
+//                  normally stands. Actionable this morning or not at all.
+//   T2  STRATEGIC  tense `could`. This week against the four before it. A slow
+//                  drift nobody would notice day to day.
+//
+// Both are UNVALIDATED ADVISORY by default, like every detector that has not
+// earned otherwise. Neither can auto-create anything.
+
+/**
+ * How far today's move has to exceed the KPI's own normal daily move.
+ *
+ * Scored against the distribution of that KPI's OWN day-over-day changes, so a
+ * queue that routinely swings twenty needs a bigger move than one that never
+ * moves three. No absolute thresholds — there is no number that means the same
+ * thing for "New Tickets" and "Oldest actionable ticket (days) in Tier 3".
+ */
+const TACTICAL_Z = 2.5;
+
+/**
+ * The strategic bar, and why it is HIGHER than the Z_FIRE the other detectors use.
+ *
+ * ⚠ This scans EVERY measurable tracker row at once — 32 of them on 17 Sep
+ * 2026. At z >= 2 that is roughly 0.8 false
+ * fires a week from chance alone — a card most weeks, about nothing. Testing
+ * many series at once needs a stricter per-test bar or the family-wise error
+ * rate swamps the signal; z >= 3 keeps the expected false rate near one a
+ * quarter rather than one a week.
+ *
+ * Set from the arithmetic of scanning ~30 series, not from looking at results.
+ * It does not need re-deriving if a row is added or removed; the bar is already
+ * conservative across that range.
+ */
+const TRACKER_SCAN_Z = 3;
+
+/** Most tracker cards allowed at once, per detector. The radar's whole promise
+ *  is a short ranked list; thirty-one rows could trivially produce thirty-one. */
+const MAX_TRACKER_CARDS = 3;
+
+/** A KPI where a RISE is bad. Read from the registry direction NOVA ships with
+ *  each series, never guessed from the name — "Solved" going up is good and
+ *  "Oldest ticket" going up is not, and only the registry knows which is which. */
+function worseDirection(meta) {
+  return meta?.direction === 'higher-better' ? -1 : 1;
+}
+
+/** Day-over-day changes for a series, newest first. */
+function dailyChanges(points) {
+  const out = [];
+  for (let i = points.length - 1; i > 0; i -= 1) {
+    out.push(points[i].value - points[i - 1].value);
+  }
+  return out;
+}
+
+/**
+ * T1 — is a tracker KPI slipping RIGHT NOW?
+ *
+ * Compares the live value against yesterday's close, and scores that move
+ * against the KPI's own history of day-over-day moves. This works from the
+ * first day, with no intraday history at all.
+ *
+ * ⚠ WHAT IT CANNOT SAY YET, and says so. The question Nick actually asked is
+ * "is it slipping faster than it normally would BY THIS HOUR", and that needs a
+ * record of what each hour normally looks like. NOVA only started keeping those
+ * on 17 Sep 2026. Until there are ten weekdays of them the card states that the
+ * comparison is against yesterday's close rather than against this hour, so a
+ * reader is never left to assume the stronger claim.
+ */
+function detectTacticalDrift({ tracker, series, asOf }) {
+  if (!tracker?.available) {
+    return { blocked: { id: 'T1', name: 'Tracker — slipping now', reason: tracker?.reason || 'the tracker feed was not read' } };
+  }
+  if (!tracker.live?.available) {
+    return { blocked: { id: 'T1', name: 'Tracker — slipping now', reason: `no live snapshot: ${tracker.live?.error || 'not returned'}` } };
+  }
+
+  const found = [];
+  for (const row of tracker.measurable) {
+    const s = series[row.kpiKey];
+    const liveItem = tracker.live.byKey.get(row.kpiKey);
+    if (!s || !liveItem || liveItem.value === null || liveItem.value === undefined) continue;
+
+    const pts = (s.points || []).filter(p => p.day < tracker.live.day);
+    if (pts.length < REQUIRED_DAYS) continue;
+
+    const close = pts[pts.length - 1];
+    const move = (liveItem.value - close.value) * worseDirection(s);
+    if (move <= 0) continue;
+
+    const changes = dailyChanges(pts).map(c => c * worseDirection(s));
+    const zz = zScore(move, changes.slice(0, BASELINE_WEEKS * WEEK));
+    if (zz === null || zz < TACTICAL_Z) continue;
+
+    found.push({
+      row, series: s, live: liveItem, close, move: round(move), z: round(zz),
+    });
+  }
+
+  if (!found.length) return { quiet: 'T1' };
+
+  found.sort((a, b) => b.z - a.z);
+  const hourly = tracker.hourly;
+
+  return {
+    indicators: found.slice(0, MAX_TRACKER_CARDS).map(f => indicator({
+      key: `tactical:${f.row.kpiKey}`,
+      detector: 'T1',
+      // `happening`, not `could`. It is moving now and is still steerable today,
+      // which is the whole distinction this detector exists to draw.
+      tense: 'happening',
+      subject: f.row.kpiKey,
+      severity: f.z >= 4 ? 'high' : 'medium',
+      title: `${f.row.label} has moved to ${f.live.value} today, from ${f.close.value} at yesterday's close`,
+      change: `A move of ${f.move} against a typical day-over-day change — ${round(f.z)} standard deviations out on this KPI's own distribution. Live value read ${f.live === null ? 'unknown' : `${Math.round((tracker.live.ageSeconds ?? 0) / 60)} minutes ago`}.`,
+      whyItMatters: 'This is one of the numbers you report to the business daily, and it is moving unusually fast for this KPI today. It is on the radar now rather than in tomorrow\'s report because today is the only day anything can be done about it.',
+      evidence: [
+        { label: 'Now (live)', value: f.live.value },
+        { label: "Yesterday's close", value: f.close.value },
+        { label: 'Move', value: `${f.move > 0 ? '+' : ''}${f.live.value - f.close.value}` },
+        { label: 'Typical daily move', value: `${round(mean(dailyChanges(f.series.points).map(Math.abs)))} on average` },
+        {
+          label: 'Compared against',
+          // The honest scope of the claim, as EVIDENCE rather than a footnote.
+          value: hourly?.ready
+            ? `yesterday's close and ${hourly.daysCovered} days of hourly readings`
+            : `yesterday's close only — hourly readings started ${hourly?.daysCovered ? `${hourly.daysCovered} day(s) ago` : 'have not started'}, and need ${hourly?.needed ?? 10} days before "unusual for this hour" means anything`,
+        },
+      ],
+      horizonDays: 1,
+      confidence: confidence([f.series], asOf, [
+        ...(hourly?.ready ? [] : [{ cost: 0.15, why: 'compared against yesterday\'s close, not against this hour — there is not yet enough intraday history to say whether this is unusual for the time of day' }]),
+        ...(tracker.live.ageSeconds > 300 ? [{ cost: 0.1, why: `the live snapshot is ${Math.round(tracker.live.ageSeconds / 60)} minutes old` }] : []),
+      ]),
+      confirm: 'Open the queue now and count. The live figure is computed from Jira on a 60-second cache, so it should match what you see.',
+      disprove: 'A bulk import, a single incident spawning many tickets, or a known release. Check whether the move is spread across the morning or landed in one go.',
+      action: `Look at ${f.row.label} in NOVA now, while the day can still absorb it. If the move is one cause, it is a decision; if it is across the board, it is a resourcing call for this afternoon.`,
+    })),
+  };
+}
+
+/**
+ * T2 — has a tracker KPI been drifting for weeks?
+ *
+ * The slow one. This week against the four before it, per KPI, at a bar set for
+ * scanning thirty-one series rather than one.
+ */
+function detectTrackerDrift({ tracker, series, asOf }) {
+  if (!tracker?.available) {
+    return { blocked: { id: 'T2', name: 'Tracker — drifting', reason: tracker?.reason || 'the tracker feed was not read' } };
+  }
+
+  const found = [];
+  const blocked = [];
+  for (const row of tracker.measurable) {
+    const s = series[row.kpiKey];
+    if (!s) continue;
+    const usable = windowUsable([s], asOf);
+    if (!usable.ok) continue;
+
+    const buckets = weekBuckets(byDay(s), asOf, BASELINE_WEEKS + 1);
+    if (!buckets.every(b => b.complete)) continue;
+
+    const dir = worseDirection(s);
+    const vals = buckets.map(b => b.mean * dir);
+    const zz = zScore(vals[0], vals.slice(1));
+    if (zz === null || zz < TRACKER_SCAN_Z) continue;
+
+    found.push({ row, series: s, buckets, z: round(zz), dir });
+  }
+
+  if (!found.length) return { quiet: 'T2', blocked };
+
+  found.sort((a, b) => b.z - a.z);
+
+  return {
+    indicators: found.slice(0, MAX_TRACKER_CARDS).map(f => {
+      const now = round(f.buckets[0].mean);
+      const was = round(mean(f.buckets.slice(1).map(b => b.mean)));
+      const caveat = require('./tracker').baselineCaveat(f.buckets[f.buckets.length - 1].from);
+      return indicator({
+        key: `drift:${f.row.kpiKey}`,
+        detector: 'T2',
+        subject: f.row.kpiKey,
+        severity: f.z >= 4 ? 'high' : 'medium',
+        title: `${f.row.label} has drifted to ${now} a day, from ${was}`,
+        change: `This week averaged ${now}; the four weeks before it averaged ${was}. That is ${round(f.z)} standard deviations out, against a bar of ${TRACKER_SCAN_Z} — deliberately higher than the other detectors use, because scanning every tracker row at once would otherwise produce a false card most weeks from chance alone.`,
+        whyItMatters: 'Nobody notices this day to day, which is exactly why it is worth a card. It is one of the numbers you report daily, and a month from now it will be the trend somebody asks you about.',
+        evidence: [
+          { label: 'This week (daily mean)', value: now },
+          { label: 'Previous four weeks', value: f.buckets.slice(1).map(b => round(b.mean)).join(', ') },
+          { label: 'Direction', value: f.series.direction === 'higher-better' ? 'higher is better — this has fallen' : 'lower is better — this has risen' },
+          { label: 'Tracker row', value: f.row.label },
+        ],
+        horizonDays: 14,
+        confidence: confidence([f.series], asOf, caveat ? [{ cost: 0.2, why: caveat }] : []),
+        confirm: 'Look at the same row in your daily tracker across the last five weeks — the drift should be visible in the sheet you already keep.',
+        disprove: 'A definition or capture change rather than a real movement. The 2-10 September correction is the live example: NOVA\'s stored values disagreed with the reported sheet and were fixed forward without backfilling.',
+        action: `Bring ${f.row.label} to the next ops conversation with the five-week numbers. It is a trend rather than an incident, so the useful move is to name it before it is asked about.`,
+      });
+    }),
+  };
+}
+
 // ── SHADOW: the independent-family composite (S1) ────────────────────────────
 
 /**
@@ -888,6 +1099,8 @@ const SHADOW_DETECTORS = [
 
 const DETECTORS = [
   { id: 'A', name: 'Net flow divergence', run: detectNetFlow },
+  { id: 'T1', name: 'Tracker — slipping now', run: detectTacticalDrift },
+  { id: 'T2', name: 'Tracker — drifting', run: detectTrackerDrift },
   { id: 'B', name: 'Ageing acceleration', run: detectAgeing },
   { id: 'C', name: 'Escalation quality shift', run: detectEscalationQuality },
   { id: 'D', name: 'Dev-owned drift', run: detectDevDrift },
@@ -919,7 +1132,7 @@ const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
  * HERE, by name, rather than deleted or quietly weakened, so what is off and
  * why stays visible.
  */
-function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
+function detect({ series = {}, capacity = null, tracker = null, asOf, disabled = [] } = {}) {
   if (!asOf) throw new Error('detect() needs an asOf day — a detector with no clock would read the future');
 
   const indicators = [];
@@ -945,7 +1158,7 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
     }
     let result;
     try {
-      result = d.run({ series, capacity, asOf });
+      result = d.run({ series, capacity, tracker, asOf });
     } catch (err) {
       // One detector throwing must not lose the other four, and must not look
       // like a quiet department either.
@@ -963,7 +1176,7 @@ function detect({ series = {}, capacity = null, asOf, disabled = [] } = {}) {
   for (const d of SHADOW_DETECTORS) {
     let r;
     try {
-      r = d.run({ series, capacity, asOf });
+      r = d.run({ series, capacity, tracker, asOf });
     } catch (err) {
       blocked.push({ id: d.id, name: d.name, shadow: true, reason: `threw: ${err.message}` });
       continue;
@@ -1075,9 +1288,14 @@ function disabledDetectors() {
 async function current({ force = false } = {}) {
   const kpiSeries = require('./kpi-series');
 
-  const [history, capacity] = await Promise.all([
+  const trackerFeed = require('./tracker');
+
+  // Three reads, each failing on its own. The tracker is the slowest (it does a
+  // live Jira recompute) and must never be able to cost the other two.
+  const [history, capacity, tracker] = await Promise.all([
     kpiSeries.current({ force }),
     kpiSeries.capacity({ force }),
+    trackerFeed.current({ force }).catch(err => ({ available: false, reason: err.message })),
   ]);
 
   if (!history.available) {
@@ -1095,6 +1313,7 @@ async function current({ force = false } = {}) {
 
   const result = detect({
     series: history.series,
+    tracker,
     // Passed through unavailable-and-all. `detectCapacityCollision` turns that
     // into a named blocked detector, which is the honest rendering; filtering
     // it to null here would make an unread source look like a quiet one.
@@ -1142,6 +1361,23 @@ async function current({ force = false } = {}) {
     capacity: capacity?.available
       ? { rosterCount: capacity.rosterCount, unsyncable: capacity.unsyncable, approvedOnly: true }
       : { available: false, reason: capacity?.reason || 'not read' },
+    // What the tracker half could see. `unmeasured` is carried so a screen can
+    // say the tracker has 34 rows and 31 are watched — a monitor covering 31
+    // must not read as one covering the tracker.
+    tracker: tracker?.available
+      ? {
+        totalRows: tracker.totalRows,
+        measured: tracker.measurable.length,
+        unmeasured: tracker.unmeasured,
+        liveAgeSeconds: tracker.live?.ageSeconds ?? null,
+        liveError: tracker.live?.error || null,
+        hourly: {
+          ready: tracker.hourly.ready,
+          daysCovered: tracker.hourly.daysCovered,
+          needed: tracker.hourly.needed,
+        },
+      }
+      : { available: false, reason: tracker?.reason || 'not read' },
     registerError: lifecycle.error || null,
   };
 }
@@ -1220,6 +1456,7 @@ module.exports = {
   // detector alone to know which one produced a result.
   detectNetFlow, detectAgeing, detectEscalationQuality, detectDevDrift, detectCapacityCollision,
   detectShadowComposite, SHADOW_DETECTORS,
+  detectTacticalDrift, detectTrackerDrift, TACTICAL_Z, TRACKER_SCAN_Z, MAX_TRACKER_CARDS,
   weekBuckets, zScore, windowUsable, confidence, byDay,
   Z_FIRE, BASELINE_WEEKS, REQUIRED_DAYS, AGE_SLOPE_FROZEN, THIN_TEAM_SHARE, MIN_CONFIDENCE, MAX_INDICATORS,
 };
