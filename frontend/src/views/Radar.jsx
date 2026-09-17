@@ -368,7 +368,19 @@ export default function Radar() {
             {data?.counts && (
               <>{data.counts.happened} already wrong · {data.counts.happening} going wrong · {data.counts.could} could</>
             )}
-            {/* Findings typed in by hand carry no tense, and are not given one — the
+      {data?.meetingsRead?.length > 0 && (
+              <> · read {data.meetingsRead.length} recent meeting{data.meetingsRead.length === 1 ? '' : 's'}</>
+            )}
+            {freshness && <> · as at <strong>{freshness}</strong></>}
+            {data?.refreshing && <> · refreshing in the background</>}
+          </div>
+        </div>
+        <button className="ghost" onClick={() => load(true)} disabled={refreshing}>
+          {refreshing ? 'Re-reading…' : 'Refresh now'}
+        </button>
+      </div>
+
+      {/* Findings typed in by hand carry no tense, and are not given one — the
           three tenses demand different responses and a guessed one is worse
           than an unplaced card. */}
       {(data?.items || []).some(i => i.pinned && !i.tense) && (
@@ -385,21 +397,21 @@ export default function Radar() {
       {data?.resolved?.length > 0 && (
         <div className="card">
           <button onClick={() => setShowResolved(v => !v)} aria-expanded={showResolved}
-            style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <h2 style={{ flex: 1 }}>Resolved ({data.resolved.length})</h2>
-            <span className="small muted">{showResolved ? 'hide' : 'show'}</span>
+      style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+      <h2 style={{ flex: 1 }}>Resolved ({data.resolved.length})</h2>
+      <span className="small muted">{showResolved ? 'hide' : 'show'}</span>
           </button>
           {showResolved && data.resolved.map(r => (
-            <div key={r.findingId} style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
-              <div className="row" style={{ gap: 8 }}>
-                <strong style={{ fontSize: 14, flex: 1 }}>{r.title}</strong>
-                <span className="small muted">{r.foundOn} → {r.resolvedOn || '—'}</span>
-                <span className="pill">{r.source}</span>
-              </div>
-              <div className="small" style={{ color: 'var(--good)', marginTop: 3 }}>
-                {r.how || 'No resolution recorded.'}
-              </div>
-            </div>
+      <div key={r.findingId} style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
+        <div className="row" style={{ gap: 8 }}>
+          <strong style={{ fontSize: 14, flex: 1 }}>{r.title}</strong>
+          <span className="small muted">{r.foundOn} → {r.resolvedOn || '—'}</span>
+          <span className="pill">{r.source}</span>
+        </div>
+        <div className="small" style={{ color: 'var(--good)', marginTop: 3 }}>
+          {r.how || 'No resolution recorded.'}
+        </div>
+      </div>
           ))}
         </div>
       )}
@@ -417,14 +429,14 @@ export default function Radar() {
         <div className="card">
           <h2>Went back to normal ({data.normalised.length})</h2>
           {data.normalised.map(n => (
-            <div key={n.key} style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
-              <div className="row" style={{ gap: 8 }}>
-                <strong style={{ fontSize: 14, flex: 1 }}>{n.title}</strong>
-                <span className="small muted">{n.firstSeenOn} → {n.closedOn}</span>
-                <span className="pill">{n.detector}</span>
-              </div>
-              <div className="small" style={{ color: 'var(--good)', marginTop: 3 }}>{n.note}</div>
-            </div>
+      <div key={n.key} style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
+        <div className="row" style={{ gap: 8 }}>
+          <strong style={{ fontSize: 14, flex: 1 }}>{n.title}</strong>
+          <span className="small muted">{n.firstSeenOn} → {n.closedOn}</span>
+          <span className="pill">{n.detector}</span>
+        </div>
+        <div className="small" style={{ color: 'var(--good)', marginTop: 3 }}>{n.note}</div>
+      </div>
           ))}
         </div>
       )}
@@ -435,18 +447,6 @@ export default function Radar() {
           below, and that is not the same as nothing having been logged.
         </div>
       )}
-
-      {data?.meetingsRead?.length > 0 && (
-              <> · read {data.meetingsRead.length} recent meeting{data.meetingsRead.length === 1 ? '' : 's'}</>
-            )}
-            {freshness && <> · as at <strong>{freshness}</strong></>}
-            {data?.refreshing && <> · refreshing in the background</>}
-          </div>
-        </div>
-        <button className="ghost" onClick={() => load(true)} disabled={refreshing}>
-          {refreshing ? 'Re-reading…' : 'Refresh now'}
-        </button>
-      </div>
 
       {TENSES.map(t => {
         const all = (data?.items || []).filter(i => i.tense === t.key);
