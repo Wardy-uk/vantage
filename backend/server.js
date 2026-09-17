@@ -186,7 +186,7 @@ app.get('/api/leading/scoreboard', wrap(() => ({ scoreboard: require('./services
 // It reports the rows it CANNOT measure BY NAME, and serves the counts rather
 // than asserting them: a feed returning only the measurable rows would read as
 // the whole tracker.
-app.get('/api/tracker', wrap(req => require('./services/tracker').current({ force: req.query.refresh === '1' })));
+app.get('/api/tracker', wrap(req => require('./services/tracker').current({ force: req.query.refresh === '1', withHistory: true })));
 // A human verdict on one warning, which outranks the automatic label. The
 // automatic one cannot see that Nick acted and prevented the thing — which
 // otherwise records as a false positive, punishing the warnings that worked.

@@ -83,7 +83,7 @@ const MIN_DAYS_FOR_HOURLY_BASELINE = 10;
  * Current tracker state. NEVER throws — unavailability is a state with a
  * reason, same contract as every other reader here.
  */
-async function current({ force = false, days = 28 } = {}) {
+async function current({ force = false, days = 28, withHistory = false } = {}) {
   if (!isConfigured()) return { available: false, reason: 'NOVA bridge not configured' };
   if (!force && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
 
@@ -103,10 +103,17 @@ async function current({ force = false, days = 28 } = {}) {
     const measurable = rows.filter(r => r.kpiKey);
     const unmeasured = rows.filter(r => !r.kpiKey).map(r => r.label);
 
-    // Live values, keyed for lookup. Absent when the snapshot failed — and that
-    // is reported rather than rendered as every KPI sitting at zero.
-    const live = new Map();
-    for (const item of raw.live?.items || []) live.set(item.key, item);
+    // ⚠ An ARRAY, not a Map.
+    //
+    // The first cut held these in a `Map` for lookup convenience. In-process
+    // that is fine and the detectors worked; over the wire `JSON.stringify` of
+    // a Map is `{}`, so `/api/tracker` and the MCP operation both returned an
+    // empty object where every live value should have been — and nothing would
+    // have caught it, because the only consumers exercised until then were
+    // in-process. Anything crossing a serialisation boundary is a plain array
+    // or a plain object. `indexLive()` below rebuilds the lookup for callers
+    // that want one.
+    const liveItems = raw.live?.items || [];
 
     // Intraday, with the readiness question answered rather than left to the
     // caller to work out from a row count.
@@ -136,17 +143,80 @@ async function current({ force = false, days = 28 } = {}) {
         error: raw.liveError || null,
         day: raw.live?.day || null,
         ageSeconds: raw.live?.ageSeconds ?? null,
-        byKey: live,
+        items: liveItems,
       },
       hourly,
       baselineTrustedFrom: BASELINE_TRUSTED_FROM,
     };
+
+    // A screen needs the live value AND where it sat yesterday, in one call.
+    // Opt-in, because the detectors already hold the daily series and a second
+    // fetch on their path would be wasted work against a DTU-limited database.
+    if (withHistory) data.byRow = await joinHistory(rows, liveItems, force);
     cache = { at: Date.now(), data };
     return data;
   } catch (err) {
     if (cache.data?.available) return { ...cache.data, stale: true, staleReason: err.message };
     return { available: false, reason: err.message };
   }
+}
+
+
+/**
+ * One row per tracker line, with today beside the recent past.
+ *
+ * Built for a reader rather than a detector: the question on a screen is "what
+ * is this now, what was it yesterday, and is that unusual", and answering it
+ * from three separate calls would guarantee the three drifted.
+ *
+ * A row with no KPI key comes back with `measured: false` and its label. It is
+ * NOT dropped — the tracker is the sheet Nick reports, and a view showing only
+ * the rows we can compute would quietly redefine it as the subset NOVA happens
+ * to know.
+ */
+async function joinHistory(rows, liveItems, force) {
+  const kpiSeries = require('./kpi-series');
+  const hist = await kpiSeries.current({ force }).catch(() => ({ available: false }));
+  const live = new Map(liveItems.map(i => [i.key, i]));
+
+  return rows.map(row => {
+    if (!row.kpiKey) {
+      return {
+        label: row.label, key: null, measured: false,
+        reason: 'no KPI key in the NOVA tracker spec — not computed, so not watched',
+      };
+    }
+    const s = hist.available ? hist.series[row.kpiKey] : null;
+    const pts = s?.points || [];
+    const item = live.get(row.kpiKey) || null;
+    const recent = pts.slice(-14);
+    const yesterday = recent.length ? recent[recent.length - 1] : null;
+    const week = recent.slice(-7).map(p => p.value);
+    const prevWeek = recent.slice(-14, -7).map(p => p.value);
+    const avg = xs => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+
+    return {
+      label: row.label,
+      key: row.kpiKey,
+      measured: true,
+      extra: row.extra === true,
+      unit: s?.unit ?? null,
+      direction: s?.direction ?? null,
+      target: item?.target ?? s?.dailyTarget ?? null,
+      live: item ? item.value : null,
+      rag: item?.rag ?? null,
+      // The close this live value should be read against. Named rather than
+      // implied, because "yesterday" is doing real work in every comparison.
+      yesterday: yesterday ? { day: yesterday.day, value: yesterday.value } : null,
+      change: item && yesterday && item.value !== null ? Math.round((item.value - yesterday.value) * 10) / 10 : null,
+      weekMean: avg(week),
+      prevWeekMean: avg(prevWeek),
+      points: recent.map(p => ({ day: p.day, value: p.value })),
+      // Absence, said out loud rather than shown as an empty sparkline.
+      historyAvailable: Boolean(s),
+      historyReason: s ? null : (hist.available ? 'no daily history for this key' : (hist.reason || 'daily history not read')),
+    };
+  });
 }
 
 /**
@@ -160,7 +230,11 @@ function baselineCaveat(fromDay, trustedFrom = BASELINE_TRUSTED_FROM) {
   return `the baseline reaches back to ${fromDay}, before ${trustedFrom} — NOVA's stored values disagreed with the reported sheet until then (up to +47 on Total Solved) and were never backfilled, so part of this movement is the correction rather than the department`;
 }
 
+/** Key → live item, for callers that want a lookup. Built on demand rather than
+ *  stored, because a Map cannot cross a JSON boundary — see the note in `current`. */
+const indexLive = live => new Map((live?.items || []).map(i => [i.key, i]));
+
 module.exports = {
-  current, isConfigured, baselineCaveat,
+  current, isConfigured, baselineCaveat, indexLive,
   BUILD_EXPECTED, BASELINE_TRUSTED_FROM, MIN_DAYS_FOR_HOURLY_BASELINE,
 };

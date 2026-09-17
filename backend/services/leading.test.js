@@ -558,7 +558,7 @@ function trackerFeed({ liveValue, key = 'nt_legacy_cc_incidents', label = 'CC In
     totalRows: 2,
     live: {
       available: true, error: null, day: ASOF, ageSeconds: 30,
-      byKey: new Map([[key, { key, value: liveValue }]]),
+      items: [{ key, value: liveValue }],
     },
     hourly: { available: true, error: null, daysCovered: 0, ready: false, readySoon: false, needed: 10, series: [] },
     baselineTrustedFrom: '2026-09-11',
@@ -601,7 +601,7 @@ test('T1 states that it is comparing against yesterday, NOT against this hour', 
 test('T1 blocks — never guesses — when the live snapshot failed', () => {
   const s = { nt_legacy_cc_incidents: histBefore(() => 22) };
   const feed = trackerFeed({ liveValue: 60 });
-  feed.live = { available: false, error: 'Jira timed out', byKey: new Map() };
+  feed.live = { available: false, error: 'Jira timed out', items: [] };
   const r = leading.detectTacticalDrift({ tracker: feed, series: s, asOf: ASOF });
   assert.ok(r.blocked);
   assert.match(r.blocked.reason, /Jira timed out/);

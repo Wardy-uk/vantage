@@ -63,6 +63,8 @@ export const api = {
   // automatic label records a prevented problem as a false alarm.
   leading: (refresh = false) => call(`/leading${refresh ? '?refresh=1' : ''}`),
   leadingScoreboard: () => call('/leading/scoreboard'),
+  // The Daily KPI Tracker, with today beside yesterday in one call.
+  tracker: (refresh = false) => call(`/tracker${refresh ? '?refresh=1' : ''}`),
   // `by: 'nick'` is stated explicitly, not defaulted server-side. The default
   // was removed deliberately: a verdict with no stated source would be recorded
   // as his, and this ledger is what decides whether the detectors are worth

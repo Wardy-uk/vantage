@@ -821,10 +821,11 @@ function detectTacticalDrift({ tracker, series, asOf }) {
     return { blocked: { id: 'T1', name: 'Tracker — slipping now', reason: `no live snapshot: ${tracker.live?.error || 'not returned'}` } };
   }
 
+  const liveBy = require('./tracker').indexLive(tracker.live);
   const found = [];
   for (const row of tracker.measurable) {
     const s = series[row.kpiKey];
-    const liveItem = tracker.live.byKey.get(row.kpiKey);
+    const liveItem = liveBy.get(row.kpiKey);
     if (!s || !liveItem || liveItem.value === null || liveItem.value === undefined) continue;
 
     const pts = (s.points || []).filter(p => p.day < tracker.live.day);
