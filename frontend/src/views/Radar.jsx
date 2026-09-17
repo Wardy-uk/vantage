@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { familyFor, countByFamily } from '../sources.js';
 
 /**
  * What has gone wrong, what is going wrong, and what could.
@@ -117,7 +118,13 @@ function Item({ it }) {
           </span>
         )}
         {(logged || it.findingId) && <span className="small" style={{ color: 'var(--muted)' }}>✓ logged</span>}
-        <span className="pill">{it.source}</span>
+        {/* Source colour lives HERE and only here on a card — a tinted border
+            and text on a transparent ground. The severity dot to the left keeps
+            the saturated status colour, so the two encodings never compete. */}
+        <span className="pill" style={{
+          color: familyFor(it.source).colour,
+          borderColor: familyFor(it.source).colour,
+        }} title={familyFor(it.source).blurb}>{it.source}</span>
         <span className="small" style={{
           color: 'var(--muted)', width: 12, textAlign: 'center', flexShrink: 0,
           transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s',
@@ -214,12 +221,66 @@ function Item({ it }) {
   );
 }
 
+
+/**
+ * What is on the radar, by where it came from — and a filter.
+ *
+ * NOT a chart. Six counts do not need a plot; a stat row reads faster and cannot
+ * mislead about proportion the way a tiny pie would. This is the one place
+ * source colour is solid, because there is no severity beside it to compete
+ * with and the colour is doing the whole identifying job.
+ *
+ * It doubles as the filter, in one row above the list, so the question "why are
+ * there thirty-four of these" and the act of narrowing them are the same
+ * control rather than two.
+ */
+function SourceStrip({ items, active, onPick }) {
+  const families = countByFamily(items);
+  if (families.length < 2) return null;
+
+  return (
+    <div className="card" style={{ padding: '10px 12px' }}>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {families.map(f => {
+          const on = active === f.key;
+          return (
+            <button
+              key={f.key}
+              onClick={() => onPick(on ? null : f.key)}
+              title={f.blurb}
+              aria-pressed={on}
+              style={{
+                all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 10px', borderRadius: 999,
+                border: `1px solid ${on ? f.colour : 'var(--line)'}`,
+                background: on ? 'var(--panel-2)' : 'transparent',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: f.colour, flexShrink: 0 }} />
+              {/* Text wears text tokens, never the series colour — the swatch
+                  beside it carries identity. */}
+              <span className="small" style={{ color: on ? 'var(--text)' : 'var(--muted)' }}>{f.label}</span>
+              <strong style={{ fontSize: 13 }}>{f.count}</strong>
+            </button>
+          );
+        })}
+        {active && (
+          <button className="ghost small" onClick={() => onPick(null)} style={{ marginLeft: 4 }}>
+            show all
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Radar() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
+  const [family, setFamily] = useState(null);
 
   const load = async (force = false) => {
     force ? setRefreshing(true) : setLoading(true);
@@ -373,8 +434,12 @@ export default function Radar() {
         </button>
       </div>
 
+      <SourceStrip items={data?.items || []} active={family} onPick={setFamily} />
+
       {TENSES.map(t => {
-        const items = (data?.items || []).filter(i => i.tense === t.key);
+        const all = (data?.items || []).filter(i => i.tense === t.key);
+        const items = family ? all.filter(i => familyFor(i.source).key === family) : all;
+        const hidden = all.length - items.length;
         return (
           <div className="card" key={t.key}>
             <h2>{t.title}</h2>
@@ -382,10 +447,23 @@ export default function Radar() {
             {items.length === 0
               ? (
                 <p className="small muted">
-                  Nothing surfaced — from the sources that answered. That is not the same as nothing being there.
+                  {/* A filter hiding everything and a tense with nothing in it are
+                      different facts, and only one of them is about the department. */}
+                  {hidden > 0
+                    ? `Nothing from this source in this tense — ${hidden} other card${hidden === 1 ? '' : 's'} here are filtered out.`
+                    : 'Nothing surfaced — from the sources that answered. That is not the same as nothing being there.'}
                 </p>
               )
-              : items.map((it, i) => <Item key={i} it={it} />)}
+              : (
+                <>
+                  {items.map((it, i) => <Item key={i} it={it} />)}
+                  {hidden > 0 && (
+                    <p className="small muted" style={{ marginTop: 8 }}>
+                      {hidden} more here from other sources, hidden by the filter.
+                    </p>
+                  )}
+                </>
+              )}
           </div>
         );
       })}
