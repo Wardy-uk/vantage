@@ -55,6 +55,9 @@ async function call(path, { method = 'GET', body } = {}) {
 
 export const api = {
   health: () => fetch(`${API_BASE}/health`).then(r => r.json()),
+  // Which view is on, for NEURO's usage heatmap. Fire and forget at the call
+  // site — a usage grid must never be able to cost a screen change.
+  screenOpen: screen => call('/screen-open', { method: 'POST', body: { screen } }),
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
   radar: (refresh = false) => call(`/radar${refresh ? '?refresh=1' : ''}`),
 

@@ -156,6 +156,17 @@ app.post('/api/settings/test/:what', wrap(async req => {
   throw new Error(`Unknown test "${req.params.what}"`);
 }));
 
+// ── Screen opens ─────────────────────────────────────────────────────────────
+
+// Which view is on, for NEURO's usage heatmap. NEURO reads this out of
+// VANTAGE's own SQLite rather than over the bridge — see
+// `services/screen-opens.js` for why, and for what the shape commits us to.
+//
+// ⚠ It answers 200 on a refusal too, carrying `ok:false` and the reason. The
+// client is fire and forget on every navigation: a non-2xx would put a red line
+// in the console of an app whose screen change worked perfectly.
+app.post('/api/screen-open', wrap(req => require('./services/screen-opens').record((req.body || {}).screen)));
+
 // ── Signals ──────────────────────────────────────────────────────────────────
 
 app.get('/api/signals', wrap(req => signals.current({ force: req.query.refresh === '1' })));

@@ -109,6 +109,20 @@ export default function App() {
     api.sessions().then(() => setReady(true)).catch(() => {}).finally(() => setChecking(false));
   }, []);
 
+  // Which view is on, for NEURO's usage heatmap.
+  //
+  // ⚠ It sits ABOVE the early returns below — a hook under a conditional return
+  // changes the hook count between renders and React rejects it outright. It is
+  // gated on `ready` instead, so the PIN gate is not recorded as a screen.
+  //
+  // ⚠ Fire and forget: `.catch(() => {})`, never awaited. A grid is not worth a
+  // navigation, and VANTAGE is the surface NEURO can only see by reading this
+  // app's own store — a failure here is a blank cell, not a broken screen.
+  useEffect(() => {
+    if (!ready || !tab) return;
+    api.screenOpen(tab).catch(() => {});
+  }, [ready, tab]);
+
   if (checking) return <div className="empty">Loading…</div>;
   if (!ready) return <Gate onDone={() => setReady(true)} />;
 
