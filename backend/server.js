@@ -166,6 +166,12 @@ app.post('/api/settings/test/:what', wrap(async req => {
 // client is fire and forget on every navigation: a non-2xx would put a red line
 // in the console of an app whose screen change worked perfectly.
 app.post('/api/screen-open', wrap(req => require('./services/screen-opens').record((req.body || {}).screen)));
+// A coalesced batch of control uses on a view — the other half of the heatmap.
+// Separate from /screen-open because they are different facts: one says he went
+// there, the other says he did something once he had.
+app.post('/api/screen-interact', wrap(req => require('./services/screen-opens').record(
+  (req.body || {}).screen, new Date(), undefined, { kind: 'interacted', count: (req.body || {}).count },
+)));
 
 // ── Signals ──────────────────────────────────────────────────────────────────
 

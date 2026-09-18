@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createInteractionBuffer, attachInteractionListener } from './interactions.js';
 import { api, getPin, setPin } from './api.js';
 import Radar from './views/Radar.jsx';
 import Tracker from './views/Tracker.jsx';
@@ -122,6 +123,25 @@ export default function App() {
     if (!ready || !tab) return;
     api.screenOpen(tab).catch(() => {});
   }, [ready, tab]);
+
+  // Control uses on the current view, coalesced and flushed.
+  //
+  // ⚠ Attached ONCE with a ref for the current tab, not per tab — the buffer is
+  // keyed by screen and the tab is read at event time, so re-attaching on every
+  // navigation would drop the clicks made on the view being left.
+  // ⚠ Scoped to <main>: the nav sits outside it, so switching views is not
+  // counted as working in one.
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  useEffect(() => {
+    if (!ready) return undefined;
+    const buffer = createInteractionBuffer({
+      surface: 'vantage',
+      send: ({ tab: t, count }) => api.screenInteract(t, count),
+    });
+    const detach = attachInteractionListener({ scope: 'main', getTab: () => tabRef.current, buffer });
+    return () => { buffer.flush(); detach(); };
+  }, [ready]);
 
   if (checking) return <div className="empty">Loading…</div>;
   if (!ready) return <Gate onDone={() => setReady(true)} />;

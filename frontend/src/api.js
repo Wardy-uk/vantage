@@ -58,6 +58,9 @@ export const api = {
   // Which view is on, for NEURO's usage heatmap. Fire and forget at the call
   // site — a usage grid must never be able to cost a screen change.
   screenOpen: screen => call('/screen-open', { method: 'POST', body: { screen } }),
+  // A coalesced batch of control uses on a view — the other half of the
+  // heatmap. Fire and forget at the call site.
+  screenInteract: (screen, count) => call('/screen-interact', { method: 'POST', body: { screen, count } }),
   signals: (refresh = false) => call(`/signals${refresh ? '?refresh=1' : ''}`),
   radar: (refresh = false) => call(`/radar${refresh ? '?refresh=1' : ''}`),
 

@@ -41,6 +41,16 @@ function store(given) {
 
 const COLLECTION = 'screen_opens';
 
+// What a row records. An OPEN is arriving on a view; an INTERACTION is using a
+// control once there. ⚠ A row written before 18 Sep 2026 carries NO `kind` and
+// is an open — the only thing recorded then — so the reader defaults it that
+// way rather than reclassifying real history.
+const KINDS = new Set(['opened', 'interacted']);
+
+// The most control-uses one flush may claim. Matches NEURO's own ceiling; a
+// runaway must not be able to flatten every other row on the grid.
+const MAX_COUNT = 500;
+
 // The views this app has. An unrecognised name is REFUSED rather than stored:
 // a typo'd or injected screen name would appear on NEURO's grid as a VANTAGE
 // screen that does not exist, and a row nobody can trace back to a view is
@@ -82,21 +92,33 @@ function cutoffKey(now = new Date()) {
  * grid must not be able to cost a screen change, and the caller is fire and
  * forget. A failure returns `{ ok: false, reason }` so a test can see it.
  */
-function record(screen, now = new Date(), db) {
+function record(screen, now = new Date(), db, opts = {}) {
   const name = typeof screen === 'string' ? screen.trim().toLowerCase() : '';
   if (!name) return { ok: false, reason: 'no screen named' };
   if (!VIEWS.has(name)) return { ok: false, reason: `unknown view "${name}"` };
 
+  // ⚠ An unrecognised kind is REFUSED, never normalised to `opened` — silently
+  // filing interactions as opens would inflate the accessed grid with work
+  // that belongs in the other one, and nothing downstream could tell.
+  const kind = opts.kind === undefined ? 'opened' : opts.kind;
+  if (!KINDS.has(kind)) return { ok: false, reason: `unknown kind "${opts.kind}"` };
+
+  const count = typeof opts.count === 'number' && Number.isFinite(opts.count) && opts.count > 0
+    ? Math.min(Math.floor(opts.count), MAX_COUNT)
+    : 1;
+
   try {
     store(db).insert(COLLECTION, {
       screen: name,
+      kind,
+      count,
       date_key: dateKey(now),
       // Local, matching NEURO's own `activity_log.hour`.
       hour: now.getHours(),
       at: now.toISOString(),
     });
     prune(now, db);
-    return { ok: true };
+    return { ok: true, kind, recorded: count };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
@@ -123,4 +145,4 @@ function list(db) {
   try { return store(db).find(COLLECTION); } catch { return []; }
 }
 
-module.exports = { record, prune, list, dateKey, cutoffKey, COLLECTION, VIEWS, RETAIN_DAYS };
+module.exports = { record, prune, list, dateKey, cutoffKey, COLLECTION, VIEWS, KINDS, RETAIN_DAYS, MAX_COUNT };
