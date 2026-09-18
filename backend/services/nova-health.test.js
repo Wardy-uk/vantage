@@ -21,6 +21,7 @@ const report = (over = {}) => ({
     build: nh.BUILD_EXPECTED,
     overall: 'ok',
     trustworthy: true,
+    controlsHealthy: true,
     tables: { ok: true, error: null, data: [{ table: 'jira_issue_cache', severity: 'ok', verdict: 'fine', control: true }] },
     columns: { ok: true, error: null, data: [] },
     jobs: { ok: true, error: null, data: { uptimeSeconds: 99999, warmingUp: false, inMemoryOnly: true, jobs: [] } },
@@ -29,14 +30,25 @@ const report = (over = {}) => ({
   },
 });
 
-test('RULE 1: an untrustworthy report is a blind spot, not a clean bill', () => {
-  // The controls are themselves unhealthy, so the greens are not evidence of
-  // anything. Rendering that as a tick is the exact failure both systems exist
-  // to prevent.
-  const r = nh.toRadar(report({ trustworthy: false, overall: 'ok' }));
-  const blind = r.blind.find(b => /untrustworthy/.test(b.name));
-  assert.ok(blind, 'an untrustworthy report must reach the blind-spots banner');
+test('RULE 1a: sick controls mean the checker is BLIND, and the greens prove nothing', () => {
+  const r = nh.toRadar(report({ trustworthy: false, controlsHealthy: false, overall: 'ok' }));
+  const blind = r.blind.find(b => /blind/.test(b.name));
+  assert.ok(blind, 'a blind checker must reach the blind-spots banner');
   assert.match(blind.reason, /not evidence of anything/);
+});
+
+test('RULE 1b: a missing section is INCOMPLETE, not worthless — a different sentence', () => {
+  // Build -b split the flag because the two causes want different reactions.
+  // Saying "the numbers cannot be believed" when they are merely incomplete
+  // would be as wrong as saying nothing.
+  const r = nh.toRadar(report({
+    trustworthy: false, controlsHealthy: true, overall: 'unknown',
+    unavailable: [{ name: 'jobs', error: 'no registry' }],
+  }));
+  const blind = r.blind.find(b => /partial/.test(b.name));
+  assert.ok(blind, 'a partial report is named as partial');
+  assert.match(blind.reason, /Incomplete rather than wrong/);
+  assert.ok(!r.blind.some(b => /\(blind\)/.test(b.name)), 'and is NOT reported as a blind checker');
 });
 
 test('RULE 2: unknown is reported as not-evaluated, never as passing', () => {

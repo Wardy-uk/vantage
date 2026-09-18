@@ -498,7 +498,7 @@ async function compute({ force = false } = {}) {
     // for that explicitly and it is the difference between "NOVA is fine" and
     // "NOVA cannot tell".
     novaHealth: novaHealthState?.available
-      ? { overall: healthRadar.overall, trustworthy: healthRadar.trustworthy, asOf: novaHealthState.asOf, stale: Boolean(novaHealthState.stale) }
+      ? { overall: healthRadar.overall, trustworthy: healthRadar.trustworthy, controlsHealthy: healthRadar.controlsHealthy, asOf: novaHealthState.asOf, stale: Boolean(novaHealthState.stale) }
       : { available: false, reason: novaHealthState?.reason || 'not read' },
     // What is switched off and why — said once, plainly, outside the fault
     // banner. Still visible, because a detector nobody is told about is one

@@ -20,10 +20,13 @@
  * The NOVA side asked for these explicitly and they are the whole reason the
  * report is worth having:
  *
- * 1. **`overall` is never read without `trustworthy`.** A report whose positive
- *    controls are themselves unhealthy is not evidence that NOVA is fine; it is
- *    evidence that the checker cannot see. Rendering that as a green tick is
- *    the exact failure both systems are built against.
+ * 1. **`overall` is never read alone.** Two flags qualify it, and they mean
+ *    different things: `controlsHealthy: false` says the checker is BLIND, so
+ *    nothing on the report is evidence including the greens; `trustworthy:
+ *    false` on its own says a section could not be evaluated, so what ran is
+ *    sound but does not cover what the report claims. Rendering either as a
+ *    green tick is the exact failure both systems are built against; rendering
+ *    them as the same sentence would be the smaller version of it.
  *
  * 2. **`unknown` is NOT `ok`.** It means "could not evaluate". Collapsing the
  *    two is the bug this whole estate keeps relearning — `sla_breached` read as
@@ -39,7 +42,7 @@
  */
 
 /** The NOVA build whose shape this reader understands. */
-const BUILD_EXPECTED = '2026-09-18-a';
+const BUILD_EXPECTED = '2026-09-18-b';
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 120_000;
 
@@ -147,13 +150,27 @@ function toRadar(state) {
   const blind = [];
   const items = [];
 
-  // ⚠ RULE 1. The controls are unhealthy, so the greens mean nothing. This goes
-  // first and it goes in the banner, because it invalidates the rest of the
-  // report rather than adding to it.
-  if (raw.trustworthy === false) {
+  // ⚠ RULE 1 — and build -b split it into two, because the two causes want
+  // genuinely different reactions:
+  //
+  //   controlsHealthy: false   the checker is BLIND. Nothing on the report is
+  //                            evidence, including everything that came back
+  //                            green.
+  //   trustworthy: false only  what ran is sound; it just does not cover
+  //                            everything the report claims to. Incomplete
+  //                            rather than wrong.
+  //
+  // One sentence for both would tell Nick the numbers are worthless when they
+  // are merely partial, and those are not the same problem or the same fix.
+  if (raw.controlsHealthy === false) {
     blind.push({
-      name: 'nova-health (untrustworthy)',
-      reason: 'NOVA\'s own positive controls are unhealthy, so its health report cannot be believed — the checks that came back clean are not evidence of anything. Treat NOVA\'s instrumentation as unknown until this clears.',
+      name: 'nova-health (blind)',
+      reason: 'NOVA\'s own positive controls are unhealthy, so the checker cannot see — the checks that came back clean are not evidence of anything. Treat NOVA\'s instrumentation as unknown until this clears.',
+    });
+  } else if (raw.trustworthy === false) {
+    blind.push({
+      name: 'nova-health (partial)',
+      reason: 'NOVA\'s controls are healthy, so what it did check is sound — but at least one section could not be evaluated, so the report does not cover everything it claims to. Incomplete rather than wrong.',
     });
   }
 
@@ -197,7 +214,7 @@ function toRadar(state) {
     });
   }
 
-  return { items, blind, overall: raw.overall, trustworthy: raw.trustworthy };
+  return { items, blind, overall: raw.overall, trustworthy: raw.trustworthy, controlsHealthy: raw.controlsHealthy };
 }
 
 module.exports = { current, toRadar, allChecks, isConfigured, BUILD_EXPECTED };
