@@ -497,21 +497,55 @@ test('toRadarItems refuses a shadow even if one is handed to it directly', () =>
   assert.deepEqual(leading.toRadarItems({ available: true, indicators: [card] }), []);
 });
 
-test('every KPI a detector reads is one the reader actually asks NOVA for', () => {
-  // S1 shipped blocked on "only 2 of 4 evidence families could be computed",
-  // which reads as missing data and was a missing REQUEST: nt_legacy_unassigned
-  // was never in DETECTOR_KEYS, so the ownership family got undefined and the
-  // detector correctly refused to guess. Safe, but silently wrong for a week if
-  // nobody looked. This is the check that was a one-off command and should have
-  // been a test.
+test('the reader asks NOVA for EVERYTHING — scope is a rule, not a list', () => {
+  // ⚠ This replaced a test that checked every key read by a detector was on a
+  // hand-maintained request list. The list itself was the defect: on 14 Sep
+  // 2026 a NOVA fault sent FRT breaches from ~5 a day to 45 and VANTAGE said
+  // nothing, because `nt_sla_frt_all_breached` had never been added to it. A
+  // curated list fails silently — nothing announces the key nobody added.
   const fs = require('node:fs');
-  const src = fs.readFileSync(require.resolve('./leading.js'), 'utf8');
-  const used = [...new Set([...src.matchAll(/series\.(nt_[a-z0-9_]+)/g)].map(m => m[1]))];
-  const asked = new Set(require('./kpi-series').DETECTOR_KEYS);
-  const missing = used.filter(k => !asked.has(k));
-  assert.deepEqual(missing, [], `these are read but never requested: ${missing.join(', ')}`);
-  assert.ok(used.length >= 9, 'positive control: the scan actually found the reads');
+  const src = fs.readFileSync(require.resolve('./kpi-series.js'), 'utf8');
+  assert.ok(!/DETECTOR_KEYS/.test(src), 'the hand-maintained key list must stay gone');
+  assert.match(src, /keys = null/, 'the reader requests every series by default');
 });
+
+test('REGRESSION, 14 Sep 2026: the FRT breach series is watched', () => {
+  // The exact series the incident moved. If a future change narrows the scope
+  // again, this fails rather than another incident finding it.
+  const { usable } = require('./kpi-series');
+  const frt = series('nt_sla_frt_all_breached', i => 5 + Math.abs(wobble(i)) + ((i * 3) % 13), { days: 120 });
+  assert.equal(usable(frt), true, 'the series the 14 Sep incident moved must be in scope');
+});
+
+test('a series outside the scanned scope says so, and says why the scope is narrow', () => {
+  // The 14 Sep miss was a scope gap that nothing announced. An out-of-scope
+  // series now explains itself rather than simply being absent.
+  const { usable, whyNotUsable } = require('./kpi-series');
+  const out = series('nt_tpj_tickets', i => 20 + wobble(i), { days: 200 });
+  assert.equal(usable(out), false);
+  assert.match(whyNotUsable(out), /outside the scanned scope/);
+  assert.match(whyNotUsable(out), /a new warning every working day/);
+});
+
+test('a permanently-zero series is NOT watched, and says why', () => {
+  // nt_ai_rate is 0 on all 96 of its days. Watching it would look like coverage
+  // and deliver none: no variance means zScore returns null, so it could never
+  // fire however badly the thing it measures broke.
+  const { usable, whyNotUsable } = require('./kpi-series');
+  // An IN-SCOPE key, so the zero rule is what rejects it rather than the scope
+  // rule. nt_ai_rate is the real-world example and is out of scope as well.
+  const dead = series('nt_solved_nova', () => 0, { days: 120 });
+  assert.equal(usable(dead), false);
+  assert.match(whyNotUsable(dead), /coverage in name only/);
+});
+
+test('a series with too little history is not watched, and says how little', () => {
+  const { usable, whyNotUsable } = require('./kpi-series');
+  const young = series('nt_frt_compliance', i => 10 + wobble(i), { days: 20 });
+  assert.equal(usable(young), false);
+  assert.match(whyNotUsable(young), /only 20 days of history/);
+});
+
 
 test('a radar card exposes what the verdict buttons need, or nothing at all', () => {
   // The buttons render only when `logId` is present, so a card with no ledger

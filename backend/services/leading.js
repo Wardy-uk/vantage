@@ -738,12 +738,34 @@ function detectCapacityCollision({ series, capacity, asOf }) {
 
 
 
+
+/**
+ * A human label for a series, preferring the wording on Nick's tracker.
+ *
+ * A KPI he reports daily should read on the card exactly as it reads on his
+ * sheet; anything else falls back to the registry label NOVA ships. Without
+ * this, widening the scan past the tracker would have relabelled the rows he
+ * knows with keys he does not.
+ */
+function trackerLabel(tracker, series) {
+  const row = (tracker?.measurable || []).find(r => r.kpiKey === series.key);
+  return { kpiKey: series.key, label: row?.label || series.label || series.key, onTracker: Boolean(row) };
+}
+
 // ── The Daily KPI Tracker: two detectors, two different claims ───────────────
 //
-// These watch the rows Nick reports to the business every day. They
-// are deliberately SEPARATE detectors rather than one, because "this is slipping
-// right now" and "this has been drifting for a fortnight" call for different
-// actions, arrive on different evidence, and belong in different radar tenses.
+// These watch EVERY usable KPI NOVA computes — not only the rows Nick reports.
+//
+// ⚠ They were originally scoped to his daily tracker, and that is what let the
+// 14 Sep 2026 incident pass unseen: a NOVA fault stopped AI first responses and
+// FRT breaches went from ~5 a day to 45, on a series that is not on his sheet.
+// Replayed afterwards, T2 fires on the 14th and every day since — the detector
+// was right and the scope was wrong.
+//
+// They are deliberately SEPARATE detectors rather than one, because "this is
+// slipping right now" and "this has been drifting for a fortnight" call for
+// different actions, arrive on different evidence, and belong in different
+// radar tenses.
 //
 //   T1  TACTICAL   tense `happening`. Today's live value against where the day
 //                  normally stands. Actionable this morning or not at all.
@@ -779,6 +801,27 @@ const TACTICAL_Z = 2.5;
  */
 const TRACKER_SCAN_Z = 3;
 
+/**
+ * Consecutive days a series must stay out before T2 calls it a drift.
+ *
+ * ⚠ A DEFINITIONAL TIGHTENING, not a tuned one. T2's card says a KPI "has
+ * drifted" — a claim about something sustained. One unusual week is not a
+ * drift, and firing on it made the detector say something it did not mean.
+ *
+ * It was added because widening the scan from ~32 series to 80 exposed the
+ * problem: at z >= 3 across 80 autocorrelated count series, two or three fired
+ * EVERY day including quiet ones. The multiple-comparison arithmetic behind
+ * TRACKER_SCAN_Z assumed independent, roughly normal series; ticket counts are
+ * neither, so the bar alone was never going to carry it.
+ *
+ * Three days rather than a higher z, deliberately: raising the bar would make
+ * the detector miss small sustained movements, which are exactly the ones
+ * nobody notices day to day and the ones T2 exists for. Requiring persistence
+ * costs LEAD TIME instead — up to two days — and that is the honest trade,
+ * stated rather than hidden.
+ */
+const TRACKER_PERSIST_DAYS = 3;
+
 /** Most tracker cards allowed at once, per detector. The radar's whole promise
  *  is a short ranked list; thirty-one rows could trivially produce thirty-one. */
 const MAX_TRACKER_CARDS = 3;
@@ -797,6 +840,65 @@ function dailyChanges(points) {
     out.push(points[i].value - points[i - 1].value);
   }
   return out;
+}
+
+
+/**
+ * How alike two series must be before they count as ONE fact.
+ *
+ * ⚠ This is a PRESENTATION threshold, not a firing one. It changes how many
+ * cards a detected movement produces, never whether it is detected — which is
+ * why it is set by judgement rather than by the arithmetic that fixes Z_FIRE
+ * and TRACKER_SCAN_Z. Nothing is suppressed: a folded series is named on the
+ * card that absorbed it.
+ *
+ * 0.8 is about two thirds shared variance. Measured on the 14 Sep 2026
+ * incident, the series that fired together were 0.61 to 0.93 correlated —
+ * "FRT Breached (All)" and "FRT Breached (Customer Care)" at 0.93 are the same
+ * event counted twice, and reporting both as separate warnings is how a radar
+ * built to hold five cards fills with one problem.
+ */
+const DEDUP_R = 0.8;
+
+/** Pearson correlation over the days two series share. Null when there is not
+ *  enough overlap to mean anything, and a null NEVER folds a card away. */
+function correlation(a, b, maxDays = 120) {
+  if (!a?.points?.length || !b?.points?.length) return null;
+  const m = new Map(a.points.map(p => [p.day, p.value]));
+  const pairs = b.points.filter(p => m.has(p.day)).slice(-maxDays).map(p => [m.get(p.day), p.value]);
+  if (pairs.length < 40) return null;
+  const n = pairs.length;
+  const mx = pairs.reduce((t, p) => t + p[0], 0) / n;
+  const my = pairs.reduce((t, p) => t + p[1], 0) / n;
+  let num = 0; let dx = 0; let dy = 0;
+  for (const [x, y] of pairs) { num += (x - mx) * (y - my); dx += (x - mx) ** 2; dy += (y - my) ** 2; }
+  return (dx && dy) ? num / Math.sqrt(dx * dy) : null;
+}
+
+/**
+ * Fold series that move together into one card.
+ *
+ * Greedy over candidates already ranked by z, so the strongest signal is the
+ * one that survives and the rest are recorded on it as `alsoMoved`. Folding is
+ * NOT hiding — the card names what it absorbed and how tightly it correlates,
+ * because "three queues breached" and "one queue breached, counted three ways"
+ * are different facts and the reader has to be able to tell.
+ */
+function foldCorrelated(found, series) {
+  const kept = [];
+  for (const f of found) {
+    let absorbed = null;
+    for (const k of kept) {
+      const r = correlation(series[k.row.kpiKey], series[f.row.kpiKey]);
+      if (r !== null && Math.abs(r) >= DEDUP_R) { absorbed = { k, r }; break; }
+    }
+    if (absorbed) {
+      (absorbed.k.alsoMoved ||= []).push({ label: f.row.label, z: f.z, r: Math.round(absorbed.r * 100) / 100 });
+      continue;
+    }
+    kept.push(f);
+  }
+  return kept;
 }
 
 /**
@@ -822,10 +924,15 @@ function detectTacticalDrift({ tracker, series, asOf }) {
   }
 
   const liveBy = require('./tracker').indexLive(tracker.live);
+  const { usable } = require('./kpi-series');
+  // EVERY usable series, not just the tracker rows. The tracker is what Nick
+  // reports; it is not the set of things that can go wrong. Scoping T1 to it is
+  // what let the 14 Sep FRT failure pass unseen.
   const found = [];
-  for (const row of tracker.measurable) {
-    const s = series[row.kpiKey];
-    const liveItem = liveBy.get(row.kpiKey);
+  for (const s of Object.values(series)) {
+    if (!usable(s)) continue;
+    const row = trackerLabel(tracker, s);
+    const liveItem = liveBy.get(s.key);
     if (!s || !liveItem || liveItem.value === null || liveItem.value === undefined) continue;
 
     const pts = (s.points || []).filter(p => p.day < tracker.live.day);
@@ -847,10 +954,11 @@ function detectTacticalDrift({ tracker, series, asOf }) {
   if (!found.length) return { quiet: 'T1' };
 
   found.sort((a, b) => b.z - a.z);
+  const deduped = foldCorrelated(found, series);
   const hourly = tracker.hourly;
 
   return {
-    indicators: found.slice(0, MAX_TRACKER_CARDS).map(f => indicator({
+    indicators: deduped.slice(0, MAX_TRACKER_CARDS).map(f => indicator({
       key: `tactical:${f.row.kpiKey}`,
       detector: 'T1',
       // `happening`, not `could`. It is moving now and is still steerable today,
@@ -866,6 +974,9 @@ function detectTacticalDrift({ tracker, series, asOf }) {
         { label: "Yesterday's close", value: f.close.value },
         { label: 'Move', value: `${f.move > 0 ? '+' : ''}${f.live.value - f.close.value}` },
         { label: 'Typical daily move', value: `${round(mean(dailyChanges(f.series.points).map(Math.abs)))} on average` },
+        ...(f.alsoMoved?.length
+          ? [{ label: 'Moved with it', value: f.alsoMoved.map(a => `${a.label} (r=${a.r})`).join(', ') }]
+          : []),
         {
           label: 'Compared against',
           // The honest scope of the claim, as EVIDENCE rather than a footnote.
@@ -897,31 +1008,47 @@ function detectTrackerDrift({ tracker, series, asOf }) {
     return { blocked: { id: 'T2', name: 'Tracker — drifting', reason: tracker?.reason || 'the tracker feed was not read' } };
   }
 
+  const { usable: scorable } = require('./kpi-series');
   const found = [];
   const blocked = [];
-  for (const row of tracker.measurable) {
-    const s = series[row.kpiKey];
-    if (!s) continue;
-    const usable = windowUsable([s], asOf);
-    if (!usable.ok) continue;
-
-    const buckets = weekBuckets(byDay(s), asOf, BASELINE_WEEKS + 1);
-    if (!buckets.every(b => b.complete)) continue;
+  for (const s of Object.values(series)) {
+    if (!scorable(s)) continue;
+    const row = trackerLabel(tracker, s);
+    const ok = windowUsable([s], asOf);
+    if (!ok.ok) continue;
 
     const dir = worseDirection(s);
-    const vals = buckets.map(b => b.mean * dir);
-    const zz = zScore(vals[0], vals.slice(1));
-    if (zz === null || zz < TRACKER_SCAN_Z) continue;
+    const map = byDay(s);
 
-    found.push({ row, series: s, buckets, z: round(zz), dir });
+    // The z on `asOf`, and on each of the preceding days the persistence rule
+    // covers. A drift is sustained; a single week out is not one.
+    const zOn = day => {
+      const b = weekBuckets(map, day, BASELINE_WEEKS + 1);
+      if (!b.every(x => x.complete)) return null;
+      const vals = b.map(x => x.mean * dir);
+      return { z: zScore(vals[0], vals.slice(1)), buckets: b };
+    };
+
+    const today = zOn(asOf);
+    if (!today || today.z === null || today.z < TRACKER_SCAN_Z) continue;
+
+    let sustained = true;
+    for (let back = 1; back < TRACKER_PERSIST_DAYS; back += 1) {
+      const prev = zOn(addDays(asOf, -back));
+      if (!prev || prev.z === null || prev.z < TRACKER_SCAN_Z) { sustained = false; break; }
+    }
+    if (!sustained) continue;
+
+    found.push({ row, series: s, buckets: today.buckets, z: round(today.z), dir });
   }
 
   if (!found.length) return { quiet: 'T2', blocked };
 
   found.sort((a, b) => b.z - a.z);
+  const deduped = foldCorrelated(found, series);
 
   return {
-    indicators: found.slice(0, MAX_TRACKER_CARDS).map(f => {
+    indicators: deduped.slice(0, MAX_TRACKER_CARDS).map(f => {
       const now = round(f.buckets[0].mean);
       const was = round(mean(f.buckets.slice(1).map(b => b.mean)));
       const caveat = require('./tracker').baselineCaveat(f.buckets[f.buckets.length - 1].from);
@@ -931,13 +1058,18 @@ function detectTrackerDrift({ tracker, series, asOf }) {
         subject: f.row.kpiKey,
         severity: f.z >= 4 ? 'high' : 'medium',
         title: `${f.row.label} has drifted to ${now} a day, from ${was}`,
-        change: `This week averaged ${now}; the four weeks before it averaged ${was}. That is ${round(f.z)} standard deviations out, against a bar of ${TRACKER_SCAN_Z} — deliberately higher than the other detectors use, because scanning every tracker row at once would otherwise produce a false card most weeks from chance alone.`,
+        change: `This week averaged ${now}; the four weeks before it averaged ${was}. That is ${round(f.z)} standard deviations out, against a bar of ${TRACKER_SCAN_Z} — deliberately higher than the other detectors use, because scanning every KPI at once would otherwise produce a false card most weeks from chance alone, and it has been out for ${TRACKER_PERSIST_DAYS} days running — one unusual week is not a drift.`,
         whyItMatters: 'Nobody notices this day to day, which is exactly why it is worth a card. It is one of the numbers you report daily, and a month from now it will be the trend somebody asks you about.',
         evidence: [
           { label: 'This week (daily mean)', value: now },
           { label: 'Previous four weeks', value: f.buckets.slice(1).map(b => round(b.mean)).join(', ') },
           { label: 'Direction', value: f.series.direction === 'higher-better' ? 'higher is better — this has fallen' : 'lower is better — this has risen' },
-          { label: 'Tracker row', value: f.row.label },
+          { label: f.row.onTracker ? 'On your daily tracker' : 'Not on your daily tracker', value: f.row.label },
+        // Folded, not hidden. "Three queues breached" and "one queue breached,
+        // counted three ways" are different facts.
+        ...(f.alsoMoved?.length
+          ? [{ label: 'Moved with it', value: f.alsoMoved.map(a => `${a.label} (r=${a.r})`).join(', ') }]
+          : []),
         ],
         horizonDays: 14,
         confidence: confidence([f.series], asOf, caveat ? [{ cost: 0.2, why: caveat }] : []),
@@ -1458,6 +1590,7 @@ module.exports = {
   detectNetFlow, detectAgeing, detectEscalationQuality, detectDevDrift, detectCapacityCollision,
   detectShadowComposite, SHADOW_DETECTORS,
   detectTacticalDrift, detectTrackerDrift, TACTICAL_Z, TRACKER_SCAN_Z, MAX_TRACKER_CARDS,
-  weekBuckets, zScore, windowUsable, confidence, byDay,
+  weekBuckets, zScore, windowUsable, confidence, byDay, correlation, foldCorrelated, DEDUP_R,
   Z_FIRE, BASELINE_WEEKS, REQUIRED_DAYS, AGE_SLOPE_FROZEN, THIN_TEAM_SHARE, MIN_CONFIDENCE, MAX_INDICATORS,
+  TRACKER_PERSIST_DAYS,
 };

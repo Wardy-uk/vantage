@@ -66,69 +66,121 @@ const EXCLUDED = {
 };
 
 /**
- * The KPIs the detectors actually read, asked for BY NAME.
+ * WHICH SERIES THE DETECTORS WATCH — a rule, not a list.
  *
- * Not an optimisation for its own sake. Asking for everything returns 132
- * series — around 900KB at 120 days — on a path the radar calls, and it makes
- * a missing KPI silent: an unrequested key that has no data is simply not in
- * the response, which is indistinguishable from one that was never wanted.
- * `kpi-org-series` answers a NAMED key with an empty series and a coverage
- * block saying why, which is the difference between "no data" and "not asked".
+ * ⚠ THIS REPLACED A HAND-MAINTAINED LIST, and the reason is an incident.
  *
- * Keep in step with the detectors in `leading.js`. A detector reading a key
- * absent from this list gets `undefined` and blocks itself, which is safe but
- * looks like a data problem rather than a wiring one.
+ * On 14 Sep 2026 a NOVA fault stopped tickets getting an AI first response and
+ * FRT breaches jumped from a typical 5 a day to 45. VANTAGE said nothing. The
+ * detectors were fine — replayed against `nt_sla_frt_all_breached`, T2 fires on
+ * 14 September and every day after. It never saw the series, because the watch
+ * list was Nick's DAILY TRACKER ROWS and FRT breach counts are not on his
+ * sheet.
+ *
+ * That was the wrong definition. "What Nick reports to the business" and "what
+ * would tell us something is wrong" are different sets, and the second is the
+ * one a warning system needs. Measured the morning after: 49 well-populated
+ * series were sitting unwatched, including every FRT and Resolution SLA
+ * measure in the estate.
+ *
+ * A curated list fails silently — nothing announces the key nobody added. So
+ * the list is gone and a PREDICATE decides: anything with enough history, that
+ * actually varies, and is not known-bad. Adding a KPI to NOVA now brings it
+ * into scope automatically, and the failure mode becomes "too much watched",
+ * which is visible, rather than "one thing missed", which is not.
  */
-const DETECTOR_KEYS = [
-  'nt_new_tickets', 'nt_solved_team', 'nt_solved_nova',
-  'nt_oldest_incident', 'nt_oldest_production', 'nt_oldest_development',
-  'nt_escalated', 'nt_rejected',
-  'nt_development', 'nt_incidents', 'nt_production', 'nt_tpj_dev_t3',
-  // The shadow composite's OWNERSHIP family. Added after S1 shipped blocked on
-  // "only 2 of 4 evidence families could be computed" — which read as a data
-  // problem and was a wiring one, exactly as the note above predicted. Pinned
-  // by a test now, so the next detector cannot repeat it.
-  'nt_legacy_unassigned',
 
-  // ── The Daily KPI Tracker ──────────────────────────────────────────────────
-  //
-  // The thirty-one measurable rows of the sheet Nick reports to the business
-  // every day. T1 and T2 need DAILY history for each of them — the live value
-  // alone cannot say whether today's move is unusual.
-  //
-  // ⚠ These are the LEGACY keys, and that is not a detail. Confirmed twice:
-  // NOVA's own TRACKER_ROWS maps the sheet to them, and matching Nick's actual
-  // reported numbers to the series by VALUE arrives at the same answer
-  // independently. The newer `nt_*` equivalents are different numbers —
-  // `nt_development` runs 16-28 higher than the `nt_legacy_development` he
-  // reports, every single day. A detector on the wrong one would warn about a
-  // number he has never seen.
-  'nt_legacy_new_tickets', 'nt_legacy_solved_today',
+/**
+ * Is this series worth scoring at all?
+ *
+ * Three conditions, each answering a way a series can be useless:
+ *
+ *   ENOUGH HISTORY  a weekly detector needs five complete weeks; 60 days leaves
+ *                   room for the odd gap.
+ *   IT MOVES        a permanently-zero or near-constant series has no standard
+ *                   deviation, so `zScore` returns null and it can NEVER fire.
+ *                   Watching one looks like coverage and is not — `nt_ai_rate`
+ *                   is 0 on all 96 of its days, and had it been "watched" it
+ *                   would have reported nothing for ever while appearing fine.
+ *   NOT KNOWN-BAD   the contaminated and too-sparse ones, named in EXCLUDED.
+ */
+/**
+ * WHAT THE DETECTORS SCAN — and why it is not "everything".
+ *
+ * Two categories, and the second is the one whose absence caused the 14 Sep
+ * 2026 miss:
+ *
+ *   THE TRACKER   what Nick reports to the business daily. How much work there
+ *                 is, and where it is sitting.
+ *   SLA HEALTH    whether the work is being SERVED in time. Outcome measures
+ *                 rather than volume ones — and the tracker has none of them,
+ *                 which is precisely why a fault that stopped AI first
+ *                 responses and tripled FRT breaches was invisible.
+ *
+ * ⚠ "WATCH EVERYTHING" WAS TRIED AND MEASURED AND REJECTED. Replaying 91 days
+ * over all 80 usable series: T1 produced 33.6 distinct warnings a month and T2
+ * 20.4 — a new card every working day, on a radar whose whole promise is a
+ * short ranked list. Correlation folding and a three-day persistence rule both
+ * helped and neither was close to enough, because many of these series trend
+ * and are volatile, so a z against their own four-week baseline is out most of
+ * the time. At the scope below the same replay gives 6.6 and 4.3 a month, and
+ * T1 still catches 14 September ON THE DAY.
+ *
+ * So this is a judgement about CATEGORIES rather than a rule derived from the
+ * data, and it can be wrong the same way the last one was. What is different is
+ * that the gap is now VISIBLE: `notWatched` lists every usable series outside
+ * the scope, and the screen shows the count. A blind spot that announces itself
+ * is a different animal from one that waits for an incident.
+ */
+const SLA_HEALTH_KEYS = [
+  'nt_sla_frt_all_breached',
+  'nt_sla_res_all_breached',
+  'nt_frt_compliance',
+  'nt_res_compliance',
+  'nt_first_line_rate',
+];
+
+const TRACKER_STOCK_KEYS = [
+  'nt_legacy_new_tickets', 'nt_legacy_solved_today', 'nt_solved_nova',
   'nt_legacy_cc_incidents', 'nt_legacy_cc_service_requests', 'nt_legacy_cc_tpj',
   'nt_legacy_production', 'nt_legacy_tier2', 'nt_legacy_tier3', 'nt_legacy_development',
-  'nt_lg_noreply_cc_incidents_over_sla_actionable',
-  'nt_lg_noreply_cc_service_requests_over_sla_actionable',
-  'nt_lg_noreply_cc_tpj_over_sla_actionable',
-  'nt_lg_noreply_tier_2_over_sla_actionable',
-  'nt_lg_noreply_tier_3_over_sla_actionable',
-  'nt_lg_oversla_cc_incidents_over_sla_actionable',
-  'nt_lg_oversla_cc_service_requests_over_sla_actionable',
-  'nt_lg_oversla_cc_tpj_over_sla_actionable',
-  'nt_lg_oversla_tier_2_over_sla_actionable',
-  'nt_lg_oversla_tier_3_over_sla_actionable',
-  'nt_lg_oversla_notact_cc_incidents_over_sla_actionable',
-  'nt_lg_oversla_notact_cc_service_requests_over_sla_actionable',
-  'nt_lg_oversla_notact_cc_tpj_over_sla_actionable',
-  'nt_lg_oversla_notact_tier_2_over_sla_actionable',
-  'nt_lg_oversla_notact_tier_3_over_sla_actionable',
-  'nt_lg_oldest_cc_incidents_over_sla_actionable',
-  'nt_lg_oldest_cc_service_requests_over_sla_actionable',
-  'nt_lg_oldest_cc_tpj_over_sla_actionable',
-  'nt_lg_oldest_production_over_sla_actionable',
-  'nt_lg_oldest_tier_2_over_sla_actionable',
-  'nt_lg_oldest_tier_3_over_sla_actionable',
-  'nt_csat',
 ];
+
+/** The scanned set. Usability is applied ON TOP, so a dead series inside the
+ *  scope is still excluded and still says why. */
+const SCANNED = new Set([...TRACKER_STOCK_KEYS, ...SLA_HEALTH_KEYS]);
+
+const MIN_DAYS = 60;
+const MIN_NON_ZERO = 30;
+const MIN_DISTINCT = 8;
+const RECENT_WINDOW = 60;
+
+function usable(series) {
+  if (!series || EXCLUDED[series.key]) return false;
+  if (!SCANNED.has(series.key)) return false;
+  const pts = series.points || [];
+  if (pts.length < MIN_DAYS) return false;
+  const recent = pts.slice(-RECENT_WINDOW).map(p => p.value);
+  if (recent.filter(v => v !== 0).length < MIN_NON_ZERO) return false;
+  return new Set(recent).size >= MIN_DISTINCT;
+}
+
+/** Why a series is not watched, for the screen. An unwatched KPI that says
+ *  nothing about why is the same silent omission in a new place. */
+function whyNotUsable(series) {
+  if (!series) return 'not in the feed';
+  if (EXCLUDED[series.key]) return EXCLUDED[series.key];
+  if (!SCANNED.has(series.key)) {
+    return 'outside the scanned scope — the tracker rows plus the top-level SLA health measures. '
+      + 'Watching every series was measured and produced a new warning every working day';
+  }
+  const pts = series.points || [];
+  if (pts.length < MIN_DAYS) return `only ${pts.length} days of history (needs ${MIN_DAYS})`;
+  const recent = pts.slice(-RECENT_WINDOW).map(p => p.value);
+  const nz = recent.filter(v => v !== 0).length;
+  if (nz < MIN_NON_ZERO) return `zero on ${recent.length - nz} of the last ${recent.length} days — it cannot produce a deviation, so watching it would be coverage in name only`;
+  return `only ${new Set(recent).size} distinct values in ${recent.length} days — too flat to score`;
+}
 
 function isConfigured() {
   return Boolean(process.env.NOVA_BRIDGE_URL && process.env.NOVA_BRIDGE_SECRET);
@@ -178,13 +230,16 @@ function sourceBreaks(points) {
  */
 let cache = { at: 0, data: null };
 
-async function current({ force = false, days = DEFAULT_DAYS, keys = DETECTOR_KEYS } = {}) {
+async function current({ force = false, days = DEFAULT_DAYS, keys = null } = {}) {
   if (!isConfigured()) {
     return { available: false, reason: 'NOVA bridge not configured (NOVA_BRIDGE_URL / NOVA_BRIDGE_SECRET)' };
   }
   if (!force && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   try {
+    // No `keys` filter by default. Asking for a named subset is what produced
+    // the blind spot this predicate replaced: a key nobody thought to name is
+    // indistinguishable from one with no data.
     const raw = await bridge(`kpi-org-series?days=${days}`
       + (keys?.length ? `&keys=${encodeURIComponent(keys.join(','))}` : ''));
 
@@ -222,6 +277,19 @@ async function current({ force = false, days = DEFAULT_DAYS, keys = DETECTOR_KEY
       excluded,
       absent: raw.absent || [],
       unknownKeys: raw.unknownKeys || [],
+      // What the detectors will actually score, and what they will not — each
+      // with its reason. Computed here so one rule answers it for every caller.
+      watched: Object.values(series).filter(usable).map(s2 => s2.key).sort(),
+      // How many series exist that a detector COULD score but is not scoring.
+      // Surfaced deliberately: the 14 Sep miss was a scope gap nothing
+      // announced, and a number on a screen is the cheapest guard against the
+      // same thing happening quietly again.
+      outsideScope: Object.values(series)
+        .filter(s2 => !SCANNED.has(s2.key) && !EXCLUDED[s2.key] && (s2.points || []).length >= MIN_DAYS)
+        .length,
+      notWatched: Object.values(series).filter(s2 => !usable(s2))
+        .map(s2 => ({ key: s2.key, label: s2.label, reason: whyNotUsable(s2) }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
     };
     cache = { at: Date.now(), data };
     return data;
@@ -284,5 +352,7 @@ async function capacity({ force = false, days = 14 } = {}) {
 
 module.exports = {
   current, capacity, isConfigured, sourceBreaks,
-  BUILD_EXPECTED, EXCLUDED, DEFAULT_DAYS, DETECTOR_KEYS,
+  BUILD_EXPECTED, EXCLUDED, DEFAULT_DAYS,
+  usable, whyNotUsable, MIN_DAYS, MIN_NON_ZERO, MIN_DISTINCT,
+  SCANNED, SLA_HEALTH_KEYS, TRACKER_STOCK_KEYS,
 };
