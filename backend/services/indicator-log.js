@@ -496,6 +496,34 @@ function scoreboard() {
   })).sort((a, b) => String(a.detector).localeCompare(String(b.detector)));
 }
 
+/**
+ * Keys a person has said were a DELIBERATE stop, not a failure.
+ *
+ * ⚠ Q1 cannot tell the difference and never will. "This measure stopped
+ * recording" is identical in the data whether a pipeline broke or an architect
+ * retired it — and the second is common. The AI approval queue is the worked
+ * example: it went to zero on 15 May 2026 because NOVA's first-reply pipeline
+ * replaced it (commit e51a2cd), and Q1 reported that as a 103-day outage.
+ *
+ * So a human verdict of "false alarm" on a Q1 card is treated as a standing
+ * statement about that measure, not just a label on one warning. Without it,
+ * every deliberate architecture change leaves a permanent false alarm on the
+ * screen Nick checks daily, and a screen with a permanent false alarm on it is
+ * one he stops reading — which costs the true warnings, not the false one.
+ *
+ * Reversible by design: reopening the finding, or a fresh `useful` verdict,
+ * brings it back. Nothing here is a permanent silence.
+ */
+function retiredKeys() {
+  const out = new Set();
+  for (const r of all()) {
+    if (r.outcome === 'false' && r.outcomeSource === 'human' && String(r.key).startsWith('stopped:')) {
+      out.add(String(r.key).slice('stopped:'.length));
+    }
+  }
+  return out;
+}
+
 /** Every record, for the admin view and the tests. */
 const list = () => all().sort((a, b) => String(b.lastSeenOn).localeCompare(String(a.lastSeenOn)));
 
@@ -537,6 +565,6 @@ module.exports = {
   // machine that cannot build `better-sqlite3` — which is most of them, and so
   // is where these would otherwise have gone untested.
   plan, present, worse, prospectiveClaims,
-  observeOutcomes, settle, label, scoreboard, ATTRIBUTION_DAYS,
+  observeOutcomes, settle, label, scoreboard, retiredKeys, ATTRIBUTION_DAYS,
   QUIET_DAYS_TO_CLOSE, SHOW_NORMALISED_DAYS,
 };

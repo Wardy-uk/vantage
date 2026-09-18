@@ -686,10 +686,12 @@ test('the tracker rows with no KPI key are carried, not dropped', () => {
 // ── Q1: something that was happening has stopped ─────────────────────────────
 
 test('Q1 fires when a higher-better measure goes silent after being active', () => {
-  // The 14 Sep blind spot: nt_ai_resolved was sparse but real, then zero for
-  // months, and nothing could see it because a dead series has no variance.
-  const s = { nt_ai_resolved: series('nt_ai_resolved', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
-  s.nt_ai_resolved.direction = 'higher-better';
+  // The blind spot: a sparse-but-real measure going to zero for months, which
+  // nothing else can see because a dead series has no variance to deviate from.
+  // Deliberately NOT nt_ai_resolved — that one is retired by name now, and a
+  // fixture on a retired key would test the retirement, not the detector.
+  const s = { nt_sla_res_development_met: series('nt_sla_res_development_met', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_sla_res_development_met.direction = 'higher-better';
   const r = leading.detectWentQuiet({ series: s, asOf: ASOF });
   assert.ok(r.indicators?.length, 'a measure that stopped must be visible');
   assert.equal(r.indicators[0].tense, 'happening', 'it is still stopped, and still switchable-back-on');
@@ -723,10 +725,33 @@ test('Q1 runs at FULL scope, deliberately unlike T1 and T2', () => {
   // T1/T2 are scoped narrowly because at full scope they warn every working
   // day. A stop is rare and discrete — 0.9 a month across all 132 series — so
   // this one watches everything, which is what closes the blind-spot class.
-  const s = { nt_ai_resolved: series('nt_ai_resolved', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
-  s.nt_ai_resolved.direction = 'higher-better';
+  const s = { nt_sla_res_development_met: series('nt_sla_res_development_met', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_sla_res_development_met.direction = 'higher-better';
   const { usable } = require('./kpi-series');
-  assert.equal(usable(s.nt_ai_resolved), false, 'the scanned-scope rule excludes it');
+  assert.equal(usable(s.nt_sla_res_development_met), false, 'the scanned-scope rule excludes it');
   assert.ok(leading.detectWentQuiet({ series: s, asOf: ASOF }).indicators?.length,
     'and Q1 sees it anyway — that is the whole point');
+});
+
+test('Q1 does not warn about a measure that was retired ON PURPOSE', () => {
+  // The false positive that shipped on 18 Sep: "AI Tickets Resolved has
+  // recorded nothing for 103 days" was correct about the number and wrong about
+  // what it meant. NOVA replaced the approval-queue model on 15 May 2026
+  // (commit e51a2cd) and zero is the expected value.
+  const s = { nt_ai_resolved: series('nt_ai_resolved', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_ai_resolved.direction = 'higher-better';
+  assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF }).quiet, 'Q1');
+  assert.match(leading.DELIBERATELY_RETIRED.nt_ai_resolved, /e51a2cd/, 'the reason cites its evidence');
+});
+
+test('a human calling a Q1 card a false alarm retires that measure', () => {
+  // The general case: nothing in the data distinguishes a pipeline breaking
+  // from an architect retiring it, so a person has to be able to say. Without
+  // this, every deliberate change leaves a permanent false alarm on a screen
+  // Nick checks daily — and a screen with one of those is one he stops reading.
+  const s = { nt_thing: series('nt_thing', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_thing.direction = 'higher-better';
+  assert.ok(leading.detectWentQuiet({ series: s, asOf: ASOF }).indicators?.length, 'fires when unknown');
+  assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF, retired: new Set(['nt_thing']) }).quiet, 'Q1',
+    'and stays quiet once a person has said it was deliberate');
 });

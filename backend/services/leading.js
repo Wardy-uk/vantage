@@ -1218,6 +1218,33 @@ function detectShadowComposite({ series, capacity, asOf }) {
 }
 
 
+
+/**
+ * Measures known to have stopped ON PURPOSE.
+ *
+ * ⚠ Q1 raised "AI Tickets Resolved has recorded nothing for 103 days" as a
+ * high-severity warning on 18 Sep 2026. It was wrong — not about the number,
+ * which was correct, but about what it meant. NOVA's approval-queue-first model
+ * was REPLACED by the conversational first-reply pipeline on 15 May 2026
+ * (commit e51a2cd), precisely because it was producing mass timeouts. Draft
+ * responses now post straight to Jira above the confidence threshold, which is
+ * why `nt_solved_nova` stayed healthy throughout while this went to zero.
+ *
+ * Kept as a NAMED list with its reason rather than quietly dropped from the
+ * scan: the next person to notice that AI resolutions read zero deserves the
+ * answer here rather than another afternoon in the production database.
+ *
+ * The general case is handled by `indicator-log.retiredKeys()` — a human
+ * marking a Q1 card a false alarm retires that measure. This entry exists
+ * because the fact was established from NOVA's git history rather than from
+ * anyone clicking a button, and hard-won provenance should not depend on a
+ * click nobody has made yet.
+ */
+const DELIBERATELY_RETIRED = {
+  nt_ai_resolved: 'the approval-queue model it counts was retired on 15 May 2026 (NOVA commit e51a2cd, "feat: first-reply pipeline") — draft responses now post straight to Jira, so zero is the expected value, not an outage',
+  nt_ai_rate: 'derived from approvals, which the 15 May 2026 first-reply pipeline retired — it has measured a decommissioned path for four months and is a metric-definition bug rather than an outage',
+};
+
 // ── Q1: something that was happening has STOPPED ─────────────────────────────
 
 /**
@@ -1269,10 +1296,14 @@ const QUIET_LOOKBACK = 60;
  */
 const QUIET_MIN_ACTIVE = 0.15;
 
-function detectWentQuiet({ series, asOf }) {
+function detectWentQuiet({ series, asOf, retired = new Set() }) {
   const found = [];
 
   for (const s of Object.values(series)) {
+    // A deliberate retirement is not a failure, and nothing in the data can
+    // tell them apart. Both sources are honoured: what we established from
+    // NOVA's history, and what Nick has since marked a false alarm.
+    if (DELIBERATELY_RETIRED[s?.key] || retired.has(s?.key)) continue;
     // Zero is the target for a lower-better KPI. Warning about it would turn
     // every success into an alarm.
     if (s?.direction !== 'higher-better') continue;
@@ -1385,7 +1416,7 @@ const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
  * HERE, by name, rather than deleted or quietly weakened, so what is off and
  * why stays visible.
  */
-function detect({ series = {}, capacity = null, tracker = null, asOf, disabled = [] } = {}) {
+function detect({ series = {}, capacity = null, tracker = null, asOf, disabled = [], retired = new Set() } = {}) {
   if (!asOf) throw new Error('detect() needs an asOf day — a detector with no clock would read the future');
 
   const indicators = [];
@@ -1411,7 +1442,7 @@ function detect({ series = {}, capacity = null, tracker = null, asOf, disabled =
     }
     let result;
     try {
-      result = d.run({ series, capacity, tracker, asOf });
+      result = d.run({ series, capacity, tracker, asOf, retired });
     } catch (err) {
       // One detector throwing must not lose the other four, and must not look
       // like a quiet department either.
@@ -1429,7 +1460,7 @@ function detect({ series = {}, capacity = null, tracker = null, asOf, disabled =
   for (const d of SHADOW_DETECTORS) {
     let r;
     try {
-      r = d.run({ series, capacity, tracker, asOf });
+      r = d.run({ series, capacity, tracker, asOf, retired });
     } catch (err) {
       blocked.push({ id: d.id, name: d.name, shadow: true, reason: `threw: ${err.message}` });
       continue;
@@ -1567,6 +1598,7 @@ async function current({ force = false } = {}) {
   const result = detect({
     series: history.series,
     tracker,
+    retired,
     // Passed through unavailable-and-all. `detectCapacityCollision` turns that
     // into a named blocked detector, which is the honest rendering; filtering
     // it to null here would make an unread source look like a quiet one.
@@ -1574,6 +1606,11 @@ async function current({ force = false } = {}) {
     asOf,
     disabled: disabledDetectors(),
   });
+
+  // Measures a person has already said stopped on purpose. Read BEFORE
+  // detecting, so a retired one never re-enters the list it was dismissed from.
+  let retired = new Set();
+  try { retired = require('./indicator-log').retiredKeys(); } catch { /* an unreadable register must not silence the detectors */ }
 
   let lifecycle;
   try {
@@ -1710,7 +1747,7 @@ module.exports = {
   detectNetFlow, detectAgeing, detectEscalationQuality, detectDevDrift, detectCapacityCollision,
   detectShadowComposite, SHADOW_DETECTORS,
   detectTacticalDrift, detectTrackerDrift, TACTICAL_Z, TRACKER_SCAN_Z, MAX_TRACKER_CARDS,
-  detectWentQuiet, QUIET_DAYS, QUIET_LOOKBACK, QUIET_MIN_ACTIVE,
+  detectWentQuiet, QUIET_DAYS, QUIET_LOOKBACK, QUIET_MIN_ACTIVE, DELIBERATELY_RETIRED,
   weekBuckets, zScore, windowUsable, confidence, byDay, correlation, foldCorrelated, DEDUP_R,
   Z_FIRE, BASELINE_WEEKS, REQUIRED_DAYS, AGE_SLOPE_FROZEN, THIN_TEAM_SHARE, MIN_CONFIDENCE, MAX_INDICATORS,
   TRACKER_PERSIST_DAYS,
