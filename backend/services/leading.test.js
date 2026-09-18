@@ -682,3 +682,51 @@ test('the tracker rows with no KPI key are carried, not dropped', () => {
   assert.equal(feed.measurable.length, 1);
   assert.deepEqual(feed.unmeasured, ['Number of TPJ Tickets in Dev']);
 });
+
+// ── Q1: something that was happening has stopped ─────────────────────────────
+
+test('Q1 fires when a higher-better measure goes silent after being active', () => {
+  // The 14 Sep blind spot: nt_ai_resolved was sparse but real, then zero for
+  // months, and nothing could see it because a dead series has no variance.
+  const s = { nt_ai_resolved: series('nt_ai_resolved', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_ai_resolved.direction = 'higher-better';
+  const r = leading.detectWentQuiet({ series: s, asOf: ASOF });
+  assert.ok(r.indicators?.length, 'a measure that stopped must be visible');
+  assert.equal(r.indicators[0].tense, 'happening', 'it is still stopped, and still switchable-back-on');
+  assert.match(r.indicators[0].title, /recorded nothing for 30 days/);
+});
+
+test('Q1 does NOT fire for a lower-better measure at zero — that is the target', () => {
+  // Without this the same replay fires 42 times instead of 8, and most of them
+  // congratulate the team on having no tickets without a reply.
+  const s = { nt_incidents_no_reply: series('nt_incidents_no_reply', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_incidents_no_reply.direction = 'lower-better';
+  assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF }).quiet, 'Q1');
+});
+
+test('Q1 does not fire for something that never worked', () => {
+  // nt_ai_rate is zero across its whole life. Nothing stopped; it never
+  // started, and that is a different finding needing a different fix.
+  const s = { nt_ai_rate: series('nt_ai_rate', () => 0, { days: 150 }) };
+  s.nt_ai_rate.direction = 'higher-better';
+  assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF }).quiet, 'Q1');
+});
+
+test('Q1 does not fire on a quiet fortnight in a normally sparse series', () => {
+  // Active on only 4% of days — too thin to call a stop a change.
+  const s = { nt_thing: series('nt_thing', i => (i > 120 && i % 25 === 0 ? 3 : 0), { days: 150 }) };
+  s.nt_thing.direction = 'higher-better';
+  assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF }).quiet, 'Q1');
+});
+
+test('Q1 runs at FULL scope, deliberately unlike T1 and T2', () => {
+  // T1/T2 are scoped narrowly because at full scope they warn every working
+  // day. A stop is rare and discrete — 0.9 a month across all 132 series — so
+  // this one watches everything, which is what closes the blind-spot class.
+  const s = { nt_ai_resolved: series('nt_ai_resolved', i => (i < 30 ? 0 : (i % 5 === 0 ? 8 : 0)), { days: 150 }) };
+  s.nt_ai_resolved.direction = 'higher-better';
+  const { usable } = require('./kpi-series');
+  assert.equal(usable(s.nt_ai_resolved), false, 'the scanned-scope rule excludes it');
+  assert.ok(leading.detectWentQuiet({ series: s, asOf: ASOF }).indicators?.length,
+    'and Q1 sees it anyway — that is the whole point');
+});

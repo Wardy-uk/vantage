@@ -1217,6 +1217,123 @@ function detectShadowComposite({ series, capacity, asOf }) {
   };
 }
 
+
+// ── Q1: something that was happening has STOPPED ─────────────────────────────
+
+/**
+ * The failure mode every other detector here is blind to.
+ *
+ * A, T1 and T2 all ask "has this moved unusually". None of them can see a
+ * measure that used to carry values and now carries none, because a dead series
+ * has no variance and `zScore` correctly returns null — so it can never deviate
+ * and never fires. Worse, `kpi-series.usable()` EXCLUDES a permanently-zero
+ * series as uninformative, which is right for a measure that never worked and
+ * exactly wrong for a process that has stopped.
+ *
+ * ⚠ THIS IS THE GAP THAT HID THE 14 SEP 2026 INCIDENT. `nt_ai_resolved` —
+ * AI tickets resolved — went silent in May, came back for one day in June, and
+ * has been zero ever since. NOVA's approval queue tells the same story: 54
+ * approvals in April, 40 in May, 1 in June, and NONE in the three months since,
+ * while items kept being created and expiring. Nothing warned, because "zero
+ * for ninety days" looked like a measure not worth watching rather than a
+ * pipeline that had died.
+ *
+ * ── Why it runs at FULL SCOPE when the others cannot ────────────────────────
+ *
+ * T1 and T2 are scoped narrowly because at full scope they produce a warning
+ * every working day. This one does not: replayed over 8.5 months across all 132
+ * series it fires 8 times — 0.9 a month. A stop is a rare, discrete event,
+ * which is precisely why it is cheap to watch everything for it. So the
+ * blind-spot class is fixed here rather than by widening the detectors that
+ * cannot take it.
+ *
+ * ── Direction is load-bearing ───────────────────────────────────────────────
+ *
+ * ONLY `higher-better` series. For a lower-better KPI zero is the TARGET — "no
+ * tickets without a reply" is the desired state, and warning about it would
+ * turn every success into an alarm. Without that filter the same replay fires
+ * 42 times instead of 8, and most of them are congratulations.
+ */
+
+/** Consecutive zero days before a measure counts as stopped. Two working weeks:
+ *  long enough that a quiet fortnight is not a stop, short enough to matter. */
+const QUIET_DAYS = 14;
+/** How far back to look for evidence it was ever alive. */
+const QUIET_LOOKBACK = 60;
+/**
+ * Share of that window that must have carried a value.
+ *
+ * 15%, not a half. `nt_ai_resolved` was sparse even when healthy — 7 non-zero
+ * days in its best month — and a bar set for dense series would have missed the
+ * exact thing this detector exists for.
+ */
+const QUIET_MIN_ACTIVE = 0.15;
+
+function detectWentQuiet({ series, asOf }) {
+  const found = [];
+
+  for (const s of Object.values(series)) {
+    // Zero is the target for a lower-better KPI. Warning about it would turn
+    // every success into an alarm.
+    if (s?.direction !== 'higher-better') continue;
+
+    const pts = (s.points || []).filter(p => p.day <= asOf);
+    if (pts.length < QUIET_LOOKBACK + QUIET_DAYS) continue;
+
+    let silent = 0;
+    for (let i = pts.length - 1; i >= 0; i -= 1) {
+      if (pts[i].value === 0) silent += 1; else break;
+    }
+    if (silent < QUIET_DAYS) continue;
+
+    const before = pts.slice(Math.max(0, pts.length - silent - QUIET_LOOKBACK), pts.length - silent);
+    if (before.length < 30) continue;
+    const active = before.filter(p => p.value !== 0);
+    if (active.length < before.length * QUIET_MIN_ACTIVE) continue;
+
+    found.push({
+      series: s,
+      silent,
+      since: pts[pts.length - silent].day,
+      activeShare: Math.round((active.length / before.length) * 100),
+      peak: Math.max(...active.map(p => p.value)),
+      typical: round(mean(active.map(p => p.value))),
+    });
+  }
+
+  if (!found.length) return { quiet: 'Q1' };
+
+  // Longest-stopped first: the one that has been dead longest is the one least
+  // likely to be a lull and most likely to be forgotten.
+  found.sort((a, b) => b.silent - a.silent);
+
+  return {
+    indicators: found.slice(0, MAX_TRACKER_CARDS).map(f => indicator({
+      key: `stopped:${f.series.key}`,
+      detector: 'Q1',
+      subject: f.series.key,
+      // `happening`, not `happened`. It stopped a fortnight ago and it is STILL
+      // stopped — which is a thing that can be switched back on today.
+      tense: 'happening',
+      severity: f.silent >= 30 ? 'high' : 'medium',
+      title: `${f.series.label || f.series.key} has recorded nothing for ${f.silent} days`,
+      change: `Zero every day since ${f.since}. Before that it carried a value on ${f.activeShare}% of days, typically ${f.typical} and peaking at ${f.peak}.`,
+      whyItMatters: 'Every other detector here asks whether a number moved unusually, and none of them can see this: a measure with no values has no variation to deviate from, so it can never raise an alarm however badly the thing it counts has failed. A process that has stopped looks exactly like a measure not worth watching.',
+      evidence: [
+        { label: 'Silent since', value: f.since },
+        { label: 'Days with nothing', value: f.silent },
+        { label: 'Previously active on', value: `${f.activeShare}% of the preceding ${QUIET_LOOKBACK} days` },
+        { label: 'Typical when running', value: `${f.typical} (peak ${f.peak})` },
+      ],
+      horizonDays: 1,
+      confidence: confidence([f.series], asOf),
+      confirm: 'Find the process behind it and check whether it is running at all. A zero here is usually a switch, a credential or a queue rather than a gradual decline.',
+      disprove: 'It was turned off on purpose, or the work genuinely stopped — a seasonal queue, a retired product line. Both are fine answers; neither is visible from the number.',
+      action: `Check whether whatever produces "${f.series.label || f.series.key}" is still running. It has produced nothing for ${f.silent} days, and nothing else on this screen would have told you.`,
+    })),
+  };
+}
+
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
 /**
@@ -1234,6 +1351,9 @@ const DETECTORS = [
   { id: 'A', name: 'Net flow divergence', run: detectNetFlow },
   { id: 'T1', name: 'Tracker — slipping now', run: detectTacticalDrift },
   { id: 'T2', name: 'Tracker — drifting', run: detectTrackerDrift },
+  // Runs at FULL scope, unlike T1 and T2 — a stop is a rare discrete event, so
+  // watching everything for it costs 0.9 warnings a month rather than one a day.
+  { id: 'Q1', name: 'Stopped recording', run: detectWentQuiet },
   { id: 'B', name: 'Ageing acceleration', run: detectAgeing },
   { id: 'C', name: 'Escalation quality shift', run: detectEscalationQuality },
   { id: 'D', name: 'Dev-owned drift', run: detectDevDrift },
@@ -1590,6 +1710,7 @@ module.exports = {
   detectNetFlow, detectAgeing, detectEscalationQuality, detectDevDrift, detectCapacityCollision,
   detectShadowComposite, SHADOW_DETECTORS,
   detectTacticalDrift, detectTrackerDrift, TACTICAL_Z, TRACKER_SCAN_Z, MAX_TRACKER_CARDS,
+  detectWentQuiet, QUIET_DAYS, QUIET_LOOKBACK, QUIET_MIN_ACTIVE,
   weekBuckets, zScore, windowUsable, confidence, byDay, correlation, foldCorrelated, DEDUP_R,
   Z_FIRE, BASELINE_WEEKS, REQUIRED_DAYS, AGE_SLOPE_FROZEN, THIN_TEAM_SHARE, MIN_CONFIDENCE, MAX_INDICATORS,
   TRACKER_PERSIST_DAYS,
