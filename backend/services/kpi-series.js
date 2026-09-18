@@ -50,8 +50,25 @@
 const BUILD_EXPECTED = '2026-09-16-series-a';
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
-/** Enough for a 28-day baseline, a current week, and room to see a season. */
-const DEFAULT_DAYS = 120;
+/**
+ * How much history to fetch.
+ *
+ * 240, not 120, and the extra is for Q1. Every other detector needs five weeks;
+ * Q1 needs `QUIET_LOOKBACK` days of evidence a measure was ALIVE plus however
+ * long it has been silent — so the window bounds how old a stop it can still
+ * see. At 120 days it could only notice a stop less than 60 days old, and the
+ * AI-resolution pipeline had been dead for 103: the proof it ever worked had
+ * scrolled out of view, so Q1 sat quiet about the very thing it was built for.
+ *
+ * ⚠ THE LIMIT DOES NOT GO AWAY, it moves. At 240 days Q1 sees stops up to ~180
+ * days old and is blind to anything older — a process that died last winter
+ * looks, to every detector here, exactly like one that never existed. Nothing
+ * in the data can distinguish those; only a person can.
+ *
+ * The cost is measured, not guessed: 1.2MB at 120 days, 2.2MB at 240, fetched
+ * once per 30-minute cache window over Tailscale.
+ */
+const DEFAULT_DAYS = 240;
 
 /**
  * Series that must never reach a detector, with the reason attached.
