@@ -36,6 +36,7 @@ const oneToOnes = require('./one-to-ones');
 const people = require('./people');
 const conversations = require('./conversations');
 const leading = require('./leading');
+const novaHealth = require('./nova-health');
 const cache = require('./cache');
 const findings = require('./findings');
 
@@ -407,6 +408,14 @@ async function compute({ force = false } = {}) {
   // department-only, and never fatal: it returns an unavailable state with a
   // reason rather than throwing, same contract as everything else here.
   const early = await leading.current({ force });
+  // NOVA reporting on its own machinery. The layer BELOW every other signal
+  // here: not "is the department in trouble" but "is the instrument working",
+  // because a capture that has quietly stopped makes this whole screen
+  // confidently wrong rather than visibly wrong.
+  // `novaHealthState`, not `health` — that name already belongs to NEURO's
+  // team-health source a few lines down, and the collision failed at load.
+  const novaHealthState = await novaHealth.current({ force });
+  const healthRadar = novaHealth.toRadar(novaHealthState);
 
   const neuroReady = neuro.isConfigured();
   // Two sources dropped with the cards that used them: nothing reads them any
@@ -433,6 +442,7 @@ async function compute({ force = false } = {}) {
     ...people.toRadarItems(perPerson),
     ...conversations.toRadarItems(convos),
     ...leading.toRadarItems(early),
+    ...healthRadar.items,
     ...fromNeuro({ health, tasks }),
     ...(meetingAnalysis.data || []),
   ].sort((a, b) =>
@@ -458,6 +468,11 @@ async function compute({ force = false } = {}) {
     // it exists for. They render separately, through `notWatched` below.
     ...(early?.blocked || []).filter(b => !b.disabled)
       .map(b => ({ name: `detector ${b.id} (${b.name})`, ok: false, error: b.reason })),
+    // NOVA's own blind spots become this screen's blind spots. An untrustworthy
+    // health report, a section that could not be evaluated, or a job list that
+    // cannot yet mean anything all belong here rather than as cards — they are
+    // statements about what cannot be seen.
+    ...healthRadar.blind.map(b => ({ name: b.name, ok: false, error: b.reason })),
     health, tasks, meetings, booked, meetingAnalysis,
   ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
 
@@ -478,6 +493,13 @@ async function compute({ force = false } = {}) {
     // separately, because a tool that only ever shows the outstanding column is
     // lying by omission to someone who under-registers completion.
     normalised: early?.available ? early.normalised : [],
+    // Carried so a screen can show NOVA's own verdict beside the department's.
+    // `overall` is deliberately paired with `trustworthy` — the NOVA side asked
+    // for that explicitly and it is the difference between "NOVA is fine" and
+    // "NOVA cannot tell".
+    novaHealth: novaHealthState?.available
+      ? { overall: healthRadar.overall, trustworthy: healthRadar.trustworthy, asOf: novaHealthState.asOf, stale: Boolean(novaHealthState.stale) }
+      : { available: false, reason: novaHealthState?.reason || 'not read' },
     // What is switched off and why — said once, plainly, outside the fault
     // banner. Still visible, because a detector nobody is told about is one
     // nobody can ask to have fixed.
