@@ -42,7 +42,7 @@
  */
 
 /** The NOVA build whose shape this reader understands. */
-const BUILD_EXPECTED = '2026-09-18-b';
+const BUILD_EXPECTED = '2026-09-18-d';
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 120_000;
 
@@ -113,6 +113,28 @@ function allChecks(raw) {
   if (jobs && !jobs.warmingUp) {
     for (const j of jobs.jobs || []) {
       out.push({ kind: 'job', name: j.id, severity: j.severity, verdict: j.verdict, unverified: false });
+    }
+  }
+
+  // The DATABASE section, added in build -d by a third session chasing the
+  // timeout that started all this. Enumerated explicitly rather than skipped:
+  // a section this reader does not understand is a section whose failures do
+  // not reach the screen, which is the quiet kind of gap.
+  const db = raw?.database?.data;
+  if (db) {
+    if (db.pool) out.push({ kind: 'database', name: 'connection pool', severity: db.pool.severity, verdict: db.pool.note, unverified: false });
+    if (db.resource) out.push({ kind: 'database', name: 'DTU headroom', severity: db.resource.severity, verdict: db.resource.note, unverified: false });
+    // ⚠ `staleStatsReadable: false` is the report's own absent-is-not-zero
+    // guard: an empty list of stale statistics and a DMV that could not be read
+    // are opposite facts. Only the first is good news.
+    if (db.staleStatsReadable === false) {
+      out.push({ kind: 'database', name: 'stale statistics', severity: 'unknown',
+        verdict: 'the statistics DMV could not be read, so an empty list here is not evidence that nothing is stale', unverified: false });
+    } else {
+      for (const st of db.staleStats || []) {
+        out.push({ kind: 'database', name: `stats ${st.table}.${st.stat}`, severity: st.severity,
+          verdict: `${st.modifications.toLocaleString()} modifications against ${st.rows.toLocaleString()} rows`, unverified: false });
+      }
     }
   }
   return out;

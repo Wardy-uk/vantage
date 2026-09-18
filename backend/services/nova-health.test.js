@@ -105,3 +105,37 @@ test('a section NOVA could not evaluate is named, not dropped', () => {
   const r = nh.toRadar(report({ unavailable: [{ name: 'columns', error: 'query timed out' }] }));
   assert.ok(r.blind.some(b => /columns/.test(b.name) && /timed out/.test(b.reason)));
 });
+
+test('the database section added in build -d is consumed, not skipped', () => {
+  // A section this reader does not understand is a section whose failures never
+  // reach the screen — the quiet kind of gap, and exactly what this whole
+  // feature exists to stop.
+  const checks = nh.allChecks({
+    tables: { data: [] }, columns: { data: [] }, jobs: { data: null },
+    database: { ok: true, data: {
+      pool: { size: 50, used: 23, free: 27, pending: 0, severity: 'ok', note: 'no queueing' },
+      staleStatsReadable: true,
+      staleStats: [{ table: 'jira_issue_cache', stat: 'IX_x', rows: 12761, modifications: 138000, severity: 'fail' }],
+      resource: { avgCpuPercent: 40, avgDataIoPercent: 100, maxWorkerPercent: 5, severity: 'warn', note: 'Data IO pegged' },
+    } },
+  });
+  assert.ok(checks.some(c => c.name === 'connection pool'));
+  assert.ok(checks.some(c => c.name === 'DTU headroom'));
+  const stat = checks.find(c => /stats jira_issue_cache/.test(c.name));
+  assert.ok(stat, 'a stale statistic must surface');
+  assert.equal(stat.severity, 'fail');
+  assert.match(stat.verdict, /138,000 modifications against 12,761 rows/);
+});
+
+test('an unreadable statistics DMV is unknown, never an empty all-clear', () => {
+  // The report carries its own absent-is-not-zero guard here. If this reader
+  // ignored it, "no stale statistics found" and "could not look" would render
+  // identically — which is the failure, one layer out.
+  const checks = nh.allChecks({
+    tables: { data: [] }, columns: { data: [] }, jobs: { data: null },
+    database: { ok: true, data: { pool: null, staleStatsReadable: false, staleStats: [], resource: null } },
+  });
+  const s = checks.find(c => c.name === 'stale statistics');
+  assert.equal(s.severity, 'unknown');
+  assert.match(s.verdict, /not evidence that nothing is stale/);
+});
