@@ -1595,6 +1595,22 @@ async function current({ force = false } = {}) {
     return { available: false, reason: 'no day in the feed carries a value across the detector KPIs' };
   }
 
+  // Measures a person has already said stopped on purpose.
+  //
+  // ⚠ Read HERE, before `detect()`. It was first placed below the detect call,
+  // next to the lifecycle it is read from — which is a temporal dead zone: the
+  // whole endpoint answered 400 with "Cannot access 'retired' before
+  // initialization" and the radar went down with it. Every test passed, because
+  // they all call the PURE `detect()` directly and nothing covered this
+  // function. A `let` declared after its use reads fine and runs never.
+  let retired = new Set();
+  try {
+    retired = require('./indicator-log').retiredKeys();
+  } catch {
+    // An unreadable register must not silence the detectors — the failure mode
+    // to avoid is a quiet radar, not a noisy one.
+  }
+
   const result = detect({
     series: history.series,
     tracker,
@@ -1606,11 +1622,6 @@ async function current({ force = false } = {}) {
     asOf,
     disabled: disabledDetectors(),
   });
-
-  // Measures a person has already said stopped on purpose. Read BEFORE
-  // detecting, so a retired one never re-enters the list it was dismissed from.
-  let retired = new Set();
-  try { retired = require('./indicator-log').retiredKeys(); } catch { /* an unreadable register must not silence the detectors */ }
 
   let lifecycle;
   try {

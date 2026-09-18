@@ -755,3 +755,28 @@ test('a human calling a Q1 card a false alarm retires that measure', () => {
   assert.equal(leading.detectWentQuiet({ series: s, asOf: ASOF, retired: new Set(['nt_thing']) }).quiet, 'Q1',
     'and stays quiet once a person has said it was deliberate');
 });
+
+test('current() runs end to end — the impure half nothing else covered', () => {
+  // ⚠ This test exists because its absence took the radar down. `retired` was
+  // declared AFTER the detect() call that used it — a temporal dead zone — so
+  // /api/leading answered 400 with "Cannot access 'retired' before
+  // initialization" and the radar went with it. All 286 tests passed, because
+  // every one of them calls the PURE detect() directly and nothing ever
+  // executed this function.
+  //
+  // With no bridge configured it must return an unavailable STATE with a
+  // reason, never throw. That is the contract, and it is also enough to catch
+  // a reference error anywhere on the path.
+  const saved = [process.env.NOVA_BRIDGE_URL, process.env.NOVA_BRIDGE_SECRET];
+  delete process.env.NOVA_BRIDGE_URL;
+  delete process.env.NOVA_BRIDGE_SECRET;
+  return leading.current()
+    .then(r => {
+      assert.equal(r.available, false, 'no bridge means unavailable, not a throw');
+      assert.match(String(r.reason), /not configured/);
+    })
+    .finally(() => {
+      if (saved[0]) process.env.NOVA_BRIDGE_URL = saved[0];
+      if (saved[1]) process.env.NOVA_BRIDGE_SECRET = saved[1];
+    });
+});
