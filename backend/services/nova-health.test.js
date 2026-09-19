@@ -18,7 +18,7 @@ const report = (over = {}) => ({
   available: true,
   asOf: '2026-09-18T10:00:00Z',
   raw: {
-    build: nh.BUILD_EXPECTED,
+    build: nh.BUILD_WRITTEN_AGAINST,
     overall: 'ok',
     trustworthy: true,
     controlsHealthy: true,
@@ -138,4 +138,60 @@ test('an unreadable statistics DMV is unknown, never an empty all-clear', () => 
   const s = checks.find(c => c.name === 'stale statistics');
   assert.equal(s.severity, 'unknown');
   assert.match(s.verdict, /not evidence that nothing is stale/);
+});
+
+// ── The gate is the shape, not the version ───────────────────────────────────
+
+test('a NEWER build with the same shape is READ, not refused', () => {
+  // ⚠ The reason this changed. Strict stamp equality refused build -e, which
+  // was a performance fix — "stop the health check scanning 723MB to ask what
+  // time it is" — with a contract byte-identical to -d. It could not have
+  // affected this reader and it blocked it anyway, putting a blind spot on
+  // Nick's radar for the fourth time in a day.
+  const r = nh.readable({
+    build: '2026-09-99-z', overall: 'ok', trustworthy: true, controlsHealthy: true,
+    unavailable: [],
+    tables: { ok: true, error: null, data: [] },
+    columns: { ok: true, error: null, data: [] },
+    jobs: { ok: true, error: null, data: null },
+  });
+  assert.equal(r.ok, true, 'an unfamiliar version whose shape is intact must still be usable');
+});
+
+test('a response missing a field this reader USES is refused, by name', () => {
+  // The protection the stamp was introduced for: a stale dist once served a
+  // plausible response with new fields silently undefined, and undefined
+  // renders as a confident blank. This catches it, and says which field.
+  const r = nh.readable({
+    build: '2026-09-18-e', overall: 'ok', trustworthy: true,
+    unavailable: [], tables: { ok: true }, columns: { ok: true }, jobs: { ok: true },
+  });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.missing, ['controlsHealthy']);
+});
+
+test('an extra section is not a reason to refuse', () => {
+  // `database` arrived exactly this way in build -d. Extra is fine; missing is not.
+  const r = nh.readable({
+    build: '2026-09-18-e', overall: 'ok', trustworthy: true, controlsHealthy: true,
+    unavailable: [],
+    tables: { ok: true }, columns: { ok: true }, jobs: { ok: true },
+    somethingNobodyHasWrittenYet: { ok: true },
+  });
+  assert.equal(r.ok, true);
+});
+
+test('a readable but newer build says so, in the blind-spots banner', () => {
+  // Not a refusal, and not silence either: a newer NOVA may carry checks this
+  // screen has not been taught to render, and an unrendered check is a gap.
+  const r = nh.toRadar({
+    available: true, asOf: 'now',
+    buildNote: 'NOVA is on build "2026-09-99-z"; this reader was written against "2026-09-18-e".',
+    raw: {
+      build: '2026-09-99-z', overall: 'ok', trustworthy: true, controlsHealthy: true,
+      unavailable: [], tables: { ok: true, data: [] }, columns: { ok: true, data: [] },
+      jobs: { ok: true, data: { warmingUp: false, jobs: [] } },
+    },
+  });
+  assert.ok(r.blind.some(b => /newer build/.test(b.name)));
 });

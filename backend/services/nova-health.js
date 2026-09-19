@@ -41,8 +41,66 @@
  * Read-only, cached, and it never throws.
  */
 
-/** The NOVA build whose shape this reader understands. */
-const BUILD_EXPECTED = '2026-09-18-d';
+/**
+ * The build this reader was written against. INFORMATION, not a gate.
+ *
+ * ⚠ It used to be a gate — strict equality, refuse anything else — and that was
+ * wrong here. The stamp moved four times in a day while two sessions iterated
+ * (-a, -b, -d, -e), and each time VANTAGE reported NOVA's health as an
+ * unreadable blind spot on the screen Nick checks daily. The last of those,
+ * -e, was a PERFORMANCE fix: "stop the health check scanning 723MB to ask what
+ * time it is". The public contract was byte-identical to -d. It could not have
+ * affected this reader, and it blocked it anyway.
+ *
+ * The stamp conflates two different facts — "the internals changed" and "the
+ * shape changed" — and only the second one concerns a consumer. Strict equality
+ * is right for a stable contract (`flow-signals` has moved once in a month) and
+ * actively harmful for one under construction: it converts every upstream
+ * improvement into a downstream outage.
+ *
+ * So the gate is now `readable()`, which checks the FIELDS THIS READER ACTUALLY
+ * USES. That keeps the protection the stamp was introduced for — a stale `dist`
+ * once served a plausible response with new fields silently `undefined`, and a
+ * field read as undefined renders as a confident blank — while not caring
+ * whether someone made a query faster.
+ *
+ * A mismatched stamp on a readable response is still reported, as a note beside
+ * the data rather than instead of it.
+ */
+const BUILD_WRITTEN_AGAINST = '2026-09-18-e';
+
+/**
+ * Can this response be read at all?
+ *
+ * Every field named here is one `toRadar` or `allChecks` dereferences. If NOVA
+ * drops or renames one, this catches it by NAME and says which — which is more
+ * use than a version mismatch, and is the thing the version was standing in for.
+ *
+ * Deliberately NOT a full schema check. Extra fields are fine and expected; the
+ * `database` section arrived that way. The question is only whether what this
+ * reader depends on is present and the right kind of thing.
+ */
+function readable(raw) {
+  const missing = [];
+  if (!raw || typeof raw !== 'object') return { ok: false, missing: ['the response body'] };
+
+  if (typeof raw.overall !== 'string') missing.push('overall');
+  if (typeof raw.trustworthy !== 'boolean') missing.push('trustworthy');
+  // `controlsHealthy` arrived in -b and is what separates "the checker is
+  // blind" from "the report is incomplete". Without it the consumer cannot
+  // tell those apart, which is the distinction it exists to draw.
+  if (typeof raw.controlsHealthy !== 'boolean') missing.push('controlsHealthy');
+  if (!Array.isArray(raw.unavailable)) missing.push('unavailable');
+
+  for (const section of ['tables', 'columns', 'jobs']) {
+    const sig = raw[section];
+    if (!sig || typeof sig !== 'object') { missing.push(section); continue; }
+    // The Signal<T> envelope, which is the contract both sides agreed on.
+    if (typeof sig.ok !== 'boolean') missing.push(`${section}.ok`);
+  }
+
+  return { ok: missing.length === 0, missing };
+}
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 120_000;
 
@@ -78,16 +136,30 @@ async function current({ force = false } = {}) {
     }
     const raw = payload.data;
 
-    if (raw.build !== BUILD_EXPECTED) {
-      const stale = {
+    // The gate is the SHAPE, not the version. See `BUILD_WRITTEN_AGAINST`.
+    const shape = readable(raw);
+    if (!shape.ok) {
+      const unusable = {
         available: false,
-        reason: `NOVA is on health-signals build "${raw.build || 'unknown'}"; VANTAGE reads "${BUILD_EXPECTED}". Redeploy NOVA, or update this reader if the shape changed deliberately.`,
+        reason: `NOVA's health report is missing ${shape.missing.join(', ')} — this reader cannot use it. `
+          + `NOVA is on build "${raw?.build || 'unknown'}", written against "${BUILD_WRITTEN_AGAINST}". `
+          + 'Either NOVA is serving a stale build, or the contract changed and this reader needs updating.',
       };
-      cache = { at: Date.now(), data: stale };
-      return stale;
+      cache = { at: Date.now(), data: unusable };
+      return unusable;
     }
 
-    const data = { available: true, asOf: new Date().toISOString(), raw };
+    const data = {
+      available: true,
+      asOf: new Date().toISOString(),
+      raw,
+      // Reported beside the data rather than instead of it. A newer NOVA whose
+      // shape this reader still understands is worth reading, and worth saying
+      // so about — it may carry a section nobody here has taught it to render.
+      buildNote: raw.build === BUILD_WRITTEN_AGAINST
+        ? null
+        : `NOVA is on build "${raw.build}"; this reader was written against "${BUILD_WRITTEN_AGAINST}". Everything it reads is present, so the report is being used — but a newer build may carry checks this screen does not yet show.`,
+    };
     cache = { at: Date.now(), data };
     return data;
   } catch (err) {
@@ -162,7 +234,7 @@ function toRadar(state) {
       items: [],
       blind: [{
         name: 'nova-health',
-        reason: `NOVA's self-report could not be read — ${state?.reason || 'unknown'}. Nothing below reflects whether NOVA's own capture is working.`,
+        reason: `NOVA's self-report could not be read — ${String(state?.reason || 'unknown').replace(/\.\s*$/, '')}. Nothing below reflects whether NOVA's own capture is working.`,
       }],
     };
   }
@@ -171,6 +243,12 @@ function toRadar(state) {
   const checks = allChecks(raw);
   const blind = [];
   const items = [];
+
+  // A readable-but-newer build. Not a refusal, but not silence either: if NOVA
+  // has added a section, this screen is not showing it and should say so.
+  if (state.buildNote) {
+    blind.push({ name: 'nova-health (newer build)', reason: state.buildNote });
+  }
 
   // ⚠ RULE 1 — and build -b split it into two, because the two causes want
   // genuinely different reactions:
@@ -239,4 +317,4 @@ function toRadar(state) {
   return { items, blind, overall: raw.overall, trustworthy: raw.trustworthy, controlsHealthy: raw.controlsHealthy };
 }
 
-module.exports = { current, toRadar, allChecks, isConfigured, BUILD_EXPECTED };
+module.exports = { current, toRadar, allChecks, readable, isConfigured, BUILD_WRITTEN_AGAINST };
