@@ -329,6 +329,17 @@ with three new fields quietly `undefined`, and the numbers it *did* return were
 computed by logic already corrected. Bump the stamp on both sides when the shape
 changes.
 
+### Blind spots are not a tense — until they persist
+
+"Could not see it" is evidence of nothing about the desk, so a blind spot is
+never filed as `could` or any other tense. It lives in the banner, with a next
+step where one can honestly be named (null otherwise — a vague remedy reads as
+advice). But one that EVERY rebuild has failed to see for 3+ days is a fact about
+the instrument, and `blind-spots.js` promotes it to a `happening` card with a
+fixed title (the register pins on title). One clear rebuild closes the episode.
+The claim is "every rebuild since X", never "blind for N days": there are no
+rebuilds at night or at weekends, and nobody looked.
+
 ## NOVA has no local instance
 
 It runs on **BYM-AAPP01** under IIS. There is no dev database. Deploy is

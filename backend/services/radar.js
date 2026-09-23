@@ -37,6 +37,7 @@ const people = require('./people');
 const conversations = require('./conversations');
 const leading = require('./leading');
 const novaHealth = require('./nova-health');
+const blindSpots = require('./blind-spots');
 const cache = require('./cache');
 const findings = require('./findings');
 
@@ -472,16 +473,31 @@ async function compute({ force = false } = {}) {
     // health report, a section that could not be evaluated, or a job list that
     // cannot yet mean anything all belong here rather than as cards — they are
     // statements about what cannot be seen.
-    ...healthRadar.blind.map(b => ({ name: b.name, ok: false, error: b.reason })),
+    ...healthRadar.blind.map(b => ({ name: b.name, ok: false, error: b.reason, remedy: b.remedy || null })),
     health, tasks, meetings, booked, meetingAnalysis,
-  ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null }));
+  ].map(s => ({ name: s.name, ok: s.ok, error: s.error || null, ...(s.remedy ? { remedy: s.remedy } : {}) }));
+
+  // Named so the UI can say what it could not see, rather than implying the
+  // radar covered everything. Each entry carries a next step where one can be
+  // named and the date it was first seen; one that has outlasted every rebuild
+  // for days becomes a card about the instrument. See `blind-spots.js`.
+  const tracked = blindSpots.reconcile(
+    sources.filter(s => !s.ok).map(s => ({ name: s.name, reason: s.error, remedy: s.remedy })),
+  );
+  const blind = tracked.ok ? tracked.blind : [...tracked.blind, {
+    name: 'blind-spot history',
+    reason: `VANTAGE could not read or write its record of when each blind spot began (${tracked.error}), so none of the above can be promoted to a card however long it has lasted.`,
+    remedy: null,
+  }];
+  items.push(...tracked.items);
+  items.sort((a, b) =>
+    (TENSE_ORDER[a.tense] - TENSE_ORDER[b.tense])
+    || (SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]));
 
   const data = {
     generatedAt: nowIso(),
     sources,
-    // Named so the UI can say what it could not see, rather than implying the
-    // radar covered everything.
-    blind: sources.filter(s => !s.ok).map(s => ({ name: s.name, reason: s.error })),
+    blind,
     items,
     counts: {
       happened: items.filter(i => i.tense === 'happened').length,

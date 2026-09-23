@@ -355,7 +355,19 @@ export default function Radar() {
           {data.blind.length === 1 ? '' : 's'} could not be read, so nothing below covers
           {data.blind.length === 1 ? ' it' : ' them'}:
           <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-            {data.blind.map(b => <li key={b.name}><code>{b.name}</code> — {b.reason}</li>)}
+            {data.blind.map(b => (
+              <li key={b.name}>
+                <code>{b.name}</code> — {b.reason}
+                {/* Only once it has outlasted a day: "since today" is noise. */}
+                {b.since && Date.now() - Date.parse(b.since) >= 86_400_000 && (
+                  <> <em>Blind since {new Date(b.since).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {b.persisted ? ' — on the radar as going wrong.' : '.'}</em></>
+                )}
+                {b.remedy && (
+                  <div style={{ marginTop: 3 }}><strong>Suggested: </strong>{b.remedy}</div>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       )}

@@ -213,6 +213,30 @@ function allChecks(raw) {
 }
 
 /**
+ * The next step for a set of checks NOVA could not evaluate. PURE.
+ *
+ * Keyed on NOVA's own verdict text, because each cause has a different fix and
+ * one aggregate banner line can hold several. A verdict not recognised here
+ * contributes nothing, rather than a vague line that reads like advice.
+ */
+function unknownRemedy(unknowns) {
+  const steps = new Set();
+  for (const u of unknowns) {
+    const v = String(u.verdict || '');
+    if (/no timestamp column/.test(v)) {
+      steps.add(`${u.name} has rows but NOVA does not know which column dates them: add its timestamp column to TIMESTAMP_PREFERENCE in NOVA's health-signals.ts.`);
+    } else if (/too few to tell/.test(v) || /Not yet due since restart/.test(v)) {
+      steps.add(`${u.name} clears on its own as NOVA gathers more to look at.`);
+    } else if (/Could not be checked/.test(v)) {
+      steps.add(`${u.name}'s check query failed. A timeout here is the table being busy, not empty, and usually clears on the next run; if it repeats, the query in health-signals.ts is the place to look.`);
+    } else if (u.name === 'stale statistics') {
+      steps.add('NOVA could not read the statistics DMV — its SQL login lacks the permission, or the database was too busy to answer.');
+    }
+  }
+  return steps.size ? [...steps].join(' ') : null;
+}
+
+/**
  * NOVA's self-report as radar material. PURE.
  *
  * Two outputs, because the report says two different kinds of thing:
@@ -235,6 +259,9 @@ function toRadar(state) {
       blind: [{
         name: 'nova-health',
         reason: `NOVA's self-report could not be read — ${String(state?.reason || 'unknown').replace(/\.\s*$/, '')}. Nothing below reflects whether NOVA's own capture is working.`,
+        remedy: /missing/.test(String(state?.reason))
+          ? 'Either redeploy NOVA (deploy\\deploy.ps1 -Branch nova-codex on AAPP01) or, if NOVA is current and the contract changed, update readable() in nova-health.js.'
+          : 'NOVA\'s /api/neuro-bridge/health-signals did not answer. Check the site is up in IIS on AAPP01; if it is, the health report itself is timing out.',
       }],
     };
   }
@@ -247,7 +274,11 @@ function toRadar(state) {
   // A readable-but-newer build. Not a refusal, but not silence either: if NOVA
   // has added a section, this screen is not showing it and should say so.
   if (state.buildNote) {
-    blind.push({ name: 'nova-health (newer build)', reason: state.buildNote });
+    blind.push({
+      name: 'nova-health (newer build)',
+      reason: state.buildNote,
+      remedy: 'Read what NOVA\'s new build added; render any new section in allChecks(), then set BUILD_WRITTEN_AGAINST in nova-health.js to match.',
+    });
   }
 
   // ⚠ RULE 1 — and build -b split it into two, because the two causes want
@@ -266,16 +297,22 @@ function toRadar(state) {
     blind.push({
       name: 'nova-health (blind)',
       reason: 'NOVA\'s own positive controls are unhealthy, so the checker cannot see — the checks that came back clean are not evidence of anything. Treat NOVA\'s instrumentation as unknown until this clears.',
+      remedy: 'Open NOVA\'s Health page and look at the three controls (jira_issue_cache, agent_decisions, escalation_log). Fix whichever is stale first — nothing else on the report means anything until it clears.',
     });
   } else if (raw.trustworthy === false) {
     blind.push({
       name: 'nova-health (partial)',
       reason: 'NOVA\'s controls are healthy, so what it did check is sound — but at least one section could not be evaluated, so the report does not cover everything it claims to. Incomplete rather than wrong.',
+      remedy: 'The section that failed is listed separately in this banner. Fix that one and this clears with it.',
     });
   }
 
   for (const s of raw.unavailable || []) {
-    blind.push({ name: `nova-health: ${s.name}`, reason: s.error || 'section could not be evaluated' });
+    blind.push({
+      name: `nova-health: ${s.name}`,
+      reason: s.error || 'section could not be evaluated',
+      remedy: `NOVA's ${s.name} section threw. It is built in NOVA's src/server/services/health-signals.ts, and the error above is where to start.`,
+    });
   }
 
   // ⚠ RULE 3. Said out loud rather than silently omitted — a reader who sees no
@@ -285,6 +322,7 @@ function toRadar(state) {
     blind.push({
       name: 'nova-health: jobs',
       reason: `NOVA restarted ${Math.round((raw.jobs.data.uptimeSeconds || 0) / 60)} minutes ago and its job history is held in memory only, so no job can yet be said to have run or not run.`,
+      remedy: 'Nothing to do. This clears once NOVA has been up long enough for every job to have had a turn.',
     });
   }
 
@@ -293,7 +331,8 @@ function toRadar(state) {
   if (unknowns.length) {
     blind.push({
       name: 'nova-health: not evaluated',
-      reason: `${unknowns.length} NOVA check${unknowns.length === 1 ? '' : 's'} could not be evaluated: ${unknowns.map(u => u.name).join(', ')}. Not evaluated is not the same as fine.`,
+      reason: `${unknowns.length} NOVA check${unknowns.length === 1 ? '' : 's'} could not be evaluated: ${unknowns.map(u => (u.verdict ? `${u.name} (${String(u.verdict).replace(/\.\s*$/, '')})` : u.name)).join(', ')}. Not evaluated is not the same as fine.`,
+      remedy: unknownRemedy(unknowns),
     });
   }
 

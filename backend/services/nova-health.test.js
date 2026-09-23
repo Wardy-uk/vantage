@@ -62,6 +62,20 @@ test('RULE 2: unknown is reported as not-evaluated, never as passing', () => {
   assert.equal(r.items.length, 0, 'unknown is not a card either — it is an absence');
 });
 
+test('RULE 2 carries a next step where NOVA\'s verdict names the cause, and none where it does not', () => {
+  const withCause = nh.toRadar(report({
+    tables: { ok: true, error: null, data: [{ table: 'agent_escalation_predictions', severity: 'unknown',
+      verdict: '42 rows, but no timestamp column to measure recency on' }] },
+  })).blind.find(b => /not evaluated/.test(b.name));
+  assert.match(withCause.reason, /no timestamp column/, 'the verdict is shown, not just the table name');
+  assert.match(withCause.remedy, /TIMESTAMP_PREFERENCE/);
+
+  const noCause = nh.toRadar(report({
+    tables: { ok: true, error: null, data: [{ table: 'agent_incidents', severity: 'unknown', verdict: 'could not read' }] },
+  })).blind.find(b => /not evaluated/.test(b.name));
+  assert.equal(noCause.remedy, null);
+});
+
 test('RULE 3: warmingUp means NO job information, not healthy jobs', () => {
   // NOVA holds lastRun in memory, so a restart makes every job look never-run.
   // A consumer reading that as fine would be reassured exactly when it has
