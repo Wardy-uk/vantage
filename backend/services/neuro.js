@@ -15,7 +15,7 @@ const criticality = require('./criticality');
  *
  * Read-only by default, with ONE deliberate exception.
  *
- * ⚠ Every call here is a GET except **FIVE**. That count has been wrong twice —
+ * ⚠ Every call here is a GET except **THREE**. That count has been wrong twice —
  * the prose said "three" while listing four, and the `post()` helper below said
  * "the two writes" — which matters in a file whose entire safety argument is
  * that this is the CLOSED SET of things VANTAGE may change in NEURO. If you add
@@ -27,17 +27,17 @@ const criticality = require('./criticality');
  *
  *   POST /api/tasks              — create a task (idempotent on text)
  *   POST /api/actions            — queue a suggestion for Nick to approve
- *   POST /api/task-dedupe/match  — scores candidates; changes nothing
- *   POST /api/task-dedupe/link   — merge a task with its Planner/To-Do item
  *   POST /api/weekly-risk/manual — put a finding on the report's escalation list
  *
  * Nothing here updates, completes or deletes anything, and the endpoints that
  * write or send (weekly-risk publish, queue-send, plaud sync) remain
  * deliberately unwrapped.
  *
- * NEURO holds the task; VANTAGE holds only the link to it. Merging that task
- * with Mel's Planner board is NEURO's job and already exists (`task-dedupe`),
- * which is why nothing here talks to Graph.
+ * The two task-dedupe writes (match, and the Planner link) went on 23 Sep 2026
+ * with the plan-task tools that were their only caller: the improvement plan
+ * now lives in the vault and reaches NEURO via the Planner board (D11), so
+ * VANTAGE has no business creating or merging plan tasks. Nothing here talks
+ * to Graph; the board is read through NEURO's own GET.
  *
  * `GET /api/weekly-risk` — the assembled report — is deliberately NOT used: it
  * triggers a NOVA round trip of its own, and VANTAGE already reads NOVA
@@ -108,7 +108,7 @@ async function call(path, { timeoutMs = TIMEOUT_MS } = {}) {
 }
 
 /**
- * The five writes. Kept together and named so a grep for `method: 'POST'` in
+ * The three writes. Kept together and named so a grep for `method: 'POST'` in
  * this repo lands on the whole of what VANTAGE is allowed to change in NEURO.
  * The count is load-bearing — see the header.
  */
@@ -134,24 +134,6 @@ async function post(path, body, { timeoutMs = TIMEOUT_MS } = {}) {
 }
 
 /**
- * Score texts against NEURO's open tasks AND the Microsoft mirror. A read that
- * has to be a POST because the query is a list, not a query string. Changes
- * nothing.
- */
-const matchTasks = (texts, { minScore, limit = 3 } = {}) =>
-  post('/api/task-dedupe/match', { texts, minScore, limit });
-
-/**
- * Merge a NEURO task with a Microsoft one. One of the five writes.
- *
- * This is the "NEURO should merge its task with Planner" half. NEURO owns the
- * merge (`tasks.ms_id`), and once it exists the Planner line stops listing
- * separately and completing either side completes both.
- */
-const linkTaskToMicrosoft = (taskId, msId, msSource = null) =>
-  post('/api/task-dedupe/link', { taskId, msId, msSource });
-
-/**
  * The manual half of the weekly risk report — the sections NOVA cannot answer.
  *
  * Read separately from the report itself on NEURO's own advice: `/manual` exists
@@ -162,7 +144,7 @@ const weeklyRiskManual = (week = null) =>
   call(`/api/weekly-risk/manual${week ? `?week=${encodeURIComponent(week)}` : ''}`);
 
 /**
- * Put a line on the report's escalation list. One of the five writes.
+ * Put a line on the report's escalation list. One of the three writes.
  *
  * A PATCH would be safer and NEURO does not offer one — `setManual` merges the
  * patch over the stored object, so a whole field is replaced wholesale. The
@@ -230,7 +212,7 @@ const createTask = ({ text, moscow, dueDate, notes, originPath, source = 'vantag
 /**
  * Queue a suggestion for Nick instead of writing it into his list.
  *
- * The fifth write, and the low-criticality half of the handoff. Before it,
+ * One of the three writes, and the low-criticality half of the handoff. Before it,
  * VANTAGE could create a task and nothing else, so "worth a look when you have
  * a minute" had nowhere to go: it became a task at the top of the list he uses
  * to decide what to do next, or it became nothing at all.
@@ -464,5 +446,5 @@ module.exports = {
   isConfigured, call, teamHealth, vaultActions, waitingOn, tasks, allTasks,
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
   friction, wins,
-  matchTasks, createTask, queueSuggestion, proposeWork, linkTaskToMicrosoft, todos,
+  createTask, queueSuggestion, proposeWork, todos,
 };

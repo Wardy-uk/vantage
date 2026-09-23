@@ -90,7 +90,10 @@ export default function Standing({ onGoTo }) {
           title={f.oldestUnraisedTitle || ''}
         />
       )}
-      <Stat n={`${d.plan.mineMoving}/${d.plan.mineTotal}`} label="plan actions moving" />
+      {/* Absent when the vault's register has never been read — not 0/0. */}
+      {d.plan && (
+        <Stat n={`${d.plan.done}/${d.plan.total}`} label="plan actions done" title="Yours, from the vault's action register" />
+      )}
       {d.done.findingsRaised > 0 && (
         <Stat n={d.done.findingsRaised} label="raised this week" tone="var(--good)" />
       )}

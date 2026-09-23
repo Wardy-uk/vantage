@@ -335,7 +335,7 @@ async function escalate(id, { week = null } = {}) {
 
 VANTAGE finding, spotted ${f.found_on}. On the w/c ${targetWeek} risk report.`.trim(),
     });
-    // Same id-shape tolerance plan-tasks already needs: NEURO has answered
+    // Same id-shape tolerance plan-tasks needed: NEURO has answered
     // with the row at the top level and nested under `task` at different times.
     task = {
       route: outcome.route,

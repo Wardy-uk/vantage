@@ -79,13 +79,7 @@ export const api = {
   // his own browser, so the attribution is a fact rather than an assumption.
   leadingVerdict: (id, body) => call(`/leading/log/${id}/verdict`, { method: 'POST', body: { by: 'nick', ...body } }),
 
-  plan: () => call('/plan'),
-  setPlanStatus: (id, patch) => call(`/plan/${id}`, { method: 'PUT', body: patch }),
-  planTasks: (rematch = false) => call(`/plan/tasks${rematch ? '?rematch=1' : ''}`),
-  createPlanTask: (id, body = {}) => call(`/plan/${id}/task`, { method: 'POST', body }),
-  linkPlanTask: (id, taskId) => call(`/plan/${id}/link`, { method: 'POST', body: { taskId } }),
-  adoptPlannerTask: (id, item) => call(`/plan/${id}/planner`, { method: 'POST', body: item }),
-  unlinkPlanTask: id => call(`/plan/${id}/link`, { method: 'DELETE' }),
+  plan: (refresh = false) => call(`/plan${refresh ? '?refresh=1' : ''}`),
 
   findings: (status) => call(`/findings${status ? '?status=' + status : ''}`),
   addFinding: f => call('/findings', { method: 'POST', body: f }),

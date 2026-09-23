@@ -73,20 +73,13 @@ function findingsBehaviour() {
   };
 }
 
-/** Progress on what is HIS, kept apart from what is not. */
+/**
+ * Progress on what is HIS, kept apart from what is not — from the vault's
+ * action register (see plan.js), as last read. Null when it has never been
+ * read: absent, never "none of yours are done".
+ */
 function planBehaviour() {
-  const p = plan.list();
-  const mine = p.items.filter(i => i.owner === 'mine');
-  const notMine = p.items.filter(i => i.owner !== 'mine');
-  return {
-    mineTotal: mine.length,
-    mineMoving: mine.filter(i => ['in-progress', 'done'].includes(i.status)).length,
-    mineNotStarted: mine.filter(i => i.status === 'not-started').length,
-    notMineEscalated: notMine.filter(i => i.status === 'escalated').length,
-    // An `above` item left "not started" is ambiguous: it may be blocked, or it
-    // may simply never have been raised with whoever owns it.
-    notMineUntouched: notMine.filter(i => i.status === 'not-started').length,
-  };
+  return plan.lastRead();
 }
 
 /** What he has noticed about himself. `avoidance` is the one that matters. */
@@ -116,12 +109,12 @@ function observationBehaviour() {
 function doneBehaviour() {
   const weekAgo = new Date(Date.now() - 7 * DAY).toISOString().slice(0, 10);
   const all = findings.list({ limit: 500 });
-  const p = plan.list();
+  const p = plan.lastRead();
   return {
     findingsRaised: all.filter(f => f.raised_on && f.raised_on >= weekAgo).length,
     findingsWithAction: all.filter(f => (f.action || '').trim()).length,
     findingsLogged: all.filter(f => (f.found_on || '') >= weekAgo).length,
-    planMoved: p.items.filter(i => i.owner === 'mine' && ['in-progress', 'done'].includes(i.status)).length,
+    planDone: p ? p.done : null,
   };
 }
 
@@ -151,7 +144,7 @@ function quick() {
       oldestUnraisedDays: f.ageingUnraised[0]?.ageDays ?? null,
       oldestUnraisedTitle: f.ageingUnraised[0]?.title ?? null,
     },
-    plan: { mineTotal: p.mineTotal, mineMoving: p.mineMoving },
+    plan: p ? { total: p.total, done: p.done } : null,
     done: d,
   };
 }

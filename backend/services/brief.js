@@ -145,7 +145,7 @@ function buildEvidence(radarData, selfData, alreadyNamed) {
   }
   lines.push(`- ${d.findingsRaised} finding(s) raised in the last 7 days.`);
   lines.push(`- ${d.findingsWithAction} finding(s) now carry a recorded action.`);
-  lines.push(`- ${d.planMoved} improvement-plan action(s) of his are in progress or done.`);
+  if (d.planDone != null) lines.push(`- ${d.planDone} improvement-plan action(s) of his are done.`);
 
   lines.push('\n## Found versus said');
   const f = selfData.findings;
@@ -157,7 +157,9 @@ function buildEvidence(radarData, selfData, alreadyNamed) {
 
   lines.push('\n## The improvement plan');
   const p = selfData.plan;
-  lines.push(`- Of ${p.mineTotal} actions that are his: ${p.mineMoving} moving, ${p.mineNotStarted} not started.`);
+  lines.push(p
+    ? `- Of ${p.total} actions that are his: ${p.done} done, ${p.onBoard} on the Planner board and open, ${p.toBeAdded} agreed but not yet on the board.`
+    : '- The improvement plan (the vault action register) has not been read. Say nothing about his progress on it.');
 
   if (selfData.oneToOnes) {
     lines.push('\n## 1:1 cadence');

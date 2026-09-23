@@ -52,9 +52,8 @@ const PRIVATE = ['coach', 'brief', 'self', 'sentiment'];
  *   neuro       — writes into NEURO, which surfaces on his phone and the kiosk
  *   findings    — the register, and the line that goes on Chris's report
  *   auto-push   — writes into NEURO unattended
- *   plan-tasks  — creates NEURO tasks from Support Review plan actions
  */
-const OUTWARD = ['neuro', 'findings', 'auto-push', 'plan-tasks'];
+const OUTWARD = ['neuro', 'findings', 'auto-push'];
 
 /** Every `require('./x')` in a file, as a list of module names. */
 function importsOf(name) {

@@ -368,19 +368,20 @@ lives on this side. Never call `weekly-risk` publish, queue-send or test-send �
 VANTAGE may put a line on the report; sending it to Chris stays a decision Nick
 makes in NEURO, behind NEURO's own approval gate.
 
-**GETs, plus exactly four writes:**
+**GETs, plus exactly three writes:**
 
 - `neuro.createTask` — `POST /api/tasks`, idempotent on normalised text.
-- `neuro.matchTasks` — `POST /api/task-dedupe/match`, which changes nothing.
-- `neuro.linkTaskToMicrosoft` — `POST /api/task-dedupe/link`, the Planner merge.
+- `neuro.queueSuggestion` — `POST /api/actions`, a suggestion Nick approves.
 - `neuro.setWeeklyRiskManual` — `POST /api/weekly-risk/manual`, which is how
   `findings.escalate()` puts a finding on the report's escalation list. Note
   `GET /api/weekly-risk` (the assembled report) stays unused: it triggers a NOVA
   round trip VANTAGE has already paid for. `/manual` does not, which is why
   NEURO split it out.
 
-Nothing else in this repo may POST, PATCH or DELETE against NEURO — no updates,
-no completions, no deletes. Adding a fifth write is a decision, not a detail.
+The two task-dedupe writes (`matchTasks`, `linkTaskToMicrosoft`) were removed
+on 23 Sep 2026 with `plan-tasks.js`, their only caller. Nothing else in this
+repo may POST, PATCH or DELETE against NEURO — no updates, no completions, no
+deletes. Adding a write is a decision, not a detail.
 
 **`escalateToChris` is three-valued in NEURO** — `null` (not confirmed, and
 blocking publication), `[]` (a decision that there is nothing), or a list. So
@@ -391,12 +392,21 @@ else. It also deliberately does NOT set `raised_on`: being listed on a report
 that has not been sent is not the same as having raised something, and that date
 is the one number the register exists to produce.
 
-**Tasks live in NEURO; VANTAGE holds only the link.** `plan-tasks.js` stores
-`planId -> taskId` and reads state live. Merging a task with the MS Planner
-board Mel set up is NEURO's job and already exists (`services/task-dedupe.js`) —
-never call Graph from here. Note that NEURO's Planner sync reads
-`/me/planner/tasks`, so it sees only what is **assigned to Nick**: "no Planner
-task" is not evidence there isn't one, and the UI has to say so.
+**The improvement plan lives in the vault, not here.** Since 23 Sep 2026 the
+source of truth is `Projects/Support Improvement Plan/SIP - Action Register.md`:
+every action (Mel's review, Planner-only, NEURO/NOVA, best practice) with its
+owner and Planner status. Work is done on the Planner board "Support -
+Improvement Plan", and board tasks reach NEURO by being on the board (decision
+D11) — so VANTAGE creates no plan tasks and records no plan status. `plan.js`
+reads the register over `/api/vault/read`, holds it against the board
+(`GET /api/microsoft/planner/tasks`, filtered to the board's plan id) and
+NEURO's `/api/todos`, and renders DRIFT where they disagree. It never overrides
+the vault; Nick settles drift there. Rows link to board tasks by a `Planner ID`
+column, falling back to a quoted `Planner: "title"` in Notes. NEURO's Planner
+sync reads `/me/planner/tasks`, so it sees only what is **assigned to Nick**: a
+row with no board match is "not visible", never "not on the board". The last
+good read is stored (`plan_register`) so the standing bar stays local; a
+register that has never been read renders absent, not 0/0.
 
 ## Deploying VANTAGE
 
