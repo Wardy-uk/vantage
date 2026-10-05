@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolveBuildLabel, buildVersionPlugin } from './build-version.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  // version.json beside the build: the status bar turns amber when a newer
+  // build is being served than the open tab (5 Oct 2026, after NOVA).
+  plugins: [react(), buildVersionPlugin(resolveBuildLabel())],
   // Served under a path, not at a host root.
   //
   // Tailscale Funnel only permits ports 443, 8443 and 10000, and all three were

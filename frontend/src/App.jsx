@@ -9,6 +9,7 @@ import Standing from './Standing.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
 import Admin from './views/Admin.jsx';
+import { watchVersion } from './version-watch.js';
 
 /** PIP dates, fixed by the plan itself. */
 const PIP_END = new Date('2026-10-11T00:00:00');
@@ -40,6 +41,31 @@ async function reloadApp() {
     }
   } catch { /* the reload below is the point; the update check is a bonus */ }
   window.location.reload();
+}
+
+/* global __APP_BUILD__, __APP_BUILT_AT__ */
+const BUILD = typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : null;
+
+/**
+ * The status bar (5 Oct 2026), after NOVA's: which build this tab is running,
+ * and in amber when a newer one is being served. A tab left open across a
+ * deploy keeps running the bundle it loaded with and looks entirely normal.
+ */
+function StatusBar() {
+  const [newer, setNewer] = useState(null);
+  useEffect(() => watchVersion({ current: BUILD, url: `${import.meta.env.BASE_URL}version.json`, onState: (s) => setNewer(s.newer) }), []);
+  return (
+    <footer className={`statusbar${newer ? ' statusbar--newer' : ''}`}>
+      <span className="statusbar-spacer" />
+      {BUILD && <span>VANTAGE {BUILD}</span>}
+      {newer && (
+        <button type="button" className="statusbar-update" onClick={reloadApp}
+          title={`This tab is running ${BUILD}; ${newer} is available. Click to reload.`}>
+          {newer} available — reload
+        </button>
+      )}
+    </footer>
+  );
 }
 
 function ReloadButton() {
@@ -177,6 +203,7 @@ export default function App() {
         {tab === 'patterns' && <Patterns />}
         {tab === 'admin' && <Admin />}
       </main>
+      <StatusBar />
     </div>
   );
 }
