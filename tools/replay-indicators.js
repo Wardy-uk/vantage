@@ -336,8 +336,8 @@ const median = xs => {
 function positiveControl(seriesByKey, { to }) {
   const spike = addDays(to, -3);
   const copy = JSON.parse(JSON.stringify(seriesByKey));
-  const arrivals = copy.nt_new_tickets;
-  if (!arrivals) return { ran: false, reason: 'nt_new_tickets is not in the snapshot' };
+  const arrivals = copy.nt_legacy_new_tickets;
+  if (!arrivals) return { ran: false, reason: 'nt_legacy_new_tickets is not in the snapshot' };
   for (const p of arrivals.points) {
     if (p.day > addDays(spike, -7) && p.day <= spike) p.value += 500;
   }
@@ -361,7 +361,7 @@ async function main() {
 
   // Start once every detector KPI has a full baseline behind it, so a detector
   // is never scored over days it was structurally unable to answer.
-  const needed = ['nt_new_tickets', 'nt_solved_team', 'nt_solved_nova', 'nt_development', 'nt_incidents', 'nt_production', 'nt_oldest_development'];
+  const needed = ['nt_legacy_new_tickets', 'nt_solved_team', 'nt_solved_nova', 'nt_development', 'nt_incidents', 'nt_production', 'nt_oldest_development'];
   const firsts = needed.map(k => seriesByKey[k]?.coverage?.firstValueDay).filter(Boolean);
   const lasts = needed.map(k => seriesByKey[k]?.coverage?.lastValueDay).filter(Boolean);
   if (firsts.length !== needed.length) {

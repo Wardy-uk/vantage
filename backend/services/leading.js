@@ -48,6 +48,13 @@
 
 const TENSE = 'could';
 
+// Ticket arrivals. NOVA retired `nt_new_tickets` as a duplicate of
+// `nt_legacy_new_tickets` on 29 Sep 2026 (KPI Source of Truth Stage 1, a8a9bae)
+// and the bridge feed drops unknown keys, so every detector that read the old
+// name went blind ("no day in the feed carries a value across the detector
+// KPIs") from that day. One constant, so the next rename is one line.
+const ARRIVALS_KEY = 'nt_legacy_new_tickets';
+
 // ── Thresholds ───────────────────────────────────────────────────────────────
 //
 // Fixed before the first back-test was run. See rule 4.
@@ -319,11 +326,11 @@ function indicator(fields) {
  * Net, not arrivals. A busy week the team kept up with is not a warning.
  */
 function detectNetFlow({ series, asOf }) {
-  const need = [series.nt_new_tickets, series.nt_solved_team, series.nt_solved_nova];
+  const need = [series[ARRIVALS_KEY], series.nt_solved_team, series.nt_solved_nova];
   const usable = windowUsable(need, asOf);
   if (!usable.ok) return { blocked: { id: 'A', name: 'Net flow divergence', reason: usable.reason } };
 
-  const arrivals = byDay(series.nt_new_tickets);
+  const arrivals = byDay(series[ARRIVALS_KEY]);
   const team = byDay(series.nt_solved_team);
   const nova = byDay(series.nt_solved_nova);
 
@@ -635,10 +642,10 @@ function detectCapacityCollision({ series, capacity, asOf }) {
   if (!capacity?.available) {
     return { blocked: { id: 'E', name: 'Capacity collision', reason: capacity?.reason || 'availability was not read' } };
   }
-  const usable = windowUsable([series.nt_new_tickets], asOf);
+  const usable = windowUsable([series[ARRIVALS_KEY]], asOf);
   if (!usable.ok) return { blocked: { id: 'E', name: 'Capacity collision', reason: usable.reason } };
 
-  const arrivals = byDay(series.nt_new_tickets);
+  const arrivals = byDay(series[ARRIVALS_KEY]);
 
   // Typical arrivals for each weekday, from the last four weeks. Four, so each
   // weekday contributes exactly four samples and no day is better represented.
@@ -679,7 +686,7 @@ function detectCapacityCollision({ series, capacity, asOf }) {
 
   if (!worst) return { quiet: 'E' };
 
-  const conf = confidence([series.nt_new_tickets], asOf, [
+  const conf = confidence([series[ARRIVALS_KEY]], asOf, [
     { cost: 0.1, why: 'People HR returns APPROVED leave only, so a booking still awaiting a manager is not counted — the number off is a floor' },
     ...(capacity.unsyncable?.length
       ? [{ cost: 0.15, why: `${capacity.unsyncable.length} roster member(s) have no People HR id and never sync, so they always look available: ${capacity.unsyncable.join(', ')}` }]
@@ -725,7 +732,7 @@ function detectCapacityCollision({ series, capacity, asOf }) {
         // decide whether this was worth saying. Named here so a later scorer
         // uses the measure the claim was made against, not one chosen with
         // hindsight to suit the answer.
-        scoreAgainst: ['nt_new_tickets', 'nt_solved_team', 'nt_solved_nova'],
+        scoreAgainst: [ARRIVALS_KEY, 'nt_solved_team', 'nt_solved_nova'],
       },
       horizonDays: Math.max(1, between(asOf, worst.day)),
       confidence: conf,
@@ -1121,7 +1128,7 @@ const SHADOW_FAMILIES_TO_FIRE = 2;
 const SHADOW_MIN_FAMILIES_AVAILABLE = 3;
 
 function familyFlow(series, asOf) {
-  const arrivals = byDay(series.nt_new_tickets);
+  const arrivals = byDay(series[ARRIVALS_KEY]);
   const team = byDay(series.nt_solved_team);
   const nova = byDay(series.nt_solved_nova);
   const net = new Map();
@@ -1209,7 +1216,7 @@ function detectShadowComposite({ series, capacity, asOf }) {
       whyItMatters: 'Each of these alone is below the bar any single detector fires at. They come from families that do not derive from one another — flow, ownership, escalation behaviour and booked capacity — so agreement between them is not one fact counted several times, which is exactly how the first composite fooled itself.',
       evidence: available.map(f => ({ label: f.name, value: `z=${f.z} — ${f.detail}` })),
       horizonDays: 10,
-      confidence: confidence([series.nt_new_tickets].filter(Boolean), asOf),
+      confidence: confidence([series[ARRIVALS_KEY]].filter(Boolean), asOf),
       confirm: 'A stock KPI subsequently rises its whole green-to-red span inside a fortnight. The ledger records that automatically.',
       disprove: 'The families move apart again within the week, or one turns out to be a one-off — a bulk import, or a single bounced ticket inflating the rejection rate.',
       action: 'Nothing. This is in SHADOW and produces no card; it is accumulating a prospective record so it can be judged on live evidence rather than on history already looked at.',
@@ -1685,7 +1692,7 @@ async function current({ force = false } = {}) {
 
 /** The newest day for which every detector KPI carries a value. */
 function latestCommonDay(series) {
-  const keys = ['nt_new_tickets', 'nt_solved_team', 'nt_solved_nova', 'nt_development'];
+  const keys = [ARRIVALS_KEY, 'nt_solved_team', 'nt_solved_nova', 'nt_development'];
   const maps = keys.map(k => byDay(series[k])).filter(m => m.size);
   if (maps.length !== keys.length) return null;
 

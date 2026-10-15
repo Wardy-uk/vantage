@@ -96,7 +96,7 @@ function series(key, valueFor, { days = 120, asOf = ASOF, missing = [], source =
  */
 function steadyFlow(extra = {}) {
   return {
-    nt_new_tickets: series('nt_new_tickets', i => 100 + ((i * 7) % 11) - 5),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => 100 + ((i * 7) % 11) - 5),
     nt_solved_team: series('nt_solved_team', () => 70),
     nt_solved_nova: series('nt_solved_nova', () => 30),
     nt_development: series('nt_development', () => 200),
@@ -122,7 +122,7 @@ test('A: POSITIVE CONTROL — a surge in net arrivals does fire', () => {
   // The control for every "did not fire" above it. Without this, a detector
   // wired to return `quiet` unconditionally would pass the whole suite.
   const s = steadyFlow({
-    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)),
   });
   const r = leading.detectNetFlow({ series: s, asOf: ASOF });
   assert.ok(r.indicator, 'a 60-a-day surge above a flat baseline must fire');
@@ -143,7 +143,7 @@ test('A: A MISSING DAY BLOCKS THE DETECTOR — it never reads as zero arrivals',
   // zero it looks like the desk received nothing, which on a net-flow detector
   // reads as a fantastic day and drags the baseline down for a month.
   const s = steadyFlow({
-    nt_new_tickets: series('nt_new_tickets', i => 100 + ((i * 7) % 11) - 5, { missing: [addDays(ASOF, -3)] }),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => 100 + ((i * 7) % 11) - 5, { missing: [addDays(ASOF, -3)] }),
   });
   const r = leading.detectNetFlow({ series: s, asOf: ASOF });
   assert.ok(r.blocked, 'a hole in the window must block, not shorten');
@@ -155,7 +155,7 @@ test('A: a hole does not merely lower confidence — it stops the claim', () => 
   // Distinct from the test above: this asserts the SHAPE of the refusal. A
   // caveat attached to a number is read as a number.
   const s = steadyFlow({
-    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 160 : 100), { missing: [addDays(ASOF, -2)] }),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 160 : 100), { missing: [addDays(ASOF, -2)] }),
   });
   const r = leading.detectNetFlow({ series: s, asOf: ASOF });
   assert.ok(r.blocked, 'even a firing-strength surge is refused when the window has a hole');
@@ -283,7 +283,7 @@ test('E: unsyncable roster members lower confidence and say why', () => {
 // ── Confidence ───────────────────────────────────────────────────────────────
 
 test('a capture-method change inside the window lowers confidence and names the day', () => {
-  const s = series('nt_new_tickets', () => 100);
+  const s = series('nt_legacy_new_tickets', () => 100);
   s.sourceBreaks = [{ day: addDays(ASOF, -10), from: 'reconstruct', to: 'jira' }];
   const c = leading.confidence([s], ASOF);
   assert.ok(c.score < 1);
@@ -291,7 +291,7 @@ test('a capture-method change inside the window lowers confidence and names the 
 });
 
 test('a clean series says so explicitly rather than returning an empty basis', () => {
-  const c = leading.confidence([series('nt_new_tickets', () => 100)], ASOF);
+  const c = leading.confidence([series('nt_legacy_new_tickets', () => 100)], ASOF);
   assert.equal(c.score, 1);
   assert.equal(c.level, 'high');
   assert.ok(c.basis.length, 'an empty basis reads as no reasoning, not as nothing wrong');
@@ -338,14 +338,14 @@ test('one detector throwing does not lose the others', () => {
   // A malformed series reaches the detector as a real shape would; the guard is
   // what stops a single bad KPI blanking the screen.
   const broken = steadyFlow();
-  broken.nt_new_tickets = { key: 'nt_new_tickets', points: null, coverage: {} };
+  broken.nt_legacy_new_tickets = { key: 'nt_legacy_new_tickets', points: null, coverage: {} };
   const r = leading.detect({ series: broken, capacity: null, asOf: ASOF });
   assert.ok(r.blocked.length >= 1);
   assert.ok(Array.isArray(r.indicators), 'the run survives');
 });
 
 test('the card carries every field the brief asks for', () => {
-  const s = steadyFlow({ nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)) });
+  const s = steadyFlow({ nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)) });
   const r = leading.detect({ series: s, capacity: null, asOf: ASOF });
   const card = r.indicators[0];
   for (const field of ['title', 'change', 'whyItMatters', 'evidence', 'horizonDays', 'confidence', 'confirm', 'disprove', 'action']) {
@@ -376,7 +376,7 @@ test('E declares itself an unvalidated advisory, on the card and in metadata', (
 test('A does NOT claim to be advisory — the distinction has to cut both ways', () => {
   // Positive control for the test above. If everything were advisory the flag
   // would carry no information and the auto-push filter would be a no-op.
-  const s = steadyFlow({ nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)) });
+  const s = steadyFlow({ nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 160 : 100 + ((i * 7) % 11) - 5)) });
   const r = leading.detectNetFlow({ series: s, asOf: ASOF });
   assert.equal(r.indicator.validation.status, 'validated');
   assert.equal(r.indicator.validation.autoActionable, true);
@@ -452,7 +452,7 @@ test('S1 blocks rather than guesses when too few evidence families can be comput
 
 test('S1 fires when two INDEPENDENT families are elevated together', () => {
   const s = shadowSeries({
-    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
     nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
   });
   const r = leading.detectShadowComposite({ series: s, capacity: capacityFor([]), asOf: ASOF });
@@ -466,7 +466,7 @@ test('S1 never corroborates flow with a stock, because stock is the integral of 
   // three stocks as four agreeing signals when they are one fact. If a stock
   // ever appears in the evidence families, this fails.
   const s = shadowSeries({
-    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
     nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
   });
   const r = leading.detectShadowComposite({ series: s, capacity: capacityFor([]), asOf: ASOF });
@@ -479,7 +479,7 @@ test('S1 never corroborates flow with a stock, because stock is the integral of 
 
 test('detect() keeps shadow output out of indicators entirely', () => {
   const s = shadowSeries({
-    nt_new_tickets: series('nt_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', i => (i < 7 ? 128 : 100 + ((i * 7) % 11) - 5)),
     nt_legacy_unassigned: series('nt_legacy_unassigned', i => (i < 7 ? 34 : UNASSIGNED_BASE(i))),
   });
   const r = leading.detect({ series: s, capacity: capacityFor([]), asOf: ASOF });
@@ -779,4 +779,17 @@ test('current() runs end to end — the impure half nothing else covered', () =>
       if (saved[0]) process.env.NOVA_BRIDGE_URL = saved[0];
       if (saved[1]) process.env.NOVA_BRIDGE_SECRET = saved[1];
     });
+});
+
+test('arrivals are read from nt_legacy_new_tickets — NOVA retired nt_new_tickets on 29 Sep 2026 and the feed no longer carries it', () => {
+  // The live feed shape since NOVA a8a9bae: no nt_new_tickets key at all.
+  const feed = {
+    nt_legacy_new_tickets: series('nt_legacy_new_tickets', () => 100),
+    nt_solved_team: series('nt_solved_team', () => 90),
+    nt_solved_nova: series('nt_solved_nova', () => 10),
+    nt_development: series('nt_development', () => 200),
+  };
+  assert.equal(leading.latestCommonDay(feed), ASOF, 'a day every detector KPI carries');
+  assert.equal(leading.latestCommonDay({ ...feed, nt_legacy_new_tickets: undefined, nt_new_tickets: feed.nt_legacy_new_tickets }), null,
+    'the retired name no longer satisfies it — proves which key is read');
 });
