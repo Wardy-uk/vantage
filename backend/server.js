@@ -127,6 +127,8 @@ const wrap = fn => async (req, res) => {
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 app.get('/api/settings', wrap(() => settings.describe()));
+// GET /api/ai-gate/profile — the shared NEURO + VANTAGE AI budget gate, today (London): spend by call class, Radar's share, shadow refusal reasons. Read-only; no cap is set.
+app.get('/api/ai-gate/profile', wrap(() => require('./services/ai-gate').profile()));
 app.put('/api/settings', wrap(req => settings.save(req.body || {})));
 app.post('/api/settings/pin', wrap(req => settings.changePin(req.body || {})));
 
@@ -140,7 +142,7 @@ app.post('/api/settings/test/:what', wrap(async req => {
     if (!openrouter.isConfigured()) return { ok: false, message: 'No API key set.' };
     const r = await openrouter.complete(
       [{ role: 'user', content: 'Reply with the single word: ready' }],
-      { maxTokens: 8, temperature: 0 },
+      { maxTokens: 8, temperature: 0, callType: 'connection_test' },
     );
     return { ok: true, message: `Model answered: "${r.text.trim().slice(0, 40)}"`, model: r.model };
   }

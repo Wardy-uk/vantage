@@ -88,6 +88,52 @@ function ChangePin() {
  * design, so this is the only place their record is visible while they are
  * accumulating one.
  */
+/**
+ * The shared AI budget gate (22 Oct 2026), read-only. NEURO and VANTAGE write one
+ * London-day ledger; this shows today's spend, Radar's share and what the gate
+ * would have refused. Shadow mode — nothing is blocked and no cap is set.
+ */
+export function AiBudgetView({ profile, error }) {
+  const usd = v => (v == null ? 'unknown' : `$${Number(v).toFixed(v > 0 && v < 0.01 ? 4 : 2)}`);
+  if (error) return <div className="banner bad">The shared AI ledger couldn’t be read — this is not “nothing spent”. {error}</div>;
+  if (!profile) return <div className="small muted">Loading…</div>;
+  if (!profile.known) return <div className="banner bad">The shared AI ledger couldn’t be read — this is not “nothing spent”. {profile.degraded || ''}</div>;
+  const share = profile.share || {};
+  return (
+    <>
+      <div className="small" style={{ marginBottom: 8 }}><strong>Shadow mode.</strong> {profile.capSay}</div>
+      <div className="small" style={{ marginBottom: 8 }}>
+        Today ({profile.day}, London): <strong>{usd(profile.spendUsd)}</strong> across {profile.calls} calls, NEURO and VANTAGE together.
+        {' '}Radar: <strong>{share.usd == null ? '—' : usd(share.usd)}</strong>{share.fraction != null ? ` (${Math.round(share.fraction * 100)}%)` : ''}.
+        {profile.unknownCostCalls > 0 ? ` ${profile.unknownCostCalls} call(s) could not be priced, so this is a floor.` : ''}
+      </div>
+      {(profile.byClass || []).length > 0 && (
+        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 8 }}>
+          <thead><tr className="small" style={{ color: 'var(--muted)', textAlign: 'left' }}><th>class</th><th>app</th><th>calls</th><th>spent</th><th>would refuse</th></tr></thead>
+          <tbody>{profile.byClass.slice(0, 12).map(c => (
+            <tr key={`${c.app}:${c.callClass}`}><td>{c.callClass}</td><td>{c.app}</td><td>{c.calls}</td><td>{usd(c.usd)}</td><td>{c.wouldRefuse || ''}</td></tr>
+          ))}</tbody>
+        </table>
+      )}
+      {(profile.refusals || []).map(r => (
+        <div key={r.reason} className="small muted">{r.count}× {r.reason} — {r.classes.join(', ')}</div>
+      ))}
+    </>
+  );
+}
+
+function AiBudget() {
+  const [profile, setProfile] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => { api.aiGate().then(setProfile).catch(e => setError(e.message)); }, []);
+  return (
+    <div className="card">
+      <h2>AI budget (shadow)</h2>
+      <AiBudgetView profile={profile} error={error} />
+    </div>
+  );
+}
+
 function Scoreboard() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
@@ -285,6 +331,8 @@ export default function Admin() {
           </div>
         ))}
       </div>
+
+      <AiBudget />
 
       <Scoreboard />
 

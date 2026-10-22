@@ -109,6 +109,7 @@ export const api = {
   saveSettings: patch => call('/settings', { method: 'PUT', body: patch }),
   changePin: (current, next) => call('/settings/pin', { method: 'POST', body: { current, next } }),
   testSetting: what => call(`/settings/test/${what}`, { method: 'POST' }),
+  aiGate: () => call('/ai-gate/profile'),
 
   observations: kind => call(`/observations${kind ? `?kind=${kind}` : ''}`),
   addObservation: (kind, note, sessionId) =>

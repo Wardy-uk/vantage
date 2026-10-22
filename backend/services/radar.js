@@ -629,4 +629,4 @@ async function build({ force = false } = {}) {
   return foldFindings({ ...hit.value, asOf: hit.at, stale: hit.stale, refreshing: hit.refreshing });
 }
 
-module.exports = { build, compute, foldFindings, fromNova, fromNeuro, extractItems, STALE_TICKET_DAYS };
+module.exports = { build, compute, foldFindings, fromNova, fromNeuro, fromMeetings, extractItems, STALE_TICKET_DAYS };

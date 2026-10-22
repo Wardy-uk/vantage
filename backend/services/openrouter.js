@@ -49,30 +49,75 @@ function emptyReason(payload) {
 /** Marks the empty-answer case so the retry can tell it from a refusal. */
 class EmptyCompletion extends Error {}
 
+/**
+ * The shared AI gate (22 Oct 2026). Every attempt — a retry included — takes its
+ * OWN single-use ticket in the ledger NEURO and VANTAGE share, reserved before
+ * the request and settled after it on OpenRouter's own charged cost. Shadow mode:
+ * the gate records what it would refuse and never blocks a call; there is no
+ * daily cap. The gate never fails a call: an unreadable ledger is reported, not
+ * thrown.
+ */
+function gateOpen({ model, maxTokens, callType, messages }) {
+  try {
+    const gate = require('./ai-gate');
+    const { REGISTRY } = require('./ai-gate-classes');
+    const chars = JSON.stringify(messages || []).length;
+    const t = gate.reserve({
+      app: 'vantage', callClass: callType || null, provider: 'openrouter', model,
+      maxInputTokens: Math.ceil(chars / 3.5), maxOutputTokens: maxTokens,
+    }, REGISTRY);
+    if (!t.admitted) throw new gate.GateRefused(t);
+    return t;
+  } catch (e) {
+    if (e && e.name === 'GateRefused') throw e;
+    return null; // the gate itself failed to load — never cost the call
+  }
+}
+function gateClose(ticket, usage) {
+  if (!ticket) return;
+  try { require('./ai-gate').settle(ticket, usage); } catch { /* bookkeeping never fails a call */ }
+}
+
 async function attempt(messages, { model, temperature, maxTokens, json, callType }) {
   const ledger = require('./llm-ledger');
   const started = Date.now();
+  const ticket = gateOpen({ model, maxTokens, callType, messages });
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      // OpenRouter uses these for attribution on its dashboard.
-      'HTTP-Referer': 'https://vantage.nickward.co.uk',
-      'X-Title': 'VANTAGE',
-    },
-    body: JSON.stringify({
-      model, messages, temperature, max_tokens: maxTokens,
-      // The vendor's OWN charged cost, rather than a local price table that
-      // drifts the moment pricing changes.
-      usage: { include: true },
-      ...(json ? { response_format: { type: 'json_object' } } : {}),
-    }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  let res;
+  try {
+    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        // OpenRouter uses these for attribution on its dashboard.
+        'HTTP-Referer': 'https://vantage.nickward.co.uk',
+        'X-Title': 'VANTAGE',
+      },
+      body: JSON.stringify({
+        model, messages, temperature, max_tokens: maxTokens,
+        // The vendor's OWN charged cost, rather than a local price table that
+        // drifts the moment pricing changes.
+        usage: { include: true },
+        ...(json ? { response_format: { type: 'json_object' } } : {}),
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e) {
+    gateClose(ticket, { ok: false, error: e.message });
+    throw e;
+  }
 
   const payload = await res.json().catch(() => ({}));
+  const usage = payload?.usage || null;
+  const served = payload?.model || model;
+  // An empty or refused answer can still carry usage; settle on it when it does.
+  gateClose(ticket, {
+    ok: res.ok && Boolean(payload?.choices?.[0]?.message?.content), model: served,
+    promptTokens: usage?.prompt_tokens, completionTokens: usage?.completion_tokens,
+    costUsd: usage && usage.cost != null ? Number(usage.cost) : undefined,
+    error: res.ok ? null : `HTTP ${res.status}`,
+  });
   if (!res.ok) {
     const detail = payload?.error?.message || `HTTP ${res.status}`;
     // Recorded before throwing: a refused call still consumed a slot, and a
@@ -89,7 +134,6 @@ async function attempt(messages, { model, temperature, maxTokens, json, callType
     throw new EmptyCompletion(`OpenRouter returned ${detail}`);
   }
 
-  const usage = payload?.usage || null;
   ledger.record({
     // The model that ACTUALLY served it, not the one requested — a fallback
     // would otherwise be billed to the wrong name.
