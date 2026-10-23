@@ -426,6 +426,16 @@ any `pm2 start`. Netlify auto-deploys on push to `main` via a GitHub webhook.
 path with `serve` silently downgraded port 443 from Funnel to tailnet-only and
 took NEURO's public access down with it.
 
+## After deploying a fix — tell NEURO, for the SOAP / Weekly Risk reports
+
+When a fix you just deployed **changed a figure Nick reports** (a finding, a leading indicator, a plan figure, anything that feeds the SOAP or Weekly Risk report), **or affected the team or customers**, post it to NEURO before calling the work done. Skip refactors, tests and internal tidy-ups.
+
+⚠ **You post it from this session, over the NEURO MCP. VANTAGE's code does not.** This is NOT a sixth VANTAGE → NEURO write, and `neuro.js`'s closed set of five stays five.
+
+Use `neuro_write` with `operation: "post_report_fixes"` and a `body` of `{ system: "vantage", title, problem, impact: ["figures"|"team"|"customers"], affects: [{ measure, from, to }] (required with "figures"; measure named as the report shows it), fixedIn, deployedOn: "YYYY-MM-DD" }`.
+
+It arrives as **proposed**. Nick includes it in NEURO → SOAP report → Fixes; nothing reaches a report without him. Past figures are flagged, never restated. Write `problem` plainly, because Chris reads it. With no NEURO MCP in this session, tell Nick to add it there by hand.
+
 ## Privacy
 
 `coach`, `brief`, `self` and the observations are **private**. Nothing from them
