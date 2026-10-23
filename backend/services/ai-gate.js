@@ -73,12 +73,76 @@ const LOCAL_PROVIDERS = new Set(['ollama', 'pi4worker', 'whisper', 'piper']);
 const RESERVATION_TTL_MS = 15 * 60 * 1000; // an unsettled ticket older than this expired (settled pessimistically)
 
 function _mode() { return String(process.env.AI_GATE_MODE || 'shadow').toLowerCase() === 'enforce' ? 'enforce' : 'shadow'; }
-function ledgerPath() {
-  if (process.env.AI_GATE_DB_PATH) return process.env.AI_GATE_DB_PATH;
-  // Under `node --test` a test that forgot to set a path must never write the
-  // real shared ledger: it gets its own throwaway file instead.
-  if (process.env.NODE_TEST_CONTEXT) return path.join(os.tmpdir(), `ai-gate-test-${process.pid}.db`);
-  return path.join(os.homedir(), '.ai-gate', 'ledger.db');
+/**
+ * The daily cap in USD, or null. ⚠ UNSET EVERYWHERE: Nick has not chosen one.
+ * The mechanism exists so enforcing one is a setting, never a rebuild; a value
+ * that is not a positive number is no cap, never zero.
+ */
+function capUsd(env = process.env) {
+  const v = Number(env.AI_GATE_DAILY_CAP_USD);
+  return env.AI_GATE_DAILY_CAP_USD != null && String(env.AI_GATE_DAILY_CAP_USD).trim() !== '' && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/**
+ * Where the ONE shared ledger is. ⚠ Outside `node --test` it is ONLY ever the
+ * explicit absolute AI_GATE_DB_PATH — never a per-user default. NEURO and VANTAGE
+ * must open the same file, and a default derived from each process's home
+ * directory silently splits the ledger in two the day they run as different
+ * users. checkLedgerConfig() refuses a missing or relative path at startup.
+ * Under `node --test` a test that forgot to set one gets its own throwaway file,
+ * so no test can write a real ledger.
+ */
+function ledgerPath(env = process.env) {
+  if (env.AI_GATE_DB_PATH) return env.AI_GATE_DB_PATH;
+  if (env.NODE_TEST_CONTEXT) return path.join(os.tmpdir(), `ai-gate-test-${process.pid}.db`);
+  return null;
+}
+
+/**
+ * The ledger configuration, checked. Returns { ok, path, problems[] }. Required
+ * outside tests: AI_GATE_DB_PATH set, ABSOLUTE, its directory existing and
+ * writable (SQLite WAL writes beside the file), and the file — when it already
+ * exists — readable and writable. Never creates anything.
+ */
+function checkLedgerConfig(env = process.env) {
+  const problems = [];
+  const raw = env.AI_GATE_DB_PATH;
+  if (!raw) {
+    if (env.NODE_TEST_CONTEXT) return { ok: true, path: ledgerPath(env), problems, test: true };
+    return { ok: false, path: null, problems: ['AI_GATE_DB_PATH is not set. NEURO and VANTAGE must both set it to the same absolute path (e.g. /mnt/data/ai-gate/ledger.db).'] };
+  }
+  if (!path.isAbsolute(raw)) problems.push(`AI_GATE_DB_PATH must be absolute; got "${raw}".`);
+  else {
+    const dir = path.dirname(raw);
+    try { if (!fs.statSync(dir).isDirectory()) problems.push(`The ledger's folder ${dir} is not a directory.`); } catch { problems.push(`The ledger's folder ${dir} does not exist.`); }
+    if (!problems.length) {
+      try { fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK); } catch { problems.push(`The ledger's folder ${dir} is not readable and writable by this process.`); }
+    }
+    if (fs.existsSync(raw)) {
+      try { fs.accessSync(raw, fs.constants.R_OK | fs.constants.W_OK); } catch { problems.push(`The ledger ${raw} is not readable and writable by this process.`); }
+    }
+  }
+  return { ok: !problems.length, path: raw, problems };
+}
+
+/** Startup guard: throws a clear error when the ledger is not configured. */
+function assertLedgerConfig(app, env = process.env) {
+  const c = checkLedgerConfig(env);
+  if (!c.ok) throw new Error(`[ai-gate] ${app || 'this app'} cannot start: ${c.problems.join(' ')}`);
+  return c;
+}
+
+/**
+ * PURE. Whether two apps' ledger reports name the SAME ledger file. Compared by
+ * the ledger's own id (minted inside the file), never by path text — two path
+ * strings can name one file, and one path string can name two files on two
+ * machines.
+ */
+function sameLedger(mine, theirs) {
+  if (!mine || !mine.id) return { state: 'unknown', say: 'This app’s ledger id could not be read.' };
+  if (!theirs || !theirs.id) return { state: 'unknown', say: 'The other app did not report a ledger id.' };
+  if (mine.id === theirs.id) return { state: 'match', say: 'Both apps write the same shared ledger.' };
+  return { state: 'mismatch', say: `The two apps write DIFFERENT ledgers (${mine.path || '?'} vs ${theirs.path || '?'}). Set the same absolute AI_GATE_DB_PATH in both.` };
 }
 
 const _london = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -137,6 +201,13 @@ function refusalReasons(spec, registry, counts = {}) {
   const prov = registry.$providers && registry.$providers[String(spec.provider || '').toLowerCase()];
   if (prov && prov.maxConcurrent && (counts.openProvider || 0) >= prov.maxConcurrent) r.push('concurrency');
   if (cls.maxPerDay && (counts.today || 0) >= cls.maxPerDay) r.push('volume');
+  // A daily cap, when one is configured: the worst case must fit beside what
+  // today has already committed (settled cost + open reservations). An
+  // unpriceable worst case cannot be shown to fit, so it does not.
+  if (counts.capUsd != null) {
+    const est = counts.estUsd;
+    if (est == null || (counts.committedUsd || 0) + est > counts.capUsd + 1e-9) r.push('daily-cap');
+  }
   return [...new Set(r)];
 }
 
@@ -148,8 +219,11 @@ function _open() {
   const want = ledgerPath();
   if (_db && _dbPath === want) return _db;
   if (_db) { try { _db.close(); } catch { /* ignore */ } _db = null; }
+  if (!want) { _degraded = 'AI_GATE_DB_PATH is not set, so there is no shared AI ledger.'; return null; }
   try {
-    fs.mkdirSync(path.dirname(want), { recursive: true });
+    // Outside tests the folder must already exist (checkLedgerConfig): the gate
+    // never invents where the shared ledger lives.
+    if (process.env.NODE_TEST_CONTEXT) fs.mkdirSync(path.dirname(want), { recursive: true });
     const Database = require('better-sqlite3');
     const db = new Database(want);
     db.pragma('journal_mode = WAL');
@@ -171,7 +245,15 @@ function _open() {
         app TEXT, ticket_id TEXT, kind TEXT NOT NULL, detail TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_gate_events_day ON gate_events(day, kind);
+      CREATE TABLE IF NOT EXISTS gate_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS gate_apps (
+        app TEXT PRIMARY KEY, configured_path TEXT, real_path TEXT, host TEXT, pid INTEGER,
+        gate_version TEXT, started_at TEXT NOT NULL
+      );
     `);
+    // The ledger's identity, minted once INSIDE the file: whichever app opens it
+    // first writes it, the other reads the same value.
+    db.prepare('INSERT OR IGNORE INTO gate_meta (key, value) VALUES (?, ?)').run('ledger_id', crypto.randomUUID());
     _db = db; _dbPath = want; _degraded = null;
     return db;
   } catch (e) {
@@ -181,6 +263,32 @@ function _open() {
 }
 
 function _iso(ms) { return new Date(ms).toISOString(); }
+
+/** This app's view of the ledger: { id, path, realPath, apps[] } or null. Read only. */
+function ledgerInfo() {
+  const db = _open();
+  if (!db) return null;
+  try {
+    const id = (db.prepare("SELECT value FROM gate_meta WHERE key='ledger_id'").get() || {}).value || null;
+    let realPath = null; try { realPath = fs.realpathSync(_dbPath); } catch { /* not resolvable */ }
+    const apps = db.prepare('SELECT app, configured_path, real_path, host, pid, gate_version, started_at FROM gate_apps ORDER BY app').all();
+    return { id, path: _dbPath, realPath, apps };
+  } catch { return null; }
+}
+
+/** Record that `app` opened this ledger (called once at startup). Never throws. */
+function register(app, { now = Date.now() } = {}) {
+  const db = _open();
+  if (!db) return { ok: false, reason: _degraded };
+  try {
+    let realPath = null; try { realPath = fs.realpathSync(_dbPath); } catch { /* not resolvable */ }
+    db.prepare(`INSERT INTO gate_apps (app, configured_path, real_path, host, pid, gate_version, started_at) VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(app) DO UPDATE SET configured_path=excluded.configured_path, real_path=excluded.real_path, host=excluded.host,
+        pid=excluded.pid, gate_version=excluded.gate_version, started_at=excluded.started_at`)
+      .run(String(app), _dbPath, realPath, os.hostname(), process.pid, GATE_VERSION, _iso(now));
+    return { ok: true, ledger: ledgerInfo() };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
 
 function _expire(db, now) {
   const cutoff = _iso(now - RESERVATION_TTL_MS);
@@ -218,7 +326,13 @@ function reserve(spec, registry, { now = Date.now() } = {}) {
       const open = db.prepare(`SELECT COUNT(*) n FROM gate_tickets WHERE status='reserved' AND call_class=?`).get(spec.callClass || '').n;
       const today = db.prepare(`SELECT COUNT(*) n FROM gate_tickets WHERE day=? AND call_class=? AND decision='allow'`).get(day, spec.callClass || '').n;
       const openProvider = db.prepare(`SELECT COUNT(*) n FROM gate_tickets WHERE status='reserved' AND provider=?`).get(String(spec.provider || '').toLowerCase()).n;
-      const reasons = refusalReasons({ ...spec, fallbackModels }, registry, { open, today, openProvider });
+      const cap = capUsd();
+      // Committed today, across BOTH apps: settled/expired cost plus the worst case
+      // of every open reservation. Read inside this IMMEDIATE transaction, so no
+      // other process can reserve between the read and the insert.
+      const committedUsd = cap == null ? 0 : db.prepare(`SELECT COALESCE(SUM(CASE WHEN status='reserved' THEN COALESCE(est_usd,0) ELSE COALESCE(cost_usd,0) END),0) s
+        FROM gate_tickets WHERE day=? AND decision='allow' AND status IN ('reserved','settled','expired')`).get(day).s;
+      const reasons = refusalReasons({ ...spec, fallbackModels }, registry, { open, today, openProvider, capUsd: cap, committedUsd, estUsd });
       const decision = reasons.length ? 'refuse' : 'allow';
       const admitted = mode === 'shadow' || decision === 'allow';
       db.prepare(`INSERT INTO gate_tickets (id, app, call_class, provider, model, fallback_models, day, reserved_at,
@@ -311,10 +425,15 @@ const round = (v) => (v == null ? null : Math.round(v * 1e6) / 1e6);
  * priced. `dailyCapUsd` is null — Nick has not chosen one.
  */
 function profile({ day = null, now = Date.now(), shareOf = 'radar', days = 14 } = {}) {
+  const cap = capUsd();
   const base = { ok: true, gateVersion: GATE_VERSION, mode: _mode(), currency: 'USD', pricesCheckedOn: PRICES_CHECKED,
-    dailyCapUsd: null, capSay: 'No daily cap — Nick has not chosen one. Shadow mode records what the gate would refuse; nothing is blocked.' };
+    dailyCapUsd: cap,
+    capSay: cap == null ? 'No daily cap — Nick has not chosen one. Shadow mode records what the gate would refuse; nothing is blocked.'
+      : `Daily cap $${cap.toFixed(2)} across NEURO and VANTAGE.`,
+    config: checkLedgerConfig() };
   const db = _open();
-  if (!db) return { ...base, ok: false, degraded: _degraded || 'The shared AI ledger is unavailable.', known: false };
+  if (!db) return { ...base, ok: false, degraded: _degraded || 'The shared AI ledger is unavailable.', known: false, ledger: null };
+  base.ledger = ledgerInfo();
   try {
     _expire(db, now);
     const d = day || londonDay(now);
@@ -359,7 +478,7 @@ function profile({ day = null, now = Date.now(), shareOf = 'radar', days = 14 } 
         SUM(CASE WHEN decision='refuse' THEN 1 ELSE 0 END) would_refuse
       FROM gate_tickets WHERE day >= ? GROUP BY day ORDER BY day`).all(shareOf, londonDay(now - days * 86400000));
     return {
-      ...base, known: true, day: d, ledger: path.basename(_dbPath || ''),
+      ...base, known: true, day: d, ledgerFile: path.basename(_dbPath || ''),
       spendUsd: round(spendUsd), openReservedUsd: round(openUsd), calls: rows.length,
       unknownCostCalls: settled.filter((r) => r.cost_basis === 'unknown').length,
       pessimisticCalls: rows.filter((r) => r.cost_basis === 'pessimistic').length,
@@ -383,5 +502,6 @@ function _reset() { if (_db) { try { _db.close(); } catch { /* ignore */ } } _db
 module.exports = {
   GATE_VERSION, PRICES, PRICES_CHECKED, LOCAL_PROVIDERS, RESERVATION_TTL_MS,
   ledgerPath, londonDay, priceOf, isLocal, worstCaseUsd, refusalReasons, settledCost,
+  capUsd, checkLedgerConfig, assertLedgerConfig, sameLedger, ledgerInfo, register,
   reserve, settle, run, profile, GateRefused, _reset,
 };

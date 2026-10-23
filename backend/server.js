@@ -8,6 +8,11 @@ const path = require('path');
 // which looks like a missing secret rather than a missing file.
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+// The shared NEURO + VANTAGE AI ledger must be ONE explicit absolute file both
+// apps name (AI_GATE_DB_PATH). Refuse to start otherwise: two apps writing two
+// ledgers is a budget nobody can see whole. See NEURO docs/ai-gate-inventory.md.
+require('./services/ai-gate').assertLedgerConfig('VANTAGE');
+
 const fs = require('fs');
 const express = require('express');
 
@@ -425,6 +430,7 @@ async function pushFindings(reason) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[VANTAGE] running on 0.0.0.0:${PORT}`);
+  require('./services/ai-gate').register('vantage');
   if (!openrouter.isConfigured()) console.warn('[VANTAGE] No OpenRouter key — set one on the Admin page. Coaching will fail until then.');
   if (!signals.isConfigured()) console.warn('[VANTAGE] No NOVA bridge config — set it on the Admin page. Signals render as unavailable until then.');
 

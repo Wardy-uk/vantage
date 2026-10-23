@@ -93,11 +93,30 @@ function ChangePin() {
  * London-day ledger; this shows today's spend, Radar's share and what the gate
  * would have refused. Shadow mode — nothing is blocked and no cap is set.
  */
+/** Which file the shared ledger is, and who has registered on it. NEURO registering on the
+ *  same file is the proof both apps write ONE ledger; its absence is said, never assumed. */
+export function LedgerLine({ profile }) {
+  const cfg = profile.config || {};
+  const led = profile.ledger;
+  const apps = led && led.apps ? led.apps.map(a => a.app) : [];
+  return (
+    <>
+      {cfg.ok === false && <div className="banner bad">The shared ledger is misconfigured: {(cfg.problems || []).join(' ')}</div>}
+      {led && !apps.includes('neuro') && (
+        <div className="banner bad">NEURO has not registered on this ledger — it is not writing the same file. Set the same absolute AI_GATE_DB_PATH in both .env files and restart both.</div>
+      )}
+      <div className="small muted" data-testid="vantage-ledger">
+        Shared ledger: {led ? <><code>{led.path}</code>{led.id ? ` · id ${String(led.id).slice(0, 8)}` : ''} · registered: {apps.join(', ') || 'none'}</> : 'not open'}
+      </div>
+    </>
+  );
+}
+
 export function AiBudgetView({ profile, error }) {
   const usd = v => (v == null ? 'unknown' : `$${Number(v).toFixed(v > 0 && v < 0.01 ? 4 : 2)}`);
   if (error) return <div className="banner bad">The shared AI ledger couldn’t be read — this is not “nothing spent”. {error}</div>;
   if (!profile) return <div className="small muted">Loading…</div>;
-  if (!profile.known) return <div className="banner bad">The shared AI ledger couldn’t be read — this is not “nothing spent”. {profile.degraded || ''}</div>;
+  if (!profile.known) return <><div className="banner bad">The shared AI ledger couldn’t be read — this is not “nothing spent”. {profile.degraded || ''}</div><LedgerLine profile={profile} /></>;
   const share = profile.share || {};
   return (
     <>
@@ -118,6 +137,7 @@ export function AiBudgetView({ profile, error }) {
       {(profile.refusals || []).map(r => (
         <div key={r.reason} className="small muted">{r.count}× {r.reason} — {r.classes.join(', ')}</div>
       ))}
+      <LedgerLine profile={profile} />
     </>
   );
 }
