@@ -113,12 +113,14 @@ function fromNova(signals) {
   }
 
   const p = flow?.pingPong;
-  if (p?.ok && p.data.worst?.length) {
-    const bad = p.data.worst.filter(t => t.moves >= 6);
+  // Bounces, not moves (26 Oct 2026): CC → T2 → T3 → Dev → CC is four moves
+  // and is the route working. An older NOVA without `measure` is not judged.
+  if (p?.ok && p.data.measure === 'bounced' && p.data.worst?.length) {
+    const bad = p.data.worst.filter(t => (t.bounces || 0) >= 2);
     if (bad.length) {
       out.push(item('happening', 'medium',
-        `${bad.length} tickets have crossed queues 6+ times`,
-        `${bad.slice(0, 3).map(t => `${t.ticket_key} (${t.moves})`).join(', ')}. Each move was a chance to own it that nobody took.`,
+        `${bad.length} tickets have bounced back to a queue they already left, twice or more`,
+        `${bad.slice(0, 3).map(t => `${t.ticket_key} (${t.bounces} bounces)`).join(', ')}. Each bounce was a chance to own it that nobody took.`,
         { source: 'NOVA', remedy: "Stop the next move rather than reviewing the past ones: name an owner for each of the worst tickets today and make them the one who hands it on, if it moves at all." }));
     }
   }

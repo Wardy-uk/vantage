@@ -62,8 +62,10 @@ function summarise(flow) {
 
   const p = flow.pingPong;
   lines.push(p?.ok
-    ? `- Ping-pong: ${p.data.ticketsAffected} tickets crossed queues ${p.data.threshold}+ times`
-      + (p.data.worst?.[0] ? `; worst ${p.data.worst[0].ticket_key} at ${p.data.worst[0].moves} moves` : '')
+    ? (p.data.measure === 'bounced'
+      ? `- Ping-pong: ${p.data.ticketsAffected} tickets bounced back to a queue they had already left (normal Dev route and released fixes not counted)`
+        + (p.data.worst?.[0] ? `; worst ${p.data.worst[0].ticket_key} at ${p.data.worst[0].bounces} bounces` : '')
+      : `- Ping-pong: ${p.data.ticketsAffected} tickets crossed queues ${p.data.threshold}+ times (raw moves; includes the normal Dev route)`)
     : `- Ping-pong: UNAVAILABLE (${p?.error || 'not returned'})`);
 
   const b = flow.breachesByQueue;
