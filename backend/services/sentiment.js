@@ -12,7 +12,13 @@
  * sentiment does not move minute to minute.
  */
 
-const BUILD_EXPECTED = '2026-08-19-sentiment-b';
+const BUILD_EXPECTED = '2026-10-26-csat-column';
+/**
+ * Builds whose shape VANTAGE reads. 2026-10-26-csat-column only changed how
+ * jiraCsat is computed (column, not JSON) and added `unsummarised`; the shape is
+ * otherwise identical, so the previous build is still read during a NOVA deploy.
+ */
+const BUILDS_ACCEPTED = new Set([BUILD_EXPECTED, '2026-08-19-sentiment-b']);
 const CACHE_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 120_000;
 
@@ -44,7 +50,7 @@ async function current({ force = false, days = 30 } = {}) {
 
   try {
     const raw = await fetchSentiment(days);
-    if (raw.build !== BUILD_EXPECTED) {
+    if (!BUILDS_ACCEPTED.has(raw.build)) {
       const stale = {
         available: false,
         reason: `NOVA sentiment build "${raw.build || 'unknown'}"; VANTAGE reads "${BUILD_EXPECTED}". Redeploy NOVA.`,
