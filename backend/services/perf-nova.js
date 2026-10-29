@@ -147,6 +147,20 @@ async function candidates({ from, to, today }) {
     } catch (e) { kErr = e.message; }
   }
   sources['nova-kpis'] = kErr && !kOk ? { ok: false, error: kErr } : { ok: true, count: kOk, ...(kErr ? { partial: kErr } : {}) };
+
+  // Nick's own activity in NOVA (v1.1.763, 29 Oct 2026): 1-2-1 commitments, people
+  // conversations (fact and category only), standups, escalation and Dev Review
+  // decisions, AI oversight, KB, MI and ops packs, triage, leave approvals, workforce
+  // changes, customer and cross-team work, backlog, NOVA commits. NOVA screens and
+  // folds it; every one of its sources is reported here under its own name.
+  try {
+    const d = await get(`/perf-activity?from=${from}&to=${to}`);
+    const got = (d?.items || []).map((i) => ({ ...i, origin: 'nova', id: `act:${i.id}` }));
+    items.push(...got);
+    for (const [k, v] of Object.entries(d?.sources || {})) sources[`nova-${k}`] = v;
+  } catch (e) {
+    sources['nova-activity'] = { ok: false, error: /404|Cannot GET/i.test(e.message) ? 'not deployed on NOVA yet (needs v1.1.763)' : e.message };
+  }
   return { items, sources };
 }
 
