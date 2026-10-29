@@ -8,6 +8,7 @@ import Plans from './views/Plans.jsx';
 import Standing from './Standing.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
+import Evidence from './views/Evidence.jsx';
 import Admin from './views/Admin.jsx';
 import { watchVersion } from './version-watch.js';
 
@@ -180,7 +181,7 @@ export default function App() {
       <header className="top">
         <div className="brand">VANT<span>AGE</span></div>
         <nav>
-          {[['radar', 'Radar'], ['tracker', 'KPIs'], ['findings', 'Findings'], ['plan', 'Plan'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['admin', 'Admin']].map(([k, label]) => (
+          {[['radar', 'Radar'], ['tracker', 'KPIs'], ['findings', 'Findings'], ['plan', 'Plan'], ['coach', 'Coach'], ['patterns', 'Patterns'], ['evidence', 'Evidence'], ['admin', 'Admin']].map(([k, label]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
           ))}
         </nav>
@@ -201,6 +202,7 @@ export default function App() {
         {tab === 'plan' && <Plans />}
         {tab === 'coach' && <Coach />}
         {tab === 'patterns' && <Patterns />}
+        {tab === 'evidence' && <Evidence />}
         {tab === 'admin' && <Admin />}
       </main>
       <StatusBar />

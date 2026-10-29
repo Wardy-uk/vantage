@@ -137,4 +137,20 @@ export const api = {
   addObservation: (kind, note, sessionId) =>
     call('/observations', { method: 'POST', body: { kind, note, sessionId } }),
   deleteObservation: id => call(`/observations/${id}`, { method: 'DELETE' }),
+
+  // Performance Evidence (29 Oct 2026).
+  perf: () => call('/perf'),
+  perfPropose: body => call('/perf/roles/propose', { method: 'POST', body }),
+  perfSaveRole: body => call('/perf/roles/save', { method: 'POST', body }),
+  perfEvidence: (state, limit = 100, offset = 0) => call(`/perf/evidence?${new URLSearchParams({ ...(state ? { state } : {}), limit, offset })}`),
+  perfAdd: body => call('/perf/evidence', { method: 'POST', body }),
+  perfUpdate: (id, body) => call(`/perf/evidence/${id}`, { method: 'PUT', body }),
+  perfDecide: (id, decision) => call(`/perf/evidence/${id}/decide`, { method: 'POST', body: { decision } }),
+  perfDecideBatch: (ids, decision) => call('/perf/evidence/decide-batch', { method: 'POST', body: { ids, decision } }),
+  perfCase: (id, inCase, summary) => call(`/perf/evidence/${id}/case`, { method: 'POST', body: { inCase, summary } }),
+  perfDelete: id => call(`/perf/evidence/${id}`, { method: 'DELETE' }),
+  perfGather: () => call('/perf/gather/run', { method: 'POST' }),
+  perfCaps: body => call('/perf/caps', { method: 'PUT', body }),
+  perfAssess: slot => call(`/perf/assess/${slot}`, { method: 'POST' }),
+  perfExport: slot => call(`/perf/export/${slot}`),
 };

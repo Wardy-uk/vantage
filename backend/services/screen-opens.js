@@ -56,7 +56,7 @@ const MAX_COUNT = 500;
 // screen that does not exist, and a row nobody can trace back to a view is
 // worse than a missing one.
 const VIEWS = new Set([
-  'radar', 'tracker', 'findings', 'plan', 'coach', 'patterns', 'admin', 'standing',
+  'radar', 'tracker', 'findings', 'plan', 'coach', 'patterns', 'evidence', 'admin', 'standing',
 ]);
 
 // Rows older than this are swept on write. The grid's widest window is a year

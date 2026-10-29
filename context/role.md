@@ -193,7 +193,17 @@ Two observations about the **documents**, not about Nick:
   than against the formal JD, because the framework expresses them as KPI targets
   rather than as an evidenced process. A gap in the document, not in the man.
 
-## Proposing SFIA grades over time (NOT BUILT)
+## Proposing SFIA grades over time (BUILT 29 Oct 2026 — Performance Evidence)
+
+> **Built as the Evidence tab** (`perf-*.js`, `views/Evidence.jsx`). Nick's
+> decisions on 29 Oct 2026 go further than the constraints below in one respect:
+> he asked for a **full assessment** (met / partly / not yet per skill, plus
+> readiness for a future role), not just proposed levels. Every constraint below
+> is still enforced in code — no evidence is "no evidence yet", every rating
+> cites accepted evidence, private until he exports. The profiles are built from
+> whatever JD he uploads (current and future), so the draft matrix above is no
+> longer the only source of target levels.
+
 
 The intended use is that **VANTAGE proposes Nick's grades from accumulated
 evidence**, rather than anyone assigning them up front. Nothing implements this

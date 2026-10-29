@@ -23,6 +23,12 @@ const REGISTRY = {
   findings: { local: false, maxInputTokens: 20000, maxOutputTokens: 400 },
   // A document read into a proposed plan register (≤60k chars in, one call per import, Nick-initiated).
   plan_import: { local: false, maxInputTokens: 25000, maxOutputTokens: 8000 },
+  // Performance Evidence (29 Oct 2026): a JD read into a proposed SFIA profile (Nick-initiated),
+  // a batch of ≤20 gathered items triaged against the role profiles (capped per day in perf_state.caps),
+  // and the full assessment of one role (Nick-initiated).
+  perf_profile: { local: false, maxInputTokens: 15000, maxOutputTokens: 4000 },
+  perf_evidence: { local: false, maxInputTokens: 12000, maxOutputTokens: 3500, maxConcurrent: 1 },
+  perf_assess: { local: false, maxInputTokens: 60000, maxOutputTokens: 4000 },
   // Admin → Test connections (a one-word completion).
   connection_test: { local: false, maxInputTokens: 100, maxOutputTokens: 8 },
 };

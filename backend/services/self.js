@@ -21,7 +21,13 @@
  *
  * None of this is scored or graded. It is assembled so a coach can ask a better
  * question, and a tool that turned it into a performance number would be doing
- * the opposite of the job.
+ * the opposite of the job. *
+ * ⚠ ONE WRITTEN EXCEPTION (Nick, 29 Oct 2026): the Performance Evidence section
+ * (perf-assess.js) DOES rate him against SFIA targets — met / partly / not yet,
+ * plus readiness for a future role — because he asked for a full assessment. It
+ * reads only evidence he has accepted, cites it on every rating, and treats no
+ * evidence as "no evidence yet", never as a low grade. The rule above still holds
+ * for everything in THIS file: the coaching snapshot is never scored.
  */
 
 const findings = require('./findings');

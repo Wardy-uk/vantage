@@ -59,6 +59,8 @@ const app = express();
 // already parsed, so the ORDER is the mechanism — swap these and every import
 // over 1 MB answers 413.
 app.use('/api/plans/import/propose', express.json({ limit: '12mb' }));
+// A job description for Performance Evidence travels the same way (≤8 MB file).
+app.use('/api/perf/roles/propose', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 /**
@@ -369,6 +371,9 @@ app.get('/api/self/moved', wrap(async () => {
 // NEURO's friction read, shown beside the observations Nick types himself.
 app.get('/api/friction', wrap(() => coach.neuroFriction()));
 
+// ── Performance Evidence (29 Oct 2026) — SFIA profiles, evidence, assessment ──
+require('./services/perf-routes').mount(app, wrap);
+
 // ── Observations ─────────────────────────────────────────────────────────────
 
 app.get('/api/observations', wrap(req => coach.listObservations({ kind: req.query.kind })));
@@ -503,4 +508,15 @@ app.listen(PORT, '0.0.0.0', () => {
   else console.log(`[VANTAGE] radar cache restored from ${stored.at}`);
   setInterval(() => warm('timer'), WARM_EVERY_MS);
   setInterval(() => pushFindings('timer'), PUSH_EVERY_MS);
+
+  // Performance Evidence: gather from NEURO + NOVA and triage within the daily
+  // caps. Every 30 minutes, 07:00-22:00, any day — the caps bound the cost, and a
+  // 12-month backfill only makes progress if it runs. First pass 3 min after boot.
+  const perfTick = (reason) => {
+    const h = new Date().getHours();
+    if (h < 7 || h >= 22) return;
+    require('./services/perf-gather').run(reason).catch(err => console.warn(`[VANTAGE] perf gather failed (${reason}):`, err.message));
+  };
+  setTimeout(() => perfTick('startup'), 180_000);
+  setInterval(() => perfTick('timer'), 30 * 60 * 1000);
 });
