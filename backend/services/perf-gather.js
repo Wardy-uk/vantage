@@ -236,6 +236,9 @@ async function run(reason = 'timer') {
   if (running) return { skipped: 'already running' };
   running = true;
   const started = Date.now();
+  // Recorded at the START, so a pass cut off by a restart is visible as
+  // interrupted rather than leaving the previous pass's result on screen.
+  store.setState('last_run', { reason, at: new Date(started).toISOString(), inProgress: true });
   try {
     const g = await gather();
     const t = await triage();

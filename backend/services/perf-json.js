@@ -14,7 +14,13 @@ function parseModelJson(raw) {
   let t = String(raw ?? '').trim();
   const fenced = t.match(/^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```\s*$/);
   if (fenced) t = fenced[1].trim();
-  return JSON.parse(t);
+  try { return JSON.parse(t); } catch (first) {
+    // Prose around the object ("Here is the profile: {...}"): take the outermost
+    // braces. Still JSON.parse — a truncated or malformed object is still refused.
+    const a = t.indexOf('{'); const b = t.lastIndexOf('}');
+    if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
+    throw first;
+  }
 }
 
 module.exports = { parseModelJson };

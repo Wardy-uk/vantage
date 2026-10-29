@@ -585,10 +585,12 @@ function statusCore(g) {
   const left = g.counts.queued;
   const today = `${g.itemsToday} of ${g.caps.dailyItems} items today, $${g.spentToday.usd.toFixed(2)} of $${g.caps.dailyUsd}`;
   if (g.running) return { tone: 'info', text: `Reading now — ${left} still to read (${today}).` };
+  if (g.lastRun?.inProgress) return { tone: 'warn', text: `The last pass was interrupted (VANTAGE restarted). It resumes by itself within a few minutes — ${left} still to read.` };
   const stop = g.lastRun?.triage?.stopped;
   const at = g.lastRun?.at ? new Date(g.lastRun.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
   if (g.lastRun?.error) return { tone: 'bad', text: `The last pass${at ? ` at ${at}` : ''} failed: ${g.lastRun.error}. It tries again within 30 minutes.` };
-  if (stop === 'item-cap' || stop === 'spend-cap') return { tone: 'warn', text: `Paused — today's ${stop === 'item-cap' ? 'item' : 'spend'} cap is reached (${today}). ${left} still to read; carries on tomorrow from 07:00.` };
+  const capHit = stop === 'item-cap' ? g.itemsToday >= g.caps.dailyItems : stop === 'spend-cap' ? g.spentToday.usd >= g.caps.dailyUsd : false;
+  if (capHit) return { tone: 'warn', text: `Paused — today's ${stop === 'item-cap' ? 'item' : 'spend'} cap is reached (${today}). ${left} still to read; carries on tomorrow from 07:00.` };
   if (stop === 'no-roles') return { tone: 'warn', text: 'Waiting for a role profile — add one under Roles.' };
   if (stop === 'model-failed') return { tone: 'bad', text: `The model failed on the last pass${at ? ` (${at})` : ''}. It tries again within 30 minutes.` };
   if (left > 0) return { tone: 'info', text: `${left} still to read — the next pass runs within 30 minutes (07:00–22:00). Last pass ${at || 'not yet'}.` };

@@ -129,7 +129,9 @@ test('a fenced JSON answer is read; anything else that is not JSON is still refu
   assert.deepEqual(parseModelJson(`${fence}${NL}{"a":1}${fence}`), { a: 1 });
   assert.deepEqual(parseModelJson(`${fence}json${NL}{"a":1}${NL}${fence}`.replace(/\n/g, String.fromCharCode(13, 10))), { a: 1 }, 'CRLF fence');
   assert.deepEqual(parseModelJson('{"a":1}'), { a: 1 });
-  assert.throws(() => parseModelJson('Here you go: {"a":1}'));
+  assert.deepEqual(parseModelJson('Here you go: {"a":1} — done'), { a: 1 }, 'prose around the object');
+  assert.throws(() => parseModelJson('{"a":1'), 'a truncated object is still refused');
+  assert.throws(() => parseModelJson('no json here'));
   const codes = { current: new Set(['SLMO']), future: new Set() };
   assert.equal(parseTriage(`${fence}json${NL}{"items":[{"i":0,"tags":[]}]}${NL}${fence}`, 1, codes).size, 1, 'triage reads a fenced answer');
 });
