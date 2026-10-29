@@ -285,7 +285,15 @@ function ProfileView({ role }) {
             <tr key={s.code}>
               <td><b>{s.code}</b> {s.name}{s.check === 'unknown-code' && <Pill color="var(--warn)" title="Not in the SFIA 9 catalogue on the Pi">check code</Pill>}</td>
               <td style={{ textAlign: 'center' }}>L{s.level} <span className="small muted">{LEVEL_NAMES[s.level]}</span></td>
-              <td className="small muted">{s.why}</td>
+              <td className="small muted" style={{ whiteSpace: 'normal' }}>
+                {s.bar ? (
+                  <>
+                    <div><b>The bar (SFIA):</b> {s.bar}</div>
+                    {s.inRole && <div style={{ marginTop: 4 }}><b>In this role:</b> {s.inRole}</div>}
+                    {s.targets && <div style={{ marginTop: 4 }}><b>Outcome targets (context only):</b> {s.targets}</div>}
+                  </>
+                ) : s.why}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -404,6 +412,14 @@ function AssessTab({ data, reload }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [md, setMd] = useState(null);
+  const runs = data.assessments.run || {};
+  const anyRunning = SLOTS.some(([s]) => runs[s]?.running);
+  // A reassessment runs in the background (one model call per skill); poll while it does.
+  useEffect(() => {
+    if (!anyRunning) return undefined;
+    const t = setInterval(() => { reload(); }, 5000);
+    return () => clearInterval(t);
+  }, [anyRunning, reload]);
   const run = async (slot) => {
     setBusy(slot); setErr(null);
     try { await api.perfAssess(slot); await reload(); } catch (x) { setErr(x.message); } finally { setBusy(null); }
@@ -425,9 +441,11 @@ function AssessTab({ data, reload }) {
               <h2 style={{ margin: 0 }}>{label}{role ? ` — ${role.profile.title}` : ''}</h2>
               <span className="spacer" />
               {a && <span className="small muted">Assessed {new Date(a.createdAt).toLocaleString('en-GB')} from {a.evidenceRead} item(s)</span>}
-              <button className="primary" disabled={!role || busy} onClick={() => run(slot)}>{busy === slot ? 'Assessing…' : 'Reassess'}</button>
+              <button className="primary" disabled={!role || busy || runs[slot]?.running} onClick={() => run(slot)}>{runs[slot]?.running ? `Assessing… ${runs[slot].done} of ${runs[slot].total}` : busy === slot ? 'Starting…' : 'Reassess'}</button>
               <button disabled={!role} onClick={() => exp(slot)}>Build my case</button>
             </div>
+            {runs[slot]?.running && <div className="banner info" style={{ marginTop: 10 }}>Reading every accepted item, one skill at a time — {runs[slot].done} of {runs[slot].total} done. Takes a few minutes; you can leave this page.</div>}
+            {!runs[slot]?.running && runs[slot]?.error && <div className="banner warn" style={{ marginTop: 10 }}>Last reassessment: {runs[slot].error}</div>}
             {!role && <p className="small muted">Add this role's profile first.</p>}
             {role && !a && <p className="small muted">Not assessed yet. Accept some evidence, then press Reassess.</p>}
             {a && role && a.roleId !== role.id && (

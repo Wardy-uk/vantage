@@ -206,6 +206,17 @@ let running = false;
 const RULES_VERSION = 'r2';
 
 /**
+ * What the sorting depends on: the skills (code + level) in each role — NOT the
+ * role's row id. A profile reworded with the same skills (29 Oct 2026, the HoTS
+ * profile aligned to SFIA) must not re-buy a sort of the whole year; a skill
+ * added, removed or re-levelled still does.
+ */
+function rolesKeyFor(roles) {
+  const sig = (r) => (r ? r.profile.skills.map((x) => `${x.code}${x.level}`).sort().join('.') : '-');
+  return `${RULES_VERSION}:${sig(roles.current)}/${sig(roles.future)}`;
+}
+
+/**
  * mode 'queued'   — read new items (the normal pass).
  * mode 'retriage' — re-read items already proposed or accepted that were judged
  *   under older rules or an older role profile. Nick's decisions stand: an
@@ -222,7 +233,7 @@ async function triage({ today = localKey(), mode = 'queued' } = {}) {
     current: new Set((roles.current?.profile.skills || []).map((s) => s.code)),
     future: new Set((roles.future?.profile.skills || []).map((s) => s.code)),
   };
-  const rolesKey = `${RULES_VERSION}:${roles.current?.id || '-'}/${roles.future?.id || '-'}`;
+  const rolesKey = rolesKeyFor(roles);
   const system = `${TRIAGE_PROMPT}\n\n${[profileBlock(roles.current), profileBlock(roles.future)].filter(Boolean).join('\n\n')}`;
   const c = caps();
   let judged = 0; let proposed = 0; let failures = 0;
@@ -319,4 +330,4 @@ function status() {
   };
 }
 
-module.exports = { run, gather, triage, status, setCaps, caps, setBackfillOverride, OVERRIDE_CAPS, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays, fetchWindow } };
+module.exports = { rolesKeyFor, run, gather, triage, status, setCaps, caps, setBackfillOverride, OVERRIDE_CAPS, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays, fetchWindow } };

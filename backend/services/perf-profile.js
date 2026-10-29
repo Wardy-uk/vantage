@@ -46,7 +46,15 @@ function validateProfile(p, { strict = false } = {}) {
     if (skills.length >= MAX_SKILLS) { problems.push(`more than ${MAX_SKILLS} skills — the rest were dropped`); break; }
     seen.add(code);
     const check = sfia.checkCode(code);
-    skills.push({ code, name: str(s?.name, 80) || code, level, why: str(s?.why, 400) || null, check });
+    // Optional, aligned form (29 Oct 2026): `bar` = SFIA's own wording for the
+    // target level (what the rating is judged against), `inRole` = what that
+    // looks like in this job, `targets` = outcome KPIs, read as context only.
+    skills.push({
+      code, name: str(s?.name, 80) || code, level, why: str(s?.why, 400) || null, check,
+      ...(str(s?.bar, 1200) ? { bar: str(s.bar, 1200) } : {}),
+      ...(str(s?.inRole, 800) ? { inRole: str(s.inRole, 800) } : {}),
+      ...(str(s?.targets, 400) ? { targets: str(s.targets, 400) } : {}),
+    });
   }
   if (!skills.length) throw new Error('The profile has no skills');
   if (strict && Object.keys(attributes).length < sfia.ATTRIBUTES.length) throw new Error('All five generic attributes need a level');

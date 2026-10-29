@@ -32,11 +32,11 @@ const PER_SKILL = 15;
 const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
 /** Evidence for the prompt: per skill, most recent first, capped. Pure. */
-function selectEvidence(evidence, slot, skills) {
+function selectEvidence(evidence, slot, skills, cap = PER_SKILL) {
   const bySkill = {};
   const chosen = new Map();
   for (const s of skills) {
-    const list = evidence.filter((e) => e.tags.some((t) => t.slot === slot && t.code === s.code)).slice(0, PER_SKILL);
+    const list = evidence.filter((e) => e.tags.some((t) => t.slot === slot && t.code === s.code)).slice(0, cap);
     bySkill[s.code] = list.map((e) => e.id);
     for (const e of list) chosen.set(e.id, e);
   }
@@ -117,57 +117,171 @@ function parsePlan(j, { assessment, role }) {
   return out;
 }
 
-const PROMPT = `You assess one manager (Nick) against an SFIA 9 role profile, using ONLY the accepted evidence given, and coach him on closing the gaps.
-Answer ONLY with JSON:
-{"skills":[{"code":"SLMO","rating":"met|partly|not-yet","observedLevel":5,"why":"...","cite":[12,40]}],
- "attributes":{"autonomy":{"observedLevel":5,"why":"..."},"influence":{...},"complexity":{...},"knowledge":{...},"business_skills":{...}},
- "readiness":{"rating":"ready|nearly|not-yet","why":"..."},
- "summary":"3-4 sentences: strongest areas, the gaps, what evidence would move it",
- "plan":[{"code":"KNOW","action":"...","proves":"...","priority":1}]}
-PLAN (the coaching)
-- One to three actions for EVERY skill you rate partly or not-yet, every skill with no evidence, and every attribute (code = its key, e.g. "influence") seen below its target.
-- Each action is something Nick can personally start in the next few weeks, within the scope the profile says he has. Concrete and specific to the gap and the evidence — name the thing to produce, the people or forum, the measure. Never generic advice ("communicate more", "be strategic").
-- If the gap is that the work is happening but VANTAGE has no evidence of it, say so and name what to record or produce so it shows.
-- proves: the evidence the action would produce that would move the rating (e.g. "a published KB health report showing article usage month on month").
-- priority: 1 = moves readiness most, 2 = solid, 3 = nice to have.
-- No plan items for skills rated met.
-RULES
-- met = the evidence shows consistent work AT the target level. partly = some, or below level, or mixed with evidence against. not-yet = the evidence shows him below target.
-- Weigh evidence AGAINST honestly; do not ignore it.
-- cite: evidence ids that support the rating. A rating must cite at least one id listed for that skill.
-- Skip a skill with no evidence listed — do not rate it.
-- observedLevel: the SFIA level the evidence shows, or null if it cannot tell.
-- Do not invent facts beyond the evidence.`;
+const PLAN_RULES = `PLAN (the coaching) — only for a gap
+- One to three actions Nick can personally start in the next few weeks, within the scope he actually has. Concrete and specific to the gap and the evidence: name the thing to produce, the people or forum, the measure. Never generic advice ("communicate more", "be strategic").
+- If the work is happening but the evidence does not show it, say so and name what to record or produce so it shows.
+- proves: the evidence the action would produce that would move the rating.
+- priority: 1 = moves readiness most, 2 = solid, 3 = nice to have.`;
 
-async function assess(slot) {
+const SKILL_PROMPT = `You rate one manager (Nick) on ONE SFIA 9 skill, using ONLY the accepted evidence given (all of it — read every item). Answer ONLY with JSON:
+{"rating":"met|partly|not-yet","observedLevel":5,"why":"...","cite":[12,40],"plan":[{"action":"...","proves":"...","priority":1}]}
+THE BAR
+- Rate against THE BAR only: SFIA's own wording for the target level. "In this role" says what that level looks like in his job — use it to recognise evidence. Judge him within his scope, never against authority the role does not give him.
+- Outcome targets are CONTEXT ONLY. A missed, unproven or out-of-date target alone NEVER makes a skill partly or not-yet. Rate how he operates, not whether a KPI number was hit.
+- Lateness or a slip is not evidence against unless the substance shows he is below the bar.
+RULES
+- met = the evidence shows him working at the bar consistently. partly = some of the bar shown, or below it, or real evidence against. not-yet = the evidence shows him below the bar.
+- Weigh evidence AGAINST honestly; do not ignore it.
+- why: 4-8 sentences naming evidence ids: what the evidence shows against the bar, and what (if anything) is missing.
+- cite: evidence ids that support the rating (at least one, only ids given).
+- observedLevel: the SFIA level the evidence shows, or null if it cannot tell.
+- plan: [] if met.
+- Do not invent facts beyond the evidence.
+${PLAN_RULES}`;
+
+const FINAL_PROMPT = `You have per-skill SFIA ratings for one manager (Nick) against a role. Produce the role-level reading. Answer ONLY with JSON:
+{"attributes":{"autonomy":{"observedLevel":5,"why":"..."},"influence":{...},"complexity":{...},"knowledge":{...},"business_skills":{...}},
+ "readiness":{"rating":"ready|nearly|not-yet","why":"..."},
+ "summary":"3-4 sentences: strongest areas, the gaps, what would move it",
+ "plan":[{"code":"influence","action":"...","proves":"...","priority":1}]}
+RULES
+- Judge the five SFIA generic attributes from the per-skill readings and their evidence notes; observedLevel null if they cannot tell.
+- readiness: ready = the role's bar is met across nearly all skills; nearly = most met, gaps closable; not-yet = substantial gaps.
+- plan: only for attributes seen below their target (code = the attribute key).
+- Do not invent facts.
+${PLAN_RULES}`;
+
+const CONCURRENCY = 4;
+const RUN_KEY = (slot) => `assess_run_${slot}`;
+const STALE_MS = 30 * 60_000;
+
+function skillText(s) {
+  const lines = [`SKILL: ${s.code} ${s.name} — target L${s.level}`];
+  if (s.bar) lines.push(`THE BAR (SFIA L${s.level}): ${s.bar}`);
+  if (s.inRole) lines.push(`IN THIS ROLE: ${s.inRole}`);
+  if (s.targets) lines.push(`OUTCOME TARGETS (context only): ${s.targets}`);
+  if (!s.bar && s.why) lines.push(`EXPECTED / SCOPE: ${s.why}`);
+  return lines.join('\n');
+}
+
+function evLine(e, slot) {
+  const tags = e.tags.filter((t) => t.slot === slot).map((t) => `${t.code}:${t.stance}`).join(',');
+  return `#${e.id} [${String(e.occurredAt || '').slice(0, 10)}] (${tags}) ${clip(e.title, 200)}${e.detail ? ` — ${clip(e.detail, 300)}` : ''}`;
+}
+
+async function withRetry(fn) {
+  try { return await fn(); } catch { return fn(); }
+}
+
+/** Is a run in progress? A run older than STALE_MS (a restart killed it) is not. */
+function runState(slot) {
+  const st = store.getState(RUN_KEY(slot), null);
+  if (st?.running && Date.now() - Date.parse(st.startedAt) > STALE_MS) return { ...st, running: false, error: 'interrupted (the server restarted) — press Reassess again' };
+  return st;
+}
+
+/**
+ * Start a reassessment in the background (29 Oct 2026, Nick: "read the lot").
+ * One model call PER SKILL with every accepted item tagged to it, then one short
+ * call for attributes, readiness and summary. Returns at once; progress is in
+ * runState(slot), shown by the page.
+ */
+function assess(slot) {
   if (!store.SLOTS.includes(slot)) { const e = new Error('slot must be current or future'); e.status = 400; throw e; }
   const role = store.activeRole(slot);
   if (!role) { const e = new Error(`No ${slot} role saved yet — add its job description first`); e.status = 409; throw e; }
   const openrouter = require('./openrouter');
   if (!openrouter.isConfigured()) throw new Error('No OpenRouter key — cannot assess');
-  const skills = role.profile.skills;
-  const evidence = store.acceptedFor(slot);
-  const { bySkill, chosen } = selectEvidence(evidence, slot, skills);
-  if (!chosen.length) {
-    const result = parseAssessment({}, { skills, bySkill });
-    return store.saveAssessment(slot, role.id, { ...result, evidenceRead: 0, model: null });
-  }
-  const profileText = `ROLE: ${role.profile.title}\nSKILLS (each with what the role expects and the scope Nick actually has — judge him WITHIN that scope, never against authority the role does not give him):\n${skills.map((s) => `  ${s.code} ${s.name} — target L${s.level}${s.why ? `; expected/scope: ${String(s.why).slice(0, 300)}` : ''}; evidence ids: ${(bySkill[s.code] || []).join(', ') || 'none'}`).join('\n')}\nGENERIC ATTRIBUTE TARGETS: ${sfia.ATTRIBUTES.map((a) => `${a.name} L${role.profile.attributes?.[a.key]?.level ?? '?'}`).join('; ')}`;
-  const evText = chosen.map((e) => {
-    const tags = e.tags.filter((t) => t.slot === slot).map((t) => `${t.code}:${t.stance}`).join(',');
-    return `#${e.id} [${String(e.occurredAt || '').slice(0, 10)}] (${tags}) ${clip(e.title, 200)} — ${clip(e.detail, 400)}`;
-  }).join('\n');
-  const reply = await openrouter.complete([
-    { role: 'system', content: PROMPT },
-    { role: 'user', content: `${profileText}\n\nACCEPTED EVIDENCE:\n${evText}` },
-  ], { temperature: 0.2, maxTokens: 12000, json: true, callType: 'perf_assess', timeoutMs: 300_000 });
-  const result = parseAssessment(reply.text, { skills, bySkill });
-  const saved = store.saveAssessment(slot, role.id, { ...result, evidenceRead: chosen.length, model: reply.model });
-  let plan = [];
-  try { plan = parsePlan(require('./perf-json').parseModelJson(reply.text), { assessment: result, role }); } catch { plan = []; }
-  // An empty plan from an answer that rated gaps is SAID, never shown as "nothing to do".
-  const added = store.savePlan(slot, saved.id, plan);
-  return { ...saved, planAdded: added, planGiven: plan.length };
+  if (runState(slot)?.running) { const e = new Error('A reassessment of this role is already running'); e.status = 409; throw e; }
+  const total = role.profile.skills.length + 1;
+  store.setState(RUN_KEY(slot), { running: true, startedAt: new Date().toISOString(), done: 0, total });
+  runAssess(slot, role).catch((e) => {
+    console.warn(`[VANTAGE] perf assess ${slot} failed: ${e.message}`);
+    store.setState(RUN_KEY(slot), { ...(store.getState(RUN_KEY(slot), {})), running: false, error: e.message, finishedAt: new Date().toISOString() });
+  });
+  return { started: true, total };
 }
 
-module.exports = { assess, parseAssessment, parsePlan, selectEvidence, RATINGS, READINESS };
+async function runAssess(slot, role) {
+  const openrouter = require('./openrouter');
+  const { parseModelJson } = require('./perf-json');
+  const skills = role.profile.skills;
+  const evidence = store.acceptedFor(slot);
+  const { bySkill, chosen } = selectEvidence(evidence, slot, skills, Infinity);
+  const byId = new Map(chosen.map((e) => [e.id, e]));
+  let done = 0;
+  const tick = () => { done += 1; store.setState(RUN_KEY(slot), { ...store.getState(RUN_KEY(slot), {}), done }); };
+  const models = new Set();
+  const perSkill = new Array(skills.length);
+  const failures = [];
+
+  let next = 0;
+  async function worker() {
+    while (next < skills.length) {
+      const i = next++;
+      const s = skills[i];
+      const ids = bySkill[s.code] || [];
+      if (!ids.length) { perSkill[i] = { code: s.code }; tick(); continue; }
+      try {
+        const reply = await withRetry(() => openrouter.complete([
+          { role: 'system', content: SKILL_PROMPT },
+          { role: 'user', content: `ROLE: ${role.profile.title}\n${skillText(s)}\n\nACCEPTED EVIDENCE (${ids.length} items):\n${ids.map((id) => evLine(byId.get(id), slot)).join('\n')}` },
+        ], { temperature: 0, maxTokens: 3000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
+        models.add(reply.model);
+        perSkill[i] = { code: s.code, ...parseModelJson(reply.text) };
+      } catch (e) {
+        failures.push(`${s.code}: ${e.message}`);
+        perSkill[i] = { code: s.code, failed: e.message };
+      }
+      tick();
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+  const skillSummary = skills.map((s, i) => {
+    const r = perSkill[i] || {};
+    if (r.failed) return `${s.code} ${s.name}: not rated (the call failed).`;
+    if (!(bySkill[s.code] || []).length) return `${s.code} ${s.name}: no accepted evidence.`;
+    return `${s.code} ${s.name}: ${r.rating}${r.observedLevel ? `, seen L${r.observedLevel}` : ''} (target L${s.level}). ${clip(r.why, 800)}`;
+  }).join('\n');
+  const attrText = sfia.ATTRIBUTES.map((a) => `${a.key} (${a.name}): target L${role.profile.attributes?.[a.key]?.level ?? '?'}${role.profile.attributes?.[a.key]?.why ? ` — ${clip(role.profile.attributes[a.key].why, 300)}` : ''}`).join('\n');
+  let final = {};
+  try {
+    const reply = await withRetry(() => openrouter.complete([
+      { role: 'system', content: FINAL_PROMPT },
+      { role: 'user', content: `ROLE: ${role.profile.title}\nATTRIBUTE TARGETS:\n${attrText}\n\nPER-SKILL READINGS:\n${skillSummary}` },
+    ], { temperature: 0, maxTokens: 4000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
+    models.add(reply.model);
+    final = parseModelJson(reply.text);
+  } catch (e) { failures.push(`overall: ${e.message}`); }
+  tick();
+
+  const result = parseAssessment({
+    skills: perSkill.filter((x) => x && !x.failed),
+    attributes: final.attributes, readiness: final.readiness, summary: final.summary,
+  }, { skills, bySkill });
+  // A skill whose call failed says so, rather than reading as "the model did not rate it".
+  for (const r of result.skills) {
+    const f = perSkill.find((x) => x && x.code === r.code && x.failed);
+    if (f) r.why = `The model call for this skill failed (${f.failed}) — press Reassess to try again.`;
+  }
+  const saved = store.saveAssessment(slot, role.id, {
+    ...result, evidenceRead: chosen.length, model: [...models].join(', ') || null,
+    ...(failures.length ? { failures } : {}),
+  });
+  const plan = parsePlan({
+    plan: [
+      ...perSkill.flatMap((x) => (x && Array.isArray(x.plan) ? x.plan.map((p) => ({ ...p, code: x.code })) : [])),
+      ...(Array.isArray(final.plan) ? final.plan : []),
+    ],
+  }, { assessment: result, role });
+  const added = store.savePlan(slot, saved.id, plan);
+  store.setState(RUN_KEY(slot), {
+    running: false, done: skills.length + 1, total: skills.length + 1, finishedAt: new Date().toISOString(),
+    assessmentId: saved.id, planAdded: added,
+    error: failures.length ? `${failures.length} part(s) failed: ${failures.join(' · ')}` : null,
+  });
+  return saved;
+}
+
+module.exports = { assess, runState, parseAssessment, parsePlan, selectEvidence, RATINGS, READINESS };

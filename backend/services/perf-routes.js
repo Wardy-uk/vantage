@@ -46,6 +46,7 @@ function overview() {
       current: store.latestAssessment('current'),
       future: store.latestAssessment('future'),
       history: { current: store.assessmentHistory('current'), future: store.assessmentHistory('future') },
+      run: { current: assess.runState('current'), future: assess.runState('future') },
     },
   };
 }
