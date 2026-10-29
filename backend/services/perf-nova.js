@@ -159,7 +159,10 @@ async function candidates({ from, to, today }) {
     items.push(...got);
     for (const [k, v] of Object.entries(d?.sources || {})) sources[`nova-${k}`] = v;
   } catch (e) {
-    sources['nova-activity'] = { ok: false, error: /404|Cannot GET/i.test(e.message) ? 'not deployed on NOVA yet (needs v1.1.763)' : e.message };
+    // An unknown route on NOVA falls through to its JWT middleware and answers
+    // "Not authenticated" — which is what /perf-activity looks like before v1.1.763
+    // is deployed. Said plainly rather than passed on as an auth fault.
+    sources['nova-activity'] = { ok: false, error: /404|Cannot GET|Not authenticated/i.test(e.message) ? 'not deployed on NOVA yet (needs v1.1.763)' : e.message };
   }
   return { items, sources };
 }

@@ -172,6 +172,8 @@ RULES
 - Every item index must appear exactly once. tags:[] means it is not evidence of any listed skill.
 - Use only the skill codes listed for each role, with that role's slot. An item can carry tags for both roles.
 - Routine admin with no skill content gets tags:[].
+- A work meeting is evidence of the skills its TITLE shows (escalations, KPIs, capacity, quality, customers, process improvement, staffing...), even when its detail is withheld for privacy — "Details withheld" means the notes are private, not that nothing happened. Only a meeting that is plainly personal (Nick's own appointments) or has no meaningful title gets tags:[].
+- Nick's personal projects (his own NEURO / home apps: nutrition, kiosk, watch, location, widgets) are not evidence for this role; NOVA and service-desk tooling is.
 - why: what in the item shows it. Never invent facts not in the item.`;
 
 /** Validate the model's triage answer for a batch. Pure. Refuses the whole batch if any item is missing. */
