@@ -340,6 +340,41 @@ fixed title (the register pins on title). One clear rebuild closes the episode.
 The claim is "every rebuild since X", never "blind for N days": there are no
 rebuilds at night or at weekends, and nobody looked.
 
+### Performance Evidence (29 Oct 2026) — the Evidence tab
+
+A running, evidenced case for Nick against SFIA 9, for his **Current** and a
+**Future** role. Spec: vault `Projects/VANTAGE/VANTAGE - Performance Evidence.md`.
+Decisions (Nick, asked one at a time): a JD becomes skills + target levels + the
+five generic attributes, edited before save; a **full assessment** (met / partly
+/ not yet + readiness) — a written exception to `self.js`'s no-grading rule, for
+this section only; NEURO gathers **everything incl. counter-evidence**, and NOVA
+too; the model **proposes**, only what Nick **accepts** counts; one current +
+one future role; private, exported only as summaries he writes; 12-month
+backfill under **daily caps** (spend + items, `perf_state.caps`).
+
+- `perf-store.js` — REAL TABLES (`perf_roles`, `perf_evidence`,
+  `perf_assessments`, `perf_state`), created lazily. `source_key` is UNIQUE, so a
+  rejected or not-relevant item is never bought again.
+- `perf-gather.js` — pulls NEURO `GET /api/perf-evidence/candidates` (tasks
+  overdue / done late, wins, replies, management log, decisions, meeting
+  write-ups) and NOVA via `perf-nova.js` (1-2-1s held, Nick's own manual
+  escalations, finished-week department KPIs; ⚠ never per-agent ticket counts —
+  see role.md). GET only: **no new write between the systems**. Drops automated
+  mail free, then batches of 20 to the model (`perf_evidence` gate class). A
+  batch answer missing any item is refused whole. A backfill window where every
+  source failed does not advance the cursor. Hitting a cap stops; nothing is
+  skipped. Timer every 30 min 07:00–22:00.
+- `perf-assess.js` — the rules are enforced in `parseAssessment`, not the
+  prompt: no accepted evidence → `no-evidence`; a rating citing nothing valid →
+  `unrated`; under half the skills rated → readiness `too-little-evidence`.
+- `perf-export.js` — prints only items ticked into the case, as Nick's summary.
+- `sfia.js` — ⚠ repo is PUBLIC: only level and attribute NAMES live here. Codes
+  are checked against a private `backend/data/sfia9-catalogue.json` on the Pi
+  when present; absent, a code is `not-checked`, never "verified".
+- Not built: re-reading old evidence against a NEW future role (items judged
+  before it keep their old tags; new items are read against it); Outlook Sent
+  Items outside NEURO; Jira ticket work.
+
 ## NOVA has no local instance
 
 It runs on **BYM-AAPP01** under IIS. There is no dev database. Deploy is
@@ -431,6 +466,19 @@ NEURO write), path-checked HERE because NEURO's `/api/vault/write` writes
 anywhere. `/api/plan` (SIP, feeding the standing bar and NEURO's SOAP plan
 RAG) is unchanged. Tests `plans.test.js` (14, incl. a round trip on the real
 SIP register when the vault is present).
+
+**Tasks live in NEURO once a plan is handed over (29 Oct 2026, Nick).** Before
+hand-off the register is worked here (tick / bulk select / Replan, all writing
+the register). **Send to NEURO** (`plan-neuro.js`, `/api/plans/:id/handoff`)
+creates Nick's open rows as NEURO tasks (continual improvement, register dates,
+star → Must, rank → NEURO band order once via `setBandOrder`), LINKS SIP rows
+NEURO already mirrors from Planner (`ms:<id>`), repeats get "(Plan ID)" appended
+because NEURO folds identical text, and stamps `moved-to-neuro:` — the register
+is then history; its `NEURO ID` column is the row→task map. A handed-over plan
+is read LIVE from NEURO (tasks by NEURO ID or `origin_path` in the folder);
+others' rows stay read-only; ticks/stars/rank on it are refused (409 `moved`);
+Replan moves NEURO due dates (`setTaskDue`). Imports and Planner boards hand
+over at once. VANTAGE→NEURO writes are now SIX (see `neuro.js`).
 
 ## Deploying VANTAGE
 
