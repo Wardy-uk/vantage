@@ -195,6 +195,13 @@ Two observations about the **documents**, not about Nick:
 
 ## Proposing SFIA grades over time (BUILT 29 Oct 2026 — Performance Evidence)
 
+> **Which role is which (Nick, 29 Oct 2026):** he is "half way between" the two
+> and both titles are used. **Current role = Head of Service Delivery** (the
+> formal JD, his official role from an HR perspective). **Future role = Head of
+> Technical Support** (the assignment framework, where he should be). Do not
+> merge them or "correct" the split because the workbook calls them the same
+> live role: the gap between the two IS what the Future assessment measures.
+
 > **Built as the Evidence tab** (`perf-*.js`, `views/Evidence.jsx`). Nick's
 > decisions on 29 Oct 2026 go further than the constraints below in one respect:
 > he asked for a **full assessment** (met / partly / not yet per skill, plus
