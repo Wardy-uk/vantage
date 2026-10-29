@@ -198,7 +198,7 @@ function EvidenceRow({ e, roles, selectable, selected, onSelect, onChanged, mode
   );
 }
 
-function EvidenceList({ state, roles, mode, onChanged, emptyText }) {
+function EvidenceList({ state, roles, mode, onChanged, emptyText, liveTotal }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(new Set());
@@ -223,6 +223,9 @@ function EvidenceList({ state, roles, mode, onChanged, emptyText }) {
     <div>
       <div className="row" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
         <span className="small muted">{data.total} item{data.total === 1 ? '' : 's'}</span>
+        {liveTotal != null && liveTotal !== data.total && (
+          <button className="small primary" onClick={() => { setPage(0); load(); }}>{liveTotal} now — refresh list</button>
+        )}
         {mode === 'accepted' && (
           <select value={filter} onChange={(x) => setFilter(x.target.value)}>
             <option value="">All skills</option>
@@ -650,14 +653,14 @@ export default function Evidence() {
       {!roles.current && !roles.future && sub !== 'roles' && (
         <div className="banner info">Start with Roles: add the job description for your current role (and the one you are aiming for). Gathered items are read against those profiles.</div>
       )}
-      {sub === 'review' && <EvidenceList key={`r${bump}`} state="proposed" roles={roles} mode="review" onChanged={reload} emptyText="Nothing waiting. New items appear here as the gather reads them." />}
-      {sub === 'accepted' && <EvidenceList key={`a${bump}`} state="accepted" roles={roles} mode="accepted" onChanged={reload} emptyText="No accepted evidence yet." />}
+      {sub === 'review' && <EvidenceList key={`r${bump}`} state="proposed" liveTotal={data.gather.counts['proposed']} roles={roles} mode="review" onChanged={reload} emptyText="Nothing waiting. New items appear here as the gather reads them." />}
+      {sub === 'accepted' && <EvidenceList key={`a${bump}`} state="accepted" liveTotal={data.gather.counts['accepted']} roles={roles} mode="accepted" onChanged={reload} emptyText="No accepted evidence yet." />}
       {sub === 'closed' && (
         <>
           <h3 style={{ fontSize: 13 }}>Rejected by you</h3>
-          <EvidenceList key={`x${bump}`} state="rejected" roles={roles} mode="closed" onChanged={reload} emptyText="Nothing rejected." />
+          <EvidenceList key={`x${bump}`} state="rejected" liveTotal={data.gather.counts['rejected']} roles={roles} mode="closed" onChanged={reload} emptyText="Nothing rejected." />
           <h3 style={{ fontSize: 13 }}>The model found no skill in these</h3>
-          <EvidenceList key={`n${bump}`} state="not-relevant" roles={roles} mode="closed" onChanged={reload} emptyText="None." />
+          <EvidenceList key={`n${bump}`} state="not-relevant" liveTotal={data.gather.counts['not-relevant']} roles={roles} mode="closed" onChanged={reload} emptyText="None." />
         </>
       )}
       {sub === 'assess' && <AssessTab data={data} reload={reload} />}

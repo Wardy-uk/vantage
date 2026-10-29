@@ -27,7 +27,7 @@ const REGISTRY = {
   // a batch of ≤20 gathered items triaged against the role profiles (capped per day in perf_state.caps),
   // and the full assessment of one role (Nick-initiated).
   perf_profile: { local: false, maxInputTokens: 15000, maxOutputTokens: 4000 },
-  perf_evidence: { local: false, maxInputTokens: 12000, maxOutputTokens: 3500, maxConcurrent: 1 },
+  perf_evidence: { local: false, maxInputTokens: 12000, maxOutputTokens: 6000, maxConcurrent: 1 },
   perf_assess: { local: false, maxInputTokens: 60000, maxOutputTokens: 4000 },
   // Admin → Test connections (a one-word completion).
   connection_test: { local: false, maxInputTokens: 100, maxOutputTokens: 8 },

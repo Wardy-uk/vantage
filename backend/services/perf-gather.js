@@ -25,7 +25,7 @@ const novaEv = require('./perf-nova');
 const DEFAULT_CAPS = Object.freeze({ dailyUsd: 1, dailyItems: 300 });
 const BACKFILL_DAYS = 365;
 const WEEK = 7;
-const BATCH = 20;
+const BATCH = 10;
 const MAX_QUEUE_BEFORE_BACKFILL = 400;
 const UNKNOWN_COST_USD = 0.05;   // a call whose cost OpenRouter did not report is counted at this, never at 0
 
@@ -224,33 +224,58 @@ async function triage({ today = localKey(), mode = 'queued' } = {}) {
   const system = `${TRIAGE_PROMPT}\n\n${[profileBlock(roles.current), profileBlock(roles.future)].filter(Boolean).join('\n\n')}`;
   const c = caps();
   let judged = 0; let proposed = 0; let failures = 0;
+  // ⚠ 29 Oct 2026: batches of 20 began failing as "unreadable JSON" once items
+  // could carry tags for both roles — the answer ran out of room — and two
+  // failures in a row ended the pass, so the re-sort never ran. Now: smaller
+  // batches with more room; a failed batch is SPLIT and retried; an item that
+  // fails on its own is skipped for THIS pass (and tried again next pass), never
+  // dropped and never allowed to block the rest. A pass gives up only when the
+  // model fails repeatedly on whole batches (an outage, not a bad item).
+  const skipped = new Set();
+  const pick = (n) => {
+    const rows = mode === 'retriage' ? store.forRetriage(rolesKey, n + skipped.size) : store.queued(n + skipped.size);
+    return rows.filter((e) => !skipped.has(e.id)).slice(0, n);
+  };
+  async function judge(batch) {
+    const lines = batch.map((e, i) => JSON.stringify({ i, kind: e.kind, hint: e.hint, date: String(e.occurredAt || '').slice(0, 10), title: e.title, detail: String(e.detail || '').slice(0, 600) }));
+    const reply = await openrouter.complete([
+      { role: 'system', content: system },
+      { role: 'user', content: lines.join('\n') },
+    ], { temperature: 0.1, maxTokens: 6000, json: true, callType: 'perf_evidence' });
+    return parseTriage(reply.text, batch.length, codesBySlot);
+  }
+  async function judgeSplitting(batch) {
+    try {
+      return [{ batch, tagsByIndex: await judge(batch) }];
+    } catch (e) {
+      console.warn(`[VANTAGE] perf triage batch of ${batch.length} failed: ${e.message}`);
+      if (batch.length === 1) { skipped.add(batch[0].id); return []; }
+      const mid = Math.ceil(batch.length / 2);
+      return [...await judgeSplitting(batch.slice(0, mid)), ...await judgeSplitting(batch.slice(mid))];
+    }
+  }
   for (;;) {
     const room = c.dailyItems - itemsToday(today);
-    if (room <= 0) return { stopped: 'item-cap', judged, proposed, failures };
-    if (spentToday().usd >= c.dailyUsd) return { stopped: 'spend-cap', judged, proposed, failures };
-    const batch = mode === 'retriage' ? store.forRetriage(rolesKey, Math.min(BATCH, room)) : store.queued(Math.min(BATCH, room));
-    if (!batch.length) return { stopped: mode === 'retriage' ? 'retriage-done' : 'queue-empty', judged, proposed, failures };
-    const lines = batch.map((e, i) => JSON.stringify({ i, kind: e.kind, hint: e.hint, date: String(e.occurredAt || '').slice(0, 10), title: e.title, detail: String(e.detail || '').slice(0, 600) }));
-    let tagsByIndex;
-    try {
-      const reply = await openrouter.complete([
-        { role: 'system', content: system },
-        { role: 'user', content: lines.join('\n') },
-      ], { temperature: 0.1, maxTokens: 3500, json: true, callType: 'perf_evidence' });
-      tagsByIndex = parseTriage(reply.text, batch.length, codesBySlot);
-    } catch (e) {
+    if (room <= 0) return { stopped: 'item-cap', judged, proposed, failures, skipped: skipped.size };
+    if (spentToday().usd >= c.dailyUsd) return { stopped: 'spend-cap', judged, proposed, failures, skipped: skipped.size };
+    const batch = pick(Math.min(BATCH, room));
+    if (!batch.length) return { stopped: mode === 'retriage' ? 'retriage-done' : 'queue-empty', judged, proposed, failures, skipped: skipped.size };
+    const parts = await judgeSplitting(batch);
+    if (!parts.length) {
       failures += 1;
-      console.warn(`[VANTAGE] perf triage batch failed: ${e.message}`);
-      if (failures >= 2) return { stopped: 'model-failed', error: e.message, judged, proposed, failures };
+      if (failures >= 3) return { stopped: 'model-failed', error: 'the model could not answer three whole batches', judged, proposed, failures, skipped: skipped.size };
       continue;
     }
-    for (const [i, tags] of tagsByIndex) {
-      if (mode === 'retriage') store.setRetriage(batch[i].id, { tags, rolesKey });
-      else store.setTriage(batch[i].id, { state: tags.length ? 'proposed' : 'not-relevant', tags, rolesKey });
-      if (tags.length) proposed += 1;
+    failures = 0;
+    for (const { batch: b, tagsByIndex } of parts) {
+      for (const [i, tags] of tagsByIndex) {
+        if (mode === 'retriage') store.setRetriage(b[i].id, { tags, rolesKey });
+        else store.setTriage(b[i].id, { state: tags.length ? 'proposed' : 'not-relevant', tags, rolesKey });
+        if (tags.length) proposed += 1;
+      }
+      judged += b.length;
+      bumpItems(b.length, today);
     }
-    judged += batch.length;
-    bumpItems(batch.length, today);
   }
 }
 

@@ -206,14 +206,18 @@ function setTriage(id, { state, tags, rolesKey }) {
 
 /** Gathered items judged under other rules or profiles than `rolesKey`, newest first. */
 function forRetriage(rolesKey, limit) {
-  return db().prepare(`SELECT * FROM perf_evidence WHERE origin != 'manual' AND state IN ('proposed','accepted')
+  // 'not-relevant' is re-read too when the MODEL judged it (judged_roles set) —
+  // older rules or profiles may have dismissed real evidence. Items dropped as
+  // automated noise (no judged_roles) never reach the model.
+  return db().prepare(`SELECT * FROM perf_evidence WHERE origin != 'manual'
+    AND (state IN ('proposed','accepted') OR (state = 'not-relevant' AND judged_roles IS NOT NULL))
     AND (judged_roles IS NULL OR judged_roles != ?) ORDER BY occurred_at DESC LIMIT ?`).all(rolesKey, limit).map(evRow);
 }
 
 /** Apply a re-sort. Nick's decision stands; an accepted item left with no skill returns to Review. */
 function setRetriage(id, { tags, rolesKey }) {
   const cur = getEvidence(id);
-  if (!cur || !['proposed', 'accepted'].includes(cur.state)) return;
+  if (!cur || !['proposed', 'accepted', 'not-relevant'].includes(cur.state)) return;
   const state = cur.state === 'accepted' ? (tags.length ? 'accepted' : 'proposed') : (tags.length ? 'proposed' : 'not-relevant');
   db().prepare("UPDATE perf_evidence SET state = ?, tags_json = ?, judged_roles = ?, in_case = CASE WHEN ? = 'accepted' THEN in_case ELSE 0 END WHERE id = ?")
     .run(state, JSON.stringify(tags || []), rolesKey, state, id);
