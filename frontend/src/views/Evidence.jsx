@@ -430,6 +430,18 @@ function AssessTab({ data, reload }) {
             </div>
             {!role && <p className="small muted">Add this role's profile first.</p>}
             {role && !a && <p className="small muted">Not assessed yet. Accept some evidence, then press Reassess.</p>}
+            {a && role && a.roleId !== role.id && (
+              <div className="banner warn" style={{ marginTop: 10 }}>
+                This assessment was made against an earlier version of the role
+                {(() => {
+                  const now = new Set(role.profile.skills.map((s) => s.code));
+                  const was = new Set(a.skills.map((s) => s.code));
+                  const gone = [...was].filter((c) => !now.has(c));
+                  const added = [...now].filter((c) => !was.has(c));
+                  return gone.length || added.length ? ` (${[gone.length ? `removed ${gone.join(', ')}` : '', added.length ? `added ${added.join(', ')}` : ''].filter(Boolean).join('; ')})` : '';
+                })()}. Press Reassess for a current reading.
+              </div>
+            )}
             {a && (
               <>
                 <div className="grid" style={{ margin: '12px 0' }}>
