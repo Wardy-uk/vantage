@@ -318,16 +318,30 @@ function toRadar(state) {
   // ⚠ RULE 3. Said out loud rather than silently omitted — a reader who sees no
   // job findings should know whether that is because there are none or because
   // nobody could look.
-  if (raw.jobs?.data?.warmingUp) {
+  // A job "not yet due since restart" is not an unreadable check, it is the
+  // same fact as warmingUp one job at a time: NOVA keeps lastRun in memory, so
+  // after a restart nothing can be said about a job until its next slot. Listed
+  // one by one it was 27 identical clauses and 27 identical "clears on its own"
+  // remedies (Nick, 29 Oct 2026: "erm.."). ONE line, with the count — still a
+  // blind spot (rule 2), just said once. Weekly/monthly jobs keep it there for
+  // days after warmingUp itself clears, which is why it is counted here too.
+  const allUnknowns = checks.filter(c => c.severity === 'unknown');
+  const notDue = allUnknowns.filter(c => /Not yet due since restart/.test(String(c.verdict || '')));
+  const warming = Boolean(raw.jobs?.data?.warmingUp);
+  if (warming || notDue.length) {
+    const mins = Math.round((raw.jobs?.data?.uptimeSeconds || 0) / 60);
+    const since = mins >= 120 ? `${Math.round(mins / 60)} hours` : `${mins} minutes`;
     blind.push({
       name: 'nova-health: jobs',
-      reason: `NOVA restarted ${Math.round((raw.jobs.data.uptimeSeconds || 0) / 60)} minutes ago and its job history is held in memory only, so no job can yet be said to have run or not run.`,
-      remedy: 'Nothing to do. This clears once NOVA has been up long enough for every job to have had a turn.',
+      reason: warming
+        ? `NOVA restarted ${since} ago and its job history is held in memory only, so no job can yet be said to have run or not run${notDue.length ? ` (${notDue.length} not due since)` : ''}.`
+        : `${notDue.length} scheduled NOVA job${notDue.length === 1 ? ' has' : 's have'} not been due since NOVA restarted ${since} ago, so whether ${notDue.length === 1 ? 'it runs' : 'they run'} is unknown until ${notDue.length === 1 ? 'it is' : 'they are'}: ${notDue.map(u => u.name).join(', ')}.`,
+      remedy: 'Nothing to do. Each clears once it has had its turn; weekly and monthly jobs can take that long.',
     });
   }
 
   // ⚠ RULE 2. `unknown` is a blind spot, never a pass.
-  const unknowns = checks.filter(c => c.severity === 'unknown');
+  const unknowns = allUnknowns.filter(c => !notDue.includes(c));
   if (unknowns.length) {
     blind.push({
       name: 'nova-health: not evaluated',

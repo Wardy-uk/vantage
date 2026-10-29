@@ -209,3 +209,19 @@ test('a readable but newer build says so, in the blind-spots banner', () => {
   });
   assert.ok(r.blind.some(b => /newer build/.test(b.name)));
 });
+
+test('jobs "not yet due since restart" are ONE jobs line, not 27 not-evaluated clauses', () => {
+  const jobs = ['a', 'b', 'c'].map(id => ({ id, severity: 'unknown', verdict: 'Not yet due since restart.' }));
+  const r = nh.toRadar(report({
+    jobs: { ok: true, error: null, data: { uptimeSeconds: 7200 * 3, warmingUp: false, inMemoryOnly: true, jobs } },
+    tables: { ok: true, error: null, data: [{ table: 'agent_incidents', severity: 'unknown', verdict: 'could not read' }] },
+  }));
+  const ne = r.blind.find(b => /not evaluated/.test(b.name));
+  assert.ok(ne, 'a genuinely unreadable check still reports');
+  assert.doesNotMatch(ne.reason, /Not yet due/, 'not-due jobs are not listed as not evaluated');
+  assert.match(ne.reason, /^1 NOVA check /);
+  const j = r.blind.filter(b => b.name === 'nova-health: jobs');
+  assert.equal(j.length, 1);
+  assert.match(j[0].reason, /^3 scheduled NOVA jobs have not been due since NOVA restarted 6 hours ago/);
+  assert.match(j[0].remedy, /Nothing to do/);
+});
