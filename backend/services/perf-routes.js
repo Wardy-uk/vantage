@@ -69,7 +69,9 @@ function mount(app, wrap) {
     const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw bad('limit must be 1-500');
     if (!Number.isInteger(offset) || offset < 0) throw bad('offset must be 0 or more');
-    return store.listEvidence({ state, limit, offset });
+    const stance = req.query.stance || undefined;
+    if (stance && !['for', 'against', 'none'].includes(stance)) throw bad('stance must be for, against or none');
+    return store.listEvidence({ state, stance, limit, offset });
   }));
 
   app.post('/api/perf/evidence', wrap((req) => {
@@ -117,6 +119,12 @@ function mount(app, wrap) {
     return store.update(id, { state: to, ...(decision !== 'accept' ? { inCase: false } : {}) });
   }
   app.post('/api/perf/evidence/:id/decide', wrap((req) => decideOne(Number(req.params.id), (req.body || {}).decision)));
+  // Only items whose EVERY tag is "for" — anything with evidence against needs Nick's eye.
+  // Refused while a pass is running: the re-sort may still be changing the tags.
+  app.post('/api/perf/evidence/accept-all-for', wrap(() => {
+    if (gather.status().running) throw bad('The sorter is still running — wait until it finishes, then accept', 409);
+    return { accepted: store.acceptAllFor() };
+  }));
   app.post('/api/perf/evidence/decide-batch', wrap((req) => {
     const { ids, decision } = req.body || {};
     if (!Array.isArray(ids) || !ids.length || ids.length > 200) throw bad('ids must be a list of 1-200');

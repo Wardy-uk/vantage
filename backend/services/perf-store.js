@@ -174,9 +174,20 @@ function queued(limit) {
   return db().prepare("SELECT * FROM perf_evidence WHERE state = 'queued' ORDER BY occurred_at DESC LIMIT ?").all(limit).map(evRow);
 }
 
-function listEvidence({ state, limit = 200, offset = 0 } = {}) {
-  const where = state ? 'WHERE state = ?' : '';
-  const args = state ? [state] : [];
+// Tags are stored as JSON.stringify output (no spaces), so a stance can be
+// matched in SQL without loading every row.
+const AGAINST_LIKE = '%"stance":"against"%';
+const STANCE_SQL = {
+  for: `tags_json != '[]' AND tags_json NOT LIKE '${AGAINST_LIKE}'`,
+  against: `tags_json LIKE '${AGAINST_LIKE}'`,
+  none: `tags_json = '[]'`,
+};
+
+function listEvidence({ state, stance, limit = 200, offset = 0 } = {}) {
+  const conds = []; const args = [];
+  if (state) { conds.push('state = ?'); args.push(state); }
+  if (stance) conds.push(STANCE_SQL[stance]);
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const rows = db().prepare(`SELECT * FROM perf_evidence ${where} ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset);
   const total = db().prepare(`SELECT COUNT(*) AS n FROM perf_evidence ${where}`).get(...args).n;
   return { items: rows.map(evRow), total };
@@ -202,6 +213,11 @@ function update(id, patch) {
 function setTriage(id, { state, tags, rolesKey }) {
   db().prepare('UPDATE perf_evidence SET state = ?, tags_json = ?, judged_roles = ? WHERE id = ? AND state = ?')
     .run(state, JSON.stringify(tags || []), rolesKey || null, id, 'queued');
+}
+
+/** Accept every proposed item whose tags are ALL "for". Returns how many. */
+function acceptAllFor() {
+  return db().prepare(`UPDATE perf_evidence SET state = 'accepted', decided_at = ? WHERE state = 'proposed' AND ${STANCE_SQL.for}`).run(now()).changes;
 }
 
 /** Gathered items judged under other rules or profiles than `rolesKey`, newest first. */
@@ -258,6 +274,6 @@ function assessmentHistory(slot, limit = 20) {
 module.exports = {
   STATES, SLOTS, getState, setState,
   activeRole, roleHistory, saveRole,
-  enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptedFor, deleteManual,
+  enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
   saveAssessment, latestAssessment, assessmentHistory,
 };

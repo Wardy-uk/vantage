@@ -204,10 +204,12 @@ function EvidenceList({ state, roles, mode, onChanged, emptyText, liveTotal }) {
   const [sel, setSel] = useState(new Set());
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(0);
+  const [stance, setStance] = useState('');
+  const [msg, setMsg] = useState(null);
   const PAGE = 50;
   const load = useCallback(async () => {
-    try { setData(await api.perfEvidence(state, PAGE, page * PAGE)); setErr(null); } catch (x) { setErr(x.message); }
-  }, [state, page]);
+    try { setData(await api.perfEvidence(state, PAGE, page * PAGE, stance || undefined)); setErr(null); } catch (x) { setErr(x.message); }
+  }, [state, page, stance]);
   useEffect(() => { load(); }, [load]);
   const changed = async () => { setSel(new Set()); await load(); await onChanged(); };
   if (err) return <div className="banner bad">Could not read evidence — {err}</div>;
@@ -234,6 +236,17 @@ function EvidenceList({ state, roles, mode, onChanged, emptyText, liveTotal }) {
         )}
         {mode === 'review' && (
           <>
+            <select value={stance} onChange={(x) => { setStance(x.target.value); setPage(0); }}>
+              <option value="">All</option>
+              <option value="for">Evidence for only</option>
+              <option value="against">Has evidence against</option>
+              <option value="none">No skill</option>
+            </select>
+            <button className="small primary" onClick={async () => {
+              setMsg(null);
+              try { const r = await api.perfAcceptAllFor(); setMsg({ ok: true, text: `Accepted ${r.accepted} item(s) whose every skill is evidence for. Anything with evidence against, or no skill, is still here for you.` }); await changed(); }
+              catch (x) { setMsg({ ok: false, text: x.message }); }
+            }}>Accept all "evidence for"</button>
             <button className="small" onClick={() => setSel(new Set(items.map((e) => e.id)))}>Select page</button>
             <button className="primary small" disabled={!sel.size} onClick={() => batch('accept')}>Accept {sel.size || ''}</button>
             <button className="small" disabled={!sel.size} onClick={() => batch('reject')}>Reject {sel.size || ''}</button>
@@ -243,6 +256,7 @@ function EvidenceList({ state, roles, mode, onChanged, emptyText, liveTotal }) {
         <button className="small" disabled={page === 0} onClick={() => setPage(page - 1)}>‹ Newer</button>
         <button className="small" disabled={(page + 1) * PAGE >= data.total} onClick={() => setPage(page + 1)}>Older ›</button>
       </div>
+      {msg && <div className={`banner ${msg.ok ? 'info' : 'warn'}`}>{msg.text}</div>}
       {!items.length && <div className="card"><p className="small muted">{emptyText}</p></div>}
       {items.map((e) => (
         <EvidenceRow key={e.id} e={e} roles={roles} mode={mode} onChanged={changed}
