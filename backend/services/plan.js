@@ -44,6 +44,20 @@ const PLANNER_PLAN_ID = process.env.SIP_PLANNER_PLAN_ID || 'xUF84iaFcECLqQ4NbH6F
 /** The register's status key — see the project note. */
 const STATUSES = ['Done', 'Added', 'To be added', 'Not adding'];
 
+/**
+ * One status vocabulary across every plan (29 Oct 2026). New registers use the
+ * template words (To do / In progress / Done / Not doing); SIP keeps its own
+ * words and they are MAPPED here, so nothing in its register has to change.
+ * "Added" means "on the Planner board", which for SIP is the work being under
+ * way.
+ */
+const STATUS_KEYS = {
+  'to do': 'todo', 'in progress': 'doing', done: 'done', 'not doing': 'dropped',
+  'to be added': 'todo', added: 'doing', 'not adding': 'dropped',
+};
+const TEMPLATE_STATUSES = ['To do', 'In progress', 'Done', 'Not doing'];
+const statusKeyOf = s => STATUS_KEYS[String(s || '').trim().toLowerCase()] || null;
+
 /** Source groups, in the order the register sections introduce them. */
 const GROUPS = {
   review: 'Support Review',
@@ -124,26 +138,34 @@ function parseRegister(markdown) {
       return i < 0 ? '' : unlink(cells[i] || '');
     };
     const id = col('id');
-    if (!/^[A-Z]\d+$/.test(id)) continue;
+    if (!/^[A-Z]{1,3}\d+$/.test(id)) continue;
 
     if (!sections.includes(section)) sections.push(section);
     const source = col('source');
-    const status = col('planner status');
+    // SIP names the column "Planner status"; the template calls it "Status".
+    const status = header.includes('planner status') ? col('planner status') : col('status');
     const notes = col('notes');
     const owner = col('owner');
+    const statusKey = statusKeyOf(status);
+    const rankText = col('rank');
 
-    if (!STATUSES.includes(status)) problems.push(`${id}: planner status "${status}" is not one of ${STATUSES.join(', ')}`);
+    if (!statusKey) problems.push(`${id}: status "${status}" is not one of ${[...TEMPLATE_STATUSES, ...STATUSES].join(', ')}`);
     if (actions.some(a => a.id === id)) problems.push(`${id} appears more than once`);
+    if (rankText && !/^\d+$/.test(rankText)) problems.push(`${id}: rank "${rankText}" is not a whole number`);
 
     actions.push({
       id,
       section,
+      order: actions.length,
       action: col('action'),
       source,
-      group: groupOf(source),
+      group: source ? groupOf(source) : null,
       owner,
       ownership: ownershipOf(owner),
       status,
+      statusKey,
+      rank: /^\d+$/.test(rankText) ? Number(rankText) : null,
+      starred: /^(★|\*|y|yes|true|x)$/i.test(col('star')),
       due: col('due'),
       notes,
       plannerIds: col('planner id').split(/[\s,;]+/).filter(Boolean),
@@ -232,18 +254,20 @@ function driftOf(a) {
   const allDone = tasks.every(t => t.completed);
   const open = tasks.filter(t => !t.completed);
 
-  if (allDone && a.status !== 'Done') {
+  if (allDone && a.statusKey !== 'done') {
     out.push(`Done on the board (${ddmm(tasks.map(t => t.completed).sort().pop())}), "${a.status}" in the vault`);
   }
-  if (a.status === 'Done' && open.length) {
+  if (a.statusKey === 'done' && open.length) {
     out.push(`Done in the vault, ${open.map(t => `${t.percent}%`).join(' / ')} on the board`);
   }
-  if (['To be added', 'Not adding'].includes(a.status)) {
+  // SIP's "To be added" means "not on the board", so a board task is drift; a
+  // template "To do" on the board is ordinary. Not doing is drift for both.
+  if (a.status === 'To be added' || a.statusKey === 'dropped') {
     out.push(`On the board, "${a.status}" in the vault`);
   }
 
   // Dates, only for work still open — a finished task's due date is history.
-  if (a.status !== 'Done' && open.length === 1 && open[0].due) {
+  if (a.statusKey !== 'done' && open.length === 1 && open[0].due) {
     const board = ddmm(open[0].due);
     if (/^\d{2}\/\d{2}$/.test(a.due) && a.due !== board) out.push(`Due ${a.due} in the vault, ${board} on the board`);
     else if (!/\d{2}\/\d{2}/.test(a.due)) out.push(`Due ${board} on the board, "${a.due || 'blank'}" in the vault`);
@@ -358,6 +382,6 @@ function lastRead() {
 
 module.exports = {
   list, refresh, lastRead,
-  parseRegister, crossCheck, boardFrom, summarise,
-  REGISTER_PATH, PLANNER_PLAN_ID, STATUSES, GROUPS, MEASURES,
+  parseRegister, crossCheck, boardFrom, summarise, statusKeyOf, ownershipOf, ddmm,
+  REGISTER_PATH, PLANNER_PLAN_ID, STATUSES, TEMPLATE_STATUSES, GROUPS, MEASURES,
 };

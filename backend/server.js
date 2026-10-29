@@ -54,6 +54,11 @@ if (!process.env.VANTAGE_PIN) {
 }
 
 const app = express();
+// A plan import carries the document as base64 (≤8 MB file). It gets its own
+// parser, registered BEFORE the global one: body-parser skips a body that is
+// already parsed, so the ORDER is the mechanism — swap these and every import
+// over 1 MB answers 413.
+app.use('/api/plans/import/propose', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 /**
@@ -125,7 +130,7 @@ const wrap = fn => async (req, res) => {
     if (!res.headersSent) res.json({ ok: true, data });
   } catch (err) {
     console.error(`[VANTAGE] ${req.method} ${req.path}:`, err.message);
-    if (!res.headersSent) res.status(400).json({ ok: false, error: err.message });
+    if (!res.headersSent) res.status(err.status || 400).json({ ok: false, error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 };
 
@@ -248,6 +253,45 @@ app.post('/api/findings/:id/reopen', wrap(req => findings.reopen(Number(req.para
 // Read-only. The plan lives in the vault's action register and is delivered on
 // the Planner board; VANTAGE compares the two and writes to neither (D11).
 app.get('/api/plan', wrap(req => plan.list({ force: req.query.refresh === '1' })));
+
+// ── Plans (29 Oct 2026) ──────────────────────────────────────────────────────
+// Every plan is a vault project whose action register is the truth. VANTAGE
+// writes only: a new register/project (adopt, Planner, import) and each plan's
+// and task's Rank and Star — through NEURO, path-scoped in neuro.writePlanNote.
+// Literal paths are registered BEFORE /api/plans/:id so none is read as an id.
+const plans = require('./services/plans');
+// GET /api/plans — every plan (vault registers), rank order, with counts.
+app.get('/api/plans', wrap(req => plans.list({ force: req.query.refresh === '1' })));
+// GET /api/plans/consolidated — every plan's tasks on one list: starred, then plan rank, then task rank.
+app.get('/api/plans/consolidated', wrap(req => plans.consolidated({ force: req.query.refresh === '1' })));
+// GET /api/plans/candidates — vault projects without a register, and Planner boards, to add as plans.
+app.get('/api/plans/candidates', wrap(() => plans.candidates()));
+// POST /api/plans/adopt { folder } — make an existing vault project a plan (writes an empty register).
+app.post('/api/plans/adopt', wrap(req => plans.adopt(req.body || {})));
+// POST /api/plans/from-planner { planId, folder?, name? } — new vault project + register seeded from a Planner board.
+app.post('/api/plans/from-planner', wrap(req => plans.fromPlanner(req.body || {})));
+// POST /api/plans/import/propose { text | filename+fileBase64 } — read a document and PROPOSE a plan. Writes nothing.
+app.post('/api/plans/import/propose', wrap(req => require('./services/plan-import').propose(req.body || {})));
+// POST /api/plans/import/save { folder, name, sections, sourceText, from } — write the edited proposal as a new project.
+app.post('/api/plans/import/save', wrap(req => {
+  const b = req.body || {};
+  const sections = (Array.isArray(b.sections) ? b.sections : []).map(s => ({
+    title: s.title,
+    actions: (s.actions || []).filter(a => a && a.action).map(a => ({
+      action: a.action, owner: a.owner || 'Unstated', due: plans.toDdmm(a.due), notes: a.notes || '',
+    })),
+  })).filter(s => s.actions.length);
+  if (!sections.length) throw new Error('No actions to save');
+  return plans.createPlan({ folder: String(b.folder || '').trim(), name: String(b.name || b.folder || '').trim(), sections, source: b.from || null, sourceText: b.sourceText || null });
+}));
+// POST /api/plans/rank { order: [planId…] } — plan priority, written as plan-rank in each register.
+app.post('/api/plans/rank', wrap(req => plans.rankPlans(req.body || {})));
+// GET /api/plans/:id — one plan in full, with its version for edits.
+app.get('/api/plans/:id', wrap(req => plans.detail(req.params.id, { force: req.query.refresh === '1' })));
+// POST /api/plans/:id/tasks/rank { version, order: [taskId…] } — task priority (Rank column). 409 if the register changed.
+app.post('/api/plans/:id/tasks/rank', wrap(req => plans.rankTasks(req.params.id, req.body || {})));
+// POST /api/plans/:id/tasks/:taskId/star { version, starred } — the Star column. 409 if the register changed.
+app.post('/api/plans/:id/tasks/:taskId/star', wrap(req => plans.star(req.params.id, req.params.taskId, req.body || {})));
 
 // ── Coaching ─────────────────────────────────────────────────────────────────
 

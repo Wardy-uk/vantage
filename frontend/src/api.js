@@ -81,6 +81,21 @@ export const api = {
 
   plan: (refresh = false) => call(`/plan${refresh ? '?refresh=1' : ''}`),
 
+  // Every plan (vault registers). Writes go through NEURO into the register;
+  // task writes carry the register's version and answer 409 if it changed.
+  plans: (refresh = false) => call(`/plans${refresh ? '?refresh=1' : ''}`),
+  planDetail: (id, refresh = false) => call(`/plans/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
+  plansConsolidated: (refresh = false) => call(`/plans/consolidated${refresh ? '?refresh=1' : ''}`),
+  planCandidates: () => call('/plans/candidates'),
+  adoptPlan: folder => call('/plans/adopt', { method: 'POST', body: { folder } }),
+  planFromPlanner: body => call('/plans/from-planner', { method: 'POST', body }),
+  proposeImport: body => call('/plans/import/propose', { method: 'POST', body }),
+  saveImport: body => call('/plans/import/save', { method: 'POST', body }),
+  rankPlans: order => call('/plans/rank', { method: 'POST', body: { order } }),
+  rankTasks: (id, version, order) => call(`/plans/${encodeURIComponent(id)}/tasks/rank`, { method: 'POST', body: { version, order } }),
+  starTask: (id, taskId, version, starred) =>
+    call(`/plans/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/star`, { method: 'POST', body: { version, starred } }),
+
   findings: (status) => call(`/findings${status ? '?status=' + status : ''}`),
   addFinding: f => call('/findings', { method: 'POST', body: f }),
   updateFinding: (id, patch) => call(`/findings/${id}`, { method: 'PUT', body: patch }),

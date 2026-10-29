@@ -4,7 +4,7 @@ import { api, getPin, setPin } from './api.js';
 import Radar from './views/Radar.jsx';
 import Tracker from './views/Tracker.jsx';
 import Findings from './views/Findings.jsx';
-import Plan from './views/Plan.jsx';
+import Plans from './views/Plans.jsx';
 import Standing from './Standing.jsx';
 import Coach from './views/Coach.jsx';
 import Patterns from './views/Patterns.jsx';
@@ -198,7 +198,7 @@ export default function App() {
         {tab === 'radar' && <Radar />}
         {tab === 'tracker' && <Tracker />}
         {tab === 'findings' && <Findings />}
-        {tab === 'plan' && <Plan />}
+        {tab === 'plan' && <Plans />}
         {tab === 'coach' && <Coach />}
         {tab === 'patterns' && <Patterns />}
         {tab === 'admin' && <Admin />}

@@ -21,6 +21,8 @@ const REGISTRY = {
   coach: { local: false, maxInputTokens: 200000, maxOutputTokens: 2000 },
   // A drafted "raise with Chris" message for one finding.
   findings: { local: false, maxInputTokens: 20000, maxOutputTokens: 400 },
+  // A document read into a proposed plan register (≤60k chars in, one call per import, Nick-initiated).
+  plan_import: { local: false, maxInputTokens: 25000, maxOutputTokens: 8000 },
   // Admin → Test connections (a one-word completion).
   connection_test: { local: false, maxInputTokens: 100, maxOutputTokens: 8 },
 };

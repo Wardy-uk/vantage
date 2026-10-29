@@ -15,7 +15,7 @@ const criticality = require('./criticality');
  *
  * Read-only by default, with ONE deliberate exception.
  *
- * ⚠ Every call here is a GET except **THREE**. That count has been wrong twice —
+ * ⚠ Every call here is a GET except **FOUR**. That count has been wrong twice —
  * the prose said "three" while listing four, and the `post()` helper below said
  * "the two writes" — which matters in a file whose entire safety argument is
  * that this is the CLOSED SET of things VANTAGE may change in NEURO. If you add
@@ -28,6 +28,14 @@ const criticality = require('./criticality');
  *   POST /api/tasks              — create a task (idempotent on text)
  *   POST /api/actions            — queue a suggestion for Nick to approve
  *   POST /api/weekly-risk/manual — put a finding on the report's escalation list
+ *   POST /api/vault/write        — a PLAN note only (29 Oct 2026): a register,
+ *                                  hub or imported source under Projects/<F>/,
+ *                                  path-checked in `writePlanNote` below
+ *
+ * The vault write exists because each plan's truth is its vault register and
+ * Nick asked VANTAGE to create plans, rank them and star tasks (decided 29 Oct
+ * 2026). It is the narrowest shape that does that: one folder level under
+ * Projects/, Archive refused, and a hub or source note is never overwritten.
  *
  * Nothing here updates, completes or deletes anything, and the endpoints that
  * write or send (weekly-risk publish, queue-send, plaud sync) remain
@@ -108,7 +116,54 @@ async function call(path, { timeoutMs = TIMEOUT_MS } = {}) {
 }
 
 /**
- * The three writes. Kept together and named so a grep for `method: 'POST'` in
+ * Is this a path VANTAGE may write? Pure. `Projects/<Folder>/<file>.md`, one
+ * level deep, never Archive, and the file must be a plan note: the register,
+ * the folder's hub note, or an imported source.
+ */
+function planNotePathProblem(relPath) {
+  const p = String(relPath || '');
+  const m = p.match(/^Projects\/([^/\\]+)\/([^/\\]+\.md)$/);
+  if (!m) return 'not Projects/<Folder>/<file>.md';
+  const [, folder, file] = m;
+  if (folder === 'Archive' || folder.startsWith('.') || folder.includes('..') || file.includes('..')) return 'folder not allowed';
+  if (/[\0<>:"|?*]/.test(folder + file)) return 'illegal characters';
+  if (file.endsWith(' - Action Register.md')) return null;
+  if (file === `${folder}.md`) return null;
+  if (file === `${folder} - Source.md`) return null;
+  return 'only a plan register, hub or source note';
+}
+
+/**
+ * The fourth write: one plan note into the vault through NEURO's vault route
+ * (path-guarded, re-indexed there). The path rule above is enforced HERE, on
+ * VANTAGE's side, because NEURO's route will write anywhere in the vault.
+ */
+async function writePlanNote(relPath, content, { timeoutMs = TIMEOUT_MS } = {}) {
+  const problem = planNotePathProblem(relPath);
+  if (problem) throw new Error(`Refusing to write ${relPath}: ${problem}`);
+  if (typeof content !== 'string' || !content.trim()) throw new Error('Refusing to write an empty plan note');
+  const c = config();
+  if (!c.token && !c.pin) throw new Error('No NEURO credential set (NEURO_API_TOKEN preferred, NEURO_PIN accepted)');
+  if (!c.vaultKey) throw new Error('NEURO_VAULT_API_KEY is not set — vault writes need their own key');
+  const res = await fetch(`${c.url}/api/vault/write`, {
+    method: 'POST',
+    headers: {
+      ...(c.token ? { 'X-Neuro-Api-Token': c.token } : { 'X-Neuro-Pin': c.pin }),
+      'X-Api-Key': c.vaultKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path: relPath, content }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false || payload?.success === false) {
+    throw new Error(payload?.error || `NEURO vault write returned ${res.status}`);
+  }
+  return { path: relPath };
+}
+
+/**
+ * The other three writes. Kept together and named so a grep for `method: 'POST'` in
  * this repo lands on the whole of what VANTAGE is allowed to change in NEURO.
  * The count is load-bearing — see the header.
  */
@@ -447,4 +502,5 @@ module.exports = {
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
   friction, wins,
   createTask, queueSuggestion, proposeWork, todos,
+  writePlanNote, planNotePathProblem,
 };

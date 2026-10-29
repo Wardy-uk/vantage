@@ -125,6 +125,8 @@ nav button.on { background: var(--panel-2); border-color: var(--line); color: va
    whole viewport, inside something that had already spent part of it. */
 main { flex: 1; min-height: 0; overflow: auto; }
 .wrap { max-width: 980px; margin: 0 auto; padding: 22px 20px 60px; }
+/* Full-width pages (Plan, 29 Oct 2026) — Nick wants the whole screen used. */
+.wrap.wide { max-width: none; }
 
 .card {
   background: var(--panel); border: 1px solid var(--line);

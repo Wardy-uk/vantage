@@ -408,6 +408,30 @@ row with no board match is "not visible", never "not on the board". The last
 good read is stored (`plan_register`) so the standing bar stays local; a
 register that has never been read renders absent, not 0/0.
 
+**Many plans (29 Oct 2026, Nick's design, asked one question at a time).**
+`services/plans.js` + `plan-import.js` + `/api/plans*` + `views/Plans.jsx` (the
+Plan tab; `Plan.jsx` is now the embedded `SipPlan`). Every plan is a vault
+project whose `* - Action Register.md` is the truth — discovered by listing
+`Projects/*/` (Archive excluded). Plan rank = `plan-rank:` in the register's
+frontmatter; task priority = `Rank` and `Star` columns (added to a table the
+first time they are written; every untouched line is written back byte-for-byte;
+a row whose cell count is off is left alone and reported). One status
+vocabulary: template To do / In progress / Done / Not doing, SIP's words mapped
+(`plan.statusKeyOf`), SIP's register unchanged. Add a plan from a vault project
+(empty register), a Planner board (whole board read via NEURO, seeded, linked by
+`planner-plan-id:`; a truncated board read refuses) or an imported document
+(.docx/.pdf/.md/.txt or pasted; ONE model call, class `plan_import`, PROPOSES —
+owners/dates only where stated — Nick edits, Save writes hub + `<F> - Source`
+(extracted text; the file is not kept) + register). Consolidated view: starred
+first, then plan rank, then task rank, then register order; overdue marked, not
+re-sorted. ⚠ Every task write carries the register's VERSION (content hash) and
+is refused 409 if the note changed since the screen loaded — Nick edits it in
+Obsidian too. ⚠ Writes go through `neuro.writePlanNote` (the FOURTH named
+NEURO write), path-checked HERE because NEURO's `/api/vault/write` writes
+anywhere. `/api/plan` (SIP, feeding the standing bar and NEURO's SOAP plan
+RAG) is unchanged. Tests `plans.test.js` (14, incl. a round trip on the real
+SIP register when the vault is present).
+
 ## Deploying VANTAGE
 
 ```bash

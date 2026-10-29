@@ -99,7 +99,7 @@ function Action({ a, groups, boardAvailable }) {
   );
 }
 
-export default function Plan() {
+export function SipPlan() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -119,7 +119,7 @@ export default function Plan() {
 
   if (!data.available) {
     return (
-      <div className="wrap">
+      <div>
         <div className="banner bad">
           The plan could not be read from the vault ({data.reason}). Nothing below says what is or
           isn't done — it is unknown, not empty. Source: {data.path}
@@ -136,7 +136,7 @@ export default function Plan() {
     && (!driftOnly || a.drift?.length));
 
   return (
-    <div className="wrap">
+    <div>
       {error && <div className="banner bad">{error}</div>}
       {data.stale && (
         <div className="banner warn">
