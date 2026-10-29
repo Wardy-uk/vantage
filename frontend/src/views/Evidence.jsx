@@ -549,6 +549,16 @@ function GatherTab({ data, reload }) {
         <p className="small muted" style={{ marginTop: 6 }}>Not gathered yet: Outlook Sent Items not sent through NEURO, and Jira ticket work. A source that could not be read is a gap, not evidence that nothing happened.</p>
       </div>
       <div className="card">
+        <h2>Backfill override</h2>
+        <p className="sub">Lifts the daily caps until the 12-month backfill is fully read, then switches itself off and the caps above come back. Hard safety ceiling: $15 a day.</p>
+        <div className="row">
+          <span className="small">{g.override?.on ? <b style={{ color: 'var(--warn)' }}>On</b> : 'Off'}{g.override?.by === 'auto' ? ` — switched off automatically (${g.override.reason})` : ''}</span>
+          <button onClick={async () => { setMsg(null); try { await api.perfOverride(!g.override?.on); await reload(); } catch (x) { setMsg(x.message); } }}>
+            {g.override?.on ? 'Switch off' : 'Switch on'}
+          </button>
+        </div>
+      </div>
+      <div className="card">
         <h2>Daily caps</h2>
         <div className="row">
           <label className="small">Spend $ <input type="number" step="0.5" min="0" max="20" style={{ width: 80 }} value={caps.dailyUsd} onChange={(x) => setCaps({ ...caps, dailyUsd: x.target.value })} /></label>
@@ -566,6 +576,12 @@ function GatherTab({ data, reload }) {
  * not and when it carries on. Composed only from what /api/perf reports.
  */
 function statusLine(g) {
+  const s = statusCore(g);
+  if (g.override?.on) s.text = `Backfill override on — daily caps lifted until the year is read (safety ceiling $${g.caps.dailyUsd}/day). ${s.text}`;
+  return s;
+}
+
+function statusCore(g) {
   const left = g.counts.queued;
   const today = `${g.itemsToday} of ${g.caps.dailyItems} items today, $${g.spentToday.usd.toFixed(2)} of $${g.caps.dailyUsd}`;
   if (g.running) return { tone: 'info', text: `Reading now — ${left} still to read (${today}).` };

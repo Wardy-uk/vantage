@@ -151,6 +151,7 @@ export const api = {
   perfDelete: id => call(`/perf/evidence/${id}`, { method: 'DELETE' }),
   perfGather: () => call('/perf/gather/run', { method: 'POST' }),
   perfCaps: body => call('/perf/caps', { method: 'PUT', body }),
+  perfOverride: on => call('/perf/backfill-override', { method: 'POST', body: { on } }),
   perfAssess: slot => call(`/perf/assess/${slot}`, { method: 'POST' }),
   perfExport: slot => call(`/perf/export/${slot}`),
 };

@@ -145,6 +145,11 @@ function mount(app, wrap) {
 
   app.post('/api/perf/gather/run', wrap(() => gather.run('manual')));
   app.put('/api/perf/caps', wrap((req) => gather.setCaps(req.body || {})));
+  app.post('/api/perf/backfill-override', wrap((req) => {
+    const on = (req.body || {}).on;
+    if (typeof on !== 'boolean') throw bad('on must be true or false');
+    return gather.setBackfillOverride(on);
+  }));
 
   app.post('/api/perf/assess/:slot', wrap((req) => assess.assess(req.params.slot)));
   app.get('/api/perf/export/:slot', wrap((req) => {

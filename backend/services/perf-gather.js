@@ -42,7 +42,22 @@ function isNoise(item) {
   return NOISE.test(t) || t.trim().length < 6;
 }
 
+/**
+ * The backfill override (Nick, 29 Oct 2026: "override the cap for this
+ * backfill"). While on, the daily caps are replaced by a hard safety ceiling
+ * and the backfill walks the whole year in one pass. It switches ITSELF off once
+ * the backfill reaches its floor and the queue is empty, so the normal caps come
+ * back for the daily trickle without anyone remembering to restore them.
+ */
+const OVERRIDE_CAPS = Object.freeze({ dailyUsd: 15, dailyItems: 5000 });
+const overrideOn = () => Boolean(store.getState('backfill_override', null)?.on);
+function setBackfillOverride(on) {
+  store.setState('backfill_override', { on: Boolean(on), at: new Date().toISOString(), by: 'nick' });
+  return { on: overrideOn(), caps: caps() };
+}
+
 function caps() {
+  if (overrideOn()) return { ...OVERRIDE_CAPS, override: true };
   const c = store.getState('caps', null) || {};
   return {
     dailyUsd: Number.isFinite(c.dailyUsd) && c.dailyUsd >= 0 ? c.dailyUsd : DEFAULT_CAPS.dailyUsd,
@@ -110,7 +125,8 @@ async function gather({ today = localKey() } = {}) {
   // 2. backfill, a week at a time, while the queue is not already deep
   const floor = addDays(today, -BACKFILL_DAYS);
   let cursor = store.getState('backfill_cursor', addDays(today, -WEEK));
-  for (let i = 0; i < 4 && cursor > floor && store.counts().queued < MAX_QUEUE_BEFORE_BACKFILL; i++) {
+  const fast = overrideOn();
+  for (let i = 0; i < (fast ? 60 : 4) && cursor > floor && (fast || store.counts().queued < MAX_QUEUE_BEFORE_BACKFILL); i++) {
     const from = addDays(cursor, -(WEEK - 1)) < floor ? floor : addDays(cursor, -(WEEK - 1));
     const got = await fetchWindow(from, cursor, today);
     // A window where every source failed does not advance the cursor — it is retried next run.
@@ -224,6 +240,10 @@ async function run(reason = 'timer') {
     const g = await gather();
     const t = await triage();
     const out = { reason, gather: g, triage: t, ms: Date.now() - started, at: new Date().toISOString() };
+    if (overrideOn() && g.backfill?.done && store.counts().queued === 0) {
+      store.setState('backfill_override', { on: false, at: out.at, by: 'auto', reason: 'backfill complete' });
+      out.overrideEnded = true;
+    }
     store.setState('last_run', out);
     return out;
   } catch (e) {
@@ -236,6 +256,7 @@ async function run(reason = 'timer') {
 function status() {
   return {
     caps: caps(), spentToday: spentToday(), itemsToday: itemsToday(),
+    override: store.getState('backfill_override', null),
     counts: store.counts(),
     backfill: { cursor: store.getState('backfill_cursor', null), floorDays: BACKFILL_DAYS },
     lastRun: store.getState('last_run', null),
@@ -244,4 +265,4 @@ function status() {
   };
 }
 
-module.exports = { run, gather, triage, status, setCaps, caps, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays, fetchWindow } };
+module.exports = { run, gather, triage, status, setCaps, caps, setBackfillOverride, OVERRIDE_CAPS, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays, fetchWindow } };
