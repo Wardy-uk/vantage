@@ -93,6 +93,8 @@ export const api = {
   saveImport: body => call('/plans/import/save', { method: 'POST', body }),
   rankPlans: order => call('/plans/rank', { method: 'POST', body: { order } }),
   rankTasks: (id, version, order) => call(`/plans/${encodeURIComponent(id)}/tasks/rank`, { method: 'POST', body: { version, order } }),
+  // changes: [{ id, to: 'done'|'dropped'|'open' }] or [{ id, status }] (Undo). Returns { version, before }.
+  setTaskStatus: (id, version, changes) => call(`/plans/${encodeURIComponent(id)}/tasks/status`, { method: 'POST', body: { version, changes } }),
   starTask: (id, taskId, version, starred) =>
     call(`/plans/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/star`, { method: 'POST', body: { version, starred } }),
 

@@ -510,9 +510,9 @@ async function freshRegister(id, version) {
   return { path, content };
 }
 
-async function writeCells(id, version, updates) {
+async function writeCells(id, version, updates, columns) {
   const { path, content } = await freshRegister(id, version);
-  const { markdown, problems } = setTaskCells(content, updates);
+  const { markdown, problems } = setTaskCells(content, updates, columns);
   const blocking = problems.filter(p => [...updates.keys()].some(k => p.startsWith(`${k}:`)));
   if (blocking.length) throw httpError(`Not written: ${blocking.join('; ')}`, 409, 'unwritable-row');
   if (markdown !== content) await neuro.writePlanNote(path, markdown);
@@ -535,6 +535,52 @@ async function rankTasks(id, { version, order } = {}) {
 async function star(id, taskId, { version, starred } = {}) {
   if (typeof starred !== 'boolean') throw httpError('starred must be true or false', 400);
   return writeCells(id, version, new Map([[taskId, { Star: starred ? STAR : '' }]]));
+}
+
+/**
+ * Which status words this register speaks. SIP's tables say "Planner status"
+ * with its own key; a template register says "Status". Pure.
+ */
+function vocabularyOf(content) {
+  const sip = /\|\s*Planner status\s*\|/i.test(content);
+  return sip
+    ? { column: 'Planner status', words: plan.STATUSES, done: 'Done', dropped: 'Not adding', reopen: a => (a.plannerIds.length ? 'Added' : 'To be added') }
+    : { column: 'Status', words: plan.TEMPLATE_STATUSES, done: 'Done', dropped: 'Not doing', reopen: () => 'To do' };
+}
+
+const MAX_STATUS_CHANGES = 200;
+
+/**
+ * Close, drop or reopen tasks (Nick, 29 Oct 2026: "a lot are already done").
+ * `changes` is [{ id, to: 'done'|'dropped'|'open' }] or [{ id, status: '<exact word>' }]
+ * — the second form is Undo, restoring exactly what was there. Each register
+ * keeps its own words. Returns what each row WAS, so the screen can undo.
+ */
+async function setStatus(id, { version, changes } = {}) {
+  if (!Array.isArray(changes) || !changes.length) throw httpError('changes is required', 400);
+  if (changes.length > MAX_STATUS_CHANGES) throw httpError(`At most ${MAX_STATUS_CHANGES} changes at once`, 400);
+  if (new Set(changes.map(c => c.id)).size !== changes.length) throw httpError('a task is listed twice', 400);
+  const { content } = await freshRegister(id, version);
+  const vocab = vocabularyOf(content);
+  const rows = new Map(plan.parseRegister(content).actions.map(a => [a.id, a]));
+  const updates = new Map();
+  const before = [];
+  for (const c of changes) {
+    const a = rows.get(c.id);
+    if (!a) throw httpError(`${c.id} is not in this register`, 400);
+    let word;
+    if (c.status != null) {
+      if (!vocab.words.includes(c.status)) throw httpError(`"${c.status}" is not a status this register uses (${vocab.words.join(', ')})`, 400);
+      word = c.status;
+    } else if (c.to === 'done') word = vocab.done;
+    else if (c.to === 'dropped') word = vocab.dropped;
+    else if (c.to === 'open') word = vocab.reopen(a);
+    else throw httpError(`${c.id}: "to" must be done, dropped or open`, 400);
+    before.push({ id: a.id, status: a.status });
+    updates.set(a.id, { [vocab.column]: word });
+  }
+  const r = await writeCells(id, version, updates, []);
+  return { ...r, before, changed: changes.length };
 }
 
 /** Rank the plans themselves. `order` lists plan IDs top first; every register's plan-rank is set. */
@@ -560,9 +606,9 @@ async function rankPlans({ order } = {}) {
 }
 
 module.exports = {
-  list, detail, consolidated, candidates, adopt, createPlan, fromPlanner, rankTasks, star, rankPlans,
+  list, detail, consolidated, candidates, adopt, createPlan, fromPlanner, rankTasks, star, rankPlans, setStatus,
   // pure, for tests
-  parseFrontmatter, setFrontmatterKey, setTaskCells, buildRegister, buildHub, orderTasks, sortPlans,
+  vocabularyOf, parseFrontmatter, setFrontmatterKey, setTaskCells, buildRegister, buildHub, orderTasks, sortPlans,
   summariseGeneric, versionOf, slugOf, folderProblem, toDdmm, boardStatus,
   REGISTER_SUFFIX, TEMPLATE_COLUMNS, STAR,
   _invalidate: invalidate,

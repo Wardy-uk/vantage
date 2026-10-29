@@ -169,3 +169,30 @@ test('board seeding maps status from Planner', () => {
   assert.equal(plans.boardStatus({ percentComplete: 0 }), 'To do');
   assert.equal(plans.toDdmm('2026-11-04T12:00:00Z'), '04/11');
 });
+
+test('closing a SIP task writes its own word into "Planner status", and adds no columns', () => {
+  const v = plans.vocabularyOf(SIP_LIKE);
+  assert.equal(v.column, 'Planner status');
+  assert.equal(v.dropped, 'Not adding');
+  assert.equal(v.reopen({ plannerIds: ['abc'] }), 'Added');
+  assert.equal(v.reopen({ plannerIds: [] }), 'To be added');
+  const { markdown, problems } = plans.setTaskCells(SIP_LIKE, new Map([['Q3', { 'Planner status': 'Done' }]]), []);
+  assert.deepStrictEqual(problems, []);
+  assert.ok(!/Rank|Star/.test(markdown), 'a status write adds no Rank/Star columns');
+  const rows = plan.parseRegister(markdown).actions;
+  assert.equal(rows.find(a => a.id === 'Q3').status, 'Done');
+  assert.equal(rows.find(a => a.id === 'Q1').status, 'Done');
+  assert.equal(rows.find(a => a.id === 'T2').status, 'Not adding');
+  const changed = markdown.split('\n').filter((l, i) => l !== SIP_LIKE.split('\n')[i]);
+  assert.equal(changed.length, 1, 'only the Q3 row changed');
+});
+
+test('a template register closes with its own words', () => {
+  const md = plans.buildRegister({ name: 'X', folder: 'X', rank: 1, created: '2026-10-29', sections: [{ title: 'A', actions: [{ action: 'One' }, { action: 'Two' }] }] });
+  const v = plans.vocabularyOf(md);
+  assert.equal(v.column, 'Status');
+  assert.equal(v.dropped, 'Not doing');
+  const out = plans.setTaskCells(md, new Map([['A1', { Status: v.done }], ['A2', { Status: v.dropped }]]), []).markdown;
+  const rows = plan.parseRegister(out).actions;
+  assert.deepStrictEqual(rows.map(a => a.statusKey), ['done', 'dropped']);
+});

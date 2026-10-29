@@ -290,6 +290,8 @@ app.post('/api/plans/rank', wrap(req => plans.rankPlans(req.body || {})));
 app.get('/api/plans/:id', wrap(req => plans.detail(req.params.id, { force: req.query.refresh === '1' })));
 // POST /api/plans/:id/tasks/rank { version, order: [taskId…] } — task priority (Rank column). 409 if the register changed.
 app.post('/api/plans/:id/tasks/rank', wrap(req => plans.rankTasks(req.params.id, req.body || {})));
+// POST /api/plans/:id/tasks/status { version, changes: [{ id, to: done|dropped|open } | { id, status }] } — close, drop or reopen tasks in the register (each register keeps its own words). Returns the previous statuses for Undo. 409 if the register changed.
+app.post('/api/plans/:id/tasks/status', wrap(req => plans.setStatus(req.params.id, req.body || {})));
 // POST /api/plans/:id/tasks/:taskId/star { version, starred } — the Star column. 409 if the register changed.
 app.post('/api/plans/:id/tasks/:taskId/star', wrap(req => plans.star(req.params.id, req.params.taskId, req.body || {})));
 

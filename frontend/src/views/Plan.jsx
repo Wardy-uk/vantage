@@ -69,10 +69,13 @@ function BoardLine({ a, boardAvailable }) {
   );
 }
 
-function Action({ a, groups, boardAvailable }) {
+const SIP_KEY = { Done: 'done', Added: 'doing', 'To be added': 'todo', 'Not adding': 'dropped' };
+
+function Action({ a, groups, boardAvailable, planId, closer, RowControls }) {
   return (
     <div style={{ padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
       <div className="row" style={{ gap: 8 }}>
+        {closer && RowControls && <RowControls closer={closer} row={{ planId, id: a.id, statusKey: a.statusKey || SIP_KEY[a.status] }} />}
         <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 30 }}>{a.id}</span>
         <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
         {a.group === 'review' && (
@@ -99,7 +102,7 @@ function Action({ a, groups, boardAvailable }) {
   );
 }
 
-export function SipPlan() {
+export function SipPlan({ planId, closer, CloseBar, RowControls } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -114,6 +117,8 @@ export function SipPlan() {
     finally { setBusy(false); }
   };
   useEffect(() => { load(); }, []);
+  // A tick or bulk change elsewhere on the page re-reads the register.
+  useEffect(() => { if (closer?.stamp) load(true); }, [closer?.stamp]);
 
   if (!data) return <div className="empty">{error || 'Loading…'}</div>;
 
@@ -209,6 +214,7 @@ export function SipPlan() {
           <input type="checkbox" checked={driftOnly} onChange={e => setDriftOnly(e.target.checked)} />
           only where the vault and the board disagree
         </label>
+        {closer && CloseBar && <CloseBar closer={closer} rows={shown.map(a => ({ planId, id: a.id, statusKey: a.statusKey || SIP_KEY[a.status] }))} />}
       </div>
 
       {data.sections.map(section => {
@@ -218,7 +224,7 @@ export function SipPlan() {
           <div className="card" key={section}>
             <h2>{section}</h2>
             <p className="sub">{rows.filter(a => a.status === 'Done').length} of {rows.length} done</p>
-            {rows.map(a => <Action key={a.id} a={a} groups={data.groups} boardAvailable={data.board.available} />)}
+            {rows.map(a => <Action key={a.id} a={a} groups={data.groups} boardAvailable={data.board.available} planId={planId} closer={closer} RowControls={RowControls} />)}
           </div>
         );
       })}

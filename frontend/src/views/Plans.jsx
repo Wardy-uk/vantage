@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { SipPlan } from './Plan.jsx';
 
@@ -102,6 +102,115 @@ function StatusPill({ status, statusKey }) {
   return <span className="pill" style={{ color: c, borderColor: c }}>{status || 'no status'}</span>;
 }
 
+/**
+ * Closing tasks (29 Oct 2026): a tick on every row, a Select mode for many at
+ * once, and Undo straight after. One closer is shared by the whole page so a
+ * change in one panel reloads the others (`stamp`). Every write carries the
+ * register's version; a 409 means it was edited elsewhere — say so and reload.
+ */
+function useCloser() {
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Map());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [undo, setUndo] = useState(null);
+  const [stamp, setStamp] = useState(0);
+  const versions = useRef({});
+
+  const keyOf = r => `${r.planId}:${r.id}`;
+  const group = items => items.reduce((m, r) => m.set(r.planId, [...(m.get(r.planId) || []), r]), new Map());
+
+  const apply = async (items, to, label) => {
+    setBusy(true); setMsg(null);
+    const entries = [];
+    try {
+      for (const [planId, rows] of group(items)) {
+        const r = await api.setTaskStatus(planId, versions.current[planId], rows.map(x => ({ id: x.id, to })));
+        versions.current[planId] = r.version;
+        entries.push({ planId, before: r.before });
+      }
+      setUndo({ entries, label });
+      setSelected(new Map());
+    } catch (e) {
+      setMsg(e.status === 409 ? e.message : `Not saved — ${e.message}`);
+      if (entries.length) setUndo({ entries, label: `${label} (partly)` });
+    } finally { setBusy(false); setStamp(s => s + 1); }
+  };
+
+  const runUndo = async () => {
+    if (!undo) return;
+    setBusy(true); setMsg(null);
+    try {
+      for (const e of undo.entries) {
+        const r = await api.setTaskStatus(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, status: b.status })));
+        versions.current[e.planId] = r.version;
+      }
+      setUndo(null);
+    } catch (e) { setMsg(`Undo failed — ${e.message}`); }
+    finally { setBusy(false); setStamp(s => s + 1); }
+  };
+
+  return {
+    selectMode, busy, msg, undo, stamp, selected, runUndo,
+    setVersion: (planId, v) => { if (v) versions.current[planId] = v; },
+    toggleSelectMode: () => { setSelectMode(m => !m); setSelected(new Map()); },
+    isSelected: r => selected.has(keyOf(r)),
+    toggle: r => setSelected(prev => { const n = new Map(prev); if (n.has(keyOf(r))) n.delete(keyOf(r)); else n.set(keyOf(r), r); return n; }),
+    selectAll: rows => setSelected(prev => { const n = new Map(prev); rows.forEach(r => n.set(keyOf(r), r)); return n; }),
+    tick: r => apply([r], r.statusKey === 'done' ? 'open' : 'done', r.statusKey === 'done' ? `Reopened ${r.id}` : `Marked ${r.id} done`),
+    bulk: to => apply([...selected.values()], to, `${{ done: 'Marked', dropped: 'Set not doing on', open: 'Reopened' }[to]} ${selected.size} task${selected.size === 1 ? '' : 's'}${to === 'done' ? ' done' : ''}`),
+  };
+}
+
+/** The tick (or, in Select mode, the selection box) for one task. */
+function RowControls({ closer, row }) {
+  if (!closer) return null;
+  if (closer.selectMode) {
+    return <input type="checkbox" checked={closer.isSelected(row)} onChange={() => closer.toggle(row)} title="Select" />;
+  }
+  const done = row.statusKey === 'done';
+  return (
+    <input type="checkbox" checked={done} disabled={closer.busy} onChange={() => closer.tick(row)}
+      title={done ? 'Done — untick to reopen' : 'Mark done'} style={{ accentColor: 'var(--good)' }} />
+  );
+}
+
+/** Select mode, the bulk actions with a confirm, Undo, and any refusal. */
+function CloseBar({ closer, rows = [] }) {
+  const [confirm, setConfirm] = useState(null);
+  const n = closer.selected.size;
+  const label = { done: 'Mark done', dropped: 'Not doing', open: 'Reopen' };
+  return (
+    <div className="row small" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+      <button className={closer.selectMode ? 'primary small' : 'small'} onClick={() => { closer.toggleSelectMode(); setConfirm(null); }}>
+        {closer.selectMode ? 'Done selecting' : 'Select tasks'}
+      </button>
+      {closer.selectMode && (
+        <>
+          <button className="ghost small" onClick={() => closer.selectAll(rows)}>Select all shown ({rows.length})</button>
+          <span className="muted">{n} selected</span>
+          {!confirm && ['done', 'dropped', 'open'].map(to => (
+            <button key={to} className="small" disabled={!n || closer.busy} onClick={() => setConfirm(to)}>{label[to]}</button>
+          ))}
+          {confirm && (
+            <>
+              <span>{label[confirm]} for {n} task{n === 1 ? '' : 's'}? Written to the register in the vault.</span>
+              <button className="primary small" disabled={closer.busy} onClick={async () => { await closer.bulk(confirm); setConfirm(null); }}>
+                {closer.busy ? 'Saving…' : 'Yes'}
+              </button>
+              <button className="ghost small" onClick={() => setConfirm(null)}>Cancel</button>
+            </>
+          )}
+        </>
+      )}
+      {closer.undo && !closer.busy && (
+        <span>{closer.undo.label}. <button className="ghost small" onClick={closer.runUndo}>Undo</button></span>
+      )}
+      {closer.msg && <span style={{ color: 'var(--warn)' }}>{closer.msg}</span>}
+    </div>
+  );
+}
+
 /** A write that may come back 409 (register changed): say so, then reload. */
 function useWrite(reload) {
   const [busy, setBusy] = useState(false);
@@ -117,13 +226,14 @@ function useWrite(reload) {
 }
 
 /** Open tasks in this plan's priority order: drag to rank, star to lead the consolidated view. */
-function PriorityPanel({ id }) {
+function PriorityPanel({ id, closer }) {
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
   const load = async () => {
-    try { setD(await api.planDetail(id)); setError(null); } catch (e) { setError(e.message); }
+    try { const x = await api.planDetail(id); setD(x); closer?.setVersion(id, x.version); setError(null); } catch (e) { setError(e.message); }
   };
   useEffect(() => { setD(null); load(); }, [id]);
+  useEffect(() => { if (closer?.stamp) load(); }, [closer?.stamp]);
   const { busy, note, run } = useWrite(load);
 
   if (error) return <div className="banner bad">The plan could not be read for ranking ({error}).</div>;
@@ -146,6 +256,7 @@ function PriorityPanel({ id }) {
         onReorder={next => run(() => api.rankTasks(id, d.version, next.map(a => a.id)))}
         render={a => (
           <>
+            <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey }} />
             <StarButton starred={a.starred} busy={busy} onClick={() => run(() => api.starTask(id, a.id, d.version, !a.starred))} />
             <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{a.id}</span>
             <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
@@ -161,17 +272,18 @@ function PriorityPanel({ id }) {
 }
 
 /** A plan that is not SIP: counts, problems, priority order, then the whole register by section. */
-function GenericPlan({ id }) {
+function GenericPlan({ id, closer }) {
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('all');
   const load = async (refresh = false) => {
     setBusy(true);
-    try { setD(await api.planDetail(id, refresh)); setError(null); } catch (e) { setError(e.message); }
+    try { const x = await api.planDetail(id, refresh); setD(x); closer.setVersion(id, x.version); setError(null); } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
   useEffect(() => { setD(null); load(); }, [id]);
+  useEffect(() => { if (closer.stamp) load(); }, [closer.stamp]);
 
   if (!d) return <div className="empty">{error || 'Loading…'}</div>;
   if (!d.available) {
@@ -205,11 +317,12 @@ function GenericPlan({ id }) {
         </div>
       </div>
 
-      <PriorityPanel id={id} />
+      <PriorityPanel id={id} closer={closer} />
 
       <div className="card">
         <Chips label="Status" value={status} onChange={setStatus}
           options={[['all', 'All'], ['open', 'Open'], ['todo', 'To do'], ['doing', 'In progress'], ['done', 'Done'], ['dropped', 'Not doing']]} />
+        <CloseBar closer={closer} rows={shown.map(a => ({ planId: id, id: a.id, statusKey: a.statusKey }))} />
       </div>
       {!d.actions.length && <div className="empty">This register has no actions yet. Add rows to its table in the vault.</div>}
       {d.sections.map(section => {
@@ -222,6 +335,7 @@ function GenericPlan({ id }) {
             {rows.map(a => (
               <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
                 <div className="row" style={{ gap: 8 }}>
+                  <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey }} />
                   <span style={{ color: a.starred ? 'var(--warn)' : 'transparent' }}>★</span>
                   <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{a.id}</span>
                   <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
@@ -244,7 +358,7 @@ function GenericPlan({ id }) {
 }
 
 /** Every plan's tasks on one list: starred, then plan rank, then task rank (ordered by the server). */
-function Consolidated({ plans }) {
+function Consolidated({ plans, closer }) {
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
   const [planF, setPlanF] = useState('all');
@@ -252,9 +366,14 @@ function Consolidated({ plans }) {
   const [owner, setOwner] = useState('all');
   const [starredOnly, setStarredOnly] = useState(false);
   const load = async (refresh = false) => {
-    try { setD(await api.plansConsolidated(refresh)); setError(null); } catch (e) { setError(e.message); }
+    try {
+      const x = await api.plansConsolidated(refresh);
+      x.plans.forEach(p => closer.setVersion(p.id, p.version));
+      setD(x); setError(null);
+    } catch (e) { setError(e.message); }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (closer.stamp) load(); }, [closer.stamp]);
   const { busy, note, run } = useWrite(() => load());
 
   if (!d) return <div className="empty">{error || 'Loading…'}</div>;
@@ -291,12 +410,14 @@ function Consolidated({ plans }) {
         <label className="small row" style={{ gap: 6 }}>
           <input type="checkbox" checked={starredOnly} onChange={e => setStarredOnly(e.target.checked)} /> starred only
         </label>
+        <CloseBar closer={closer} rows={shown.map(t => ({ planId: t.planId, id: t.id, statusKey: t.statusKey }))} />
       </div>
       <div className="card">
         <p className="sub">{shown.length} of {d.tasks.length} tasks</p>
         {!shown.length && <div className="empty">No tasks match these filters.</div>}
         {shown.map(t => (
           <div key={`${t.planId}:${t.id}`} className="row" style={{ gap: 8, padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+            <RowControls closer={closer} row={{ planId: t.planId, id: t.id, statusKey: t.statusKey }} />
             <StarButton starred={t.starred} busy={busy}
               onClick={() => run(() => api.starTask(t.planId, t.id, version[t.planId], !t.starred))} />
             <span className="pill" title={`Plan priority ${t.planRank ?? '—'}`} style={{ minWidth: 0 }}>{t.planName}</span>
@@ -496,6 +617,7 @@ export default function Plans() {
   const [selected, setSelected] = useState(readSelected);
   const [panel, setPanel] = useState(null); // 'add' | 'reorder'
   const [busy, setBusy] = useState(false);
+  const closer = useCloser();
 
   const load = async (refresh = false) => {
     setBusy(true);
@@ -503,7 +625,9 @@ export default function Plans() {
     finally { setBusy(false); }
   };
   useEffect(() => { load(); }, []);
-  const choose = id => { setSelected(id); saveSelected(id); };
+  // Counts on the plan buttons follow a close.
+  useEffect(() => { if (closer.stamp) load(); }, [closer.stamp]);
+  const choose = id => { setSelected(id); saveSelected(id); if (closer.selectMode) closer.toggleSelectMode(); };
 
   if (!data) return <div className="wrap wide"><div className="empty">{error || 'Loading plans…'}</div></div>;
   const plans = data.plans;
@@ -538,9 +662,9 @@ export default function Plans() {
       {panel === 'reorder' && <ReorderPlans plans={plans} onDone={async saved => { setPanel(null); if (saved) await load(true); }} />}
       {panel === 'add' && <AddPlan onDone={async id => { setPanel(null); if (id) { await load(true); choose(id); } }} />}
 
-      {view === 'all' && <Consolidated key={plans.map(p => `${p.id}:${p.rank}`).join()} plans={plans} />}
-      {view !== 'all' && current?.isSip && (<><PriorityPanel id={current.id} /><SipPlan /></>)}
-      {view !== 'all' && current && !current.isSip && <GenericPlan id={current.id} />}
+      {view === 'all' && <Consolidated key={plans.map(p => `${p.id}:${p.rank}`).join()} plans={plans} closer={closer} />}
+      {view !== 'all' && current?.isSip && (<><PriorityPanel id={current.id} closer={closer} /><SipPlan planId={current.id} closer={closer} CloseBar={CloseBar} RowControls={RowControls} /></>)}
+      {view !== 'all' && current && !current.isSip && <GenericPlan id={current.id} closer={closer} />}
     </div>
   );
 }

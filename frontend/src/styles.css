@@ -48,6 +48,8 @@ input, textarea, select {
   width: 100%;
 }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+/* Checkboxes and radios are not text fields: the width: 100% above stretched them across the row, leaving the box far from its label. */
+input[type=checkbox], input[type=radio] { width: auto; padding: 0; flex: 0 0 auto; }
 textarea { resize: vertical; font-family: inherit; }
 
 /* Scrollbars. The default Windows/Chromium bar is a wide light-grey slab that
