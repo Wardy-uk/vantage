@@ -561,6 +561,24 @@ function GatherTab({ data, reload }) {
   );
 }
 
+/**
+ * One line, always on screen: is VANTAGE reading right now, and if not, why
+ * not and when it carries on. Composed only from what /api/perf reports.
+ */
+function statusLine(g) {
+  const left = g.counts.queued;
+  const today = `${g.itemsToday} of ${g.caps.dailyItems} items today, $${g.spentToday.usd.toFixed(2)} of $${g.caps.dailyUsd}`;
+  if (g.running) return { tone: 'info', text: `Reading now — ${left} still to read (${today}).` };
+  const stop = g.lastRun?.triage?.stopped;
+  const at = g.lastRun?.at ? new Date(g.lastRun.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+  if (g.lastRun?.error) return { tone: 'bad', text: `The last pass${at ? ` at ${at}` : ''} failed: ${g.lastRun.error}. It tries again within 30 minutes.` };
+  if (stop === 'item-cap' || stop === 'spend-cap') return { tone: 'warn', text: `Paused — today's ${stop === 'item-cap' ? 'item' : 'spend'} cap is reached (${today}). ${left} still to read; carries on tomorrow from 07:00.` };
+  if (stop === 'no-roles') return { tone: 'warn', text: 'Waiting for a role profile — add one under Roles.' };
+  if (stop === 'model-failed') return { tone: 'bad', text: `The model failed on the last pass${at ? ` (${at})` : ''}. It tries again within 30 minutes.` };
+  if (left > 0) return { tone: 'info', text: `${left} still to read — the next pass runs within 30 minutes (07:00–22:00). Last pass ${at || 'not yet'}.` };
+  return { tone: 'info', text: `Up to date — everything gathered has been read. Checks for new evidence every 30 minutes (07:00–22:00).${at ? ` Last pass ${at}.` : ''}` };
+}
+
 // ── page ─────────────────────────────────────────────────────────────────────
 
 export default function Evidence() {
@@ -574,6 +592,12 @@ export default function Evidence() {
     setBump((b) => b + 1);
   }, []);
   useEffect(() => { reload(); }, [reload]);
+  // Keep the status line current while the page is open. Only the overview is
+  // re-read — the lists below keep their place.
+  useEffect(() => {
+    const t = setInterval(() => { api.perf().then(setData).catch(() => {}); }, 60_000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => { refusedSink = setRefused; return () => { refusedSink = null; }; }, []);
   const roles = useMemo(() => ({ current: data?.roles.current || null, future: data?.roles.future || null }), [data]);
 
@@ -603,6 +627,7 @@ export default function Evidence() {
       <nav style={{ marginBottom: 12 }}>
         {tabs.map(([k, l]) => <button key={k} className={sub === k ? 'on' : ''} onClick={() => setSub(k)}>{l}</button>)}
       </nav>
+      {(() => { const s = statusLine(data.gather); return <div className={`banner ${s.tone}`}>{s.text}</div>; })()}
       {refused && <div className="banner warn">{refused.length} item(s) not changed: {refused.slice(0, 3).map((r) => r.error).join(' · ')} <button className="small" onClick={() => setRefused(null)}>OK</button></div>}
       {!roles.current && !roles.future && sub !== 'roles' && (
         <div className="banner info">Start with Roles: add the job description for your current role (and the one you are aiming for). Gathered items are read against those profiles.</div>
