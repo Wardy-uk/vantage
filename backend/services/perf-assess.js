@@ -160,7 +160,7 @@ async function assess(slot) {
   const reply = await openrouter.complete([
     { role: 'system', content: PROMPT },
     { role: 'user', content: `${profileText}\n\nACCEPTED EVIDENCE:\n${evText}` },
-  ], { temperature: 0.2, maxTokens: 12000, json: true, callType: 'perf_assess' });
+  ], { temperature: 0.2, maxTokens: 12000, json: true, callType: 'perf_assess', timeoutMs: 300_000 });
   const result = parseAssessment(reply.text, { skills, bySkill });
   const saved = store.saveAssessment(slot, role.id, { ...result, evidenceRead: chosen.length, model: reply.model });
   let plan = [];

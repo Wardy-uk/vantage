@@ -78,7 +78,7 @@ function gateClose(ticket, usage) {
   try { require('./ai-gate').settle(ticket, usage); } catch { /* bookkeeping never fails a call */ }
 }
 
-async function attempt(messages, { model, temperature, maxTokens, json, callType }) {
+async function attempt(messages, { model, temperature, maxTokens, json, callType, timeoutMs = TIMEOUT_MS }) {
   const ledger = require('./llm-ledger');
   const started = Date.now();
   const ticket = gateOpen({ model, maxTokens, callType, messages });
@@ -101,14 +101,24 @@ async function attempt(messages, { model, temperature, maxTokens, json, callType
         usage: { include: true },
         ...(json ? { response_format: { type: 'json_object' } } : {}),
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     gateClose(ticket, { ok: false, error: e.message });
     throw e;
   }
 
-  const payload = await res.json().catch(() => ({}));
+  // ⚠ The timeout covers the BODY too. An abort while the answer is still
+  // arriving used to be swallowed here into {} and reported as "no content,
+  // and no reason given" (29 Oct 2026, a long assessment) — a timeout must say so.
+  let bodyError = null;
+  const payload = await res.json().catch((e) => { bodyError = e; return {}; });
+  if (bodyError && /abort|timeout/i.test(`${bodyError.name} ${bodyError.message}`)) {
+    const detail = `timed out after ${Math.round(timeoutMs / 1000)}s while the answer was still arriving`;
+    gateClose(ticket, { ok: false, error: detail });
+    ledger.record({ model, callType, ok: false, error: detail, latencyMs: Date.now() - started });
+    throw new Error(`OpenRouter ${detail} — try again`);
+  }
   const usage = payload?.usage || null;
   const served = payload?.model || model;
   // An empty or refused answer can still carry usage; settle on it when it does.
@@ -187,12 +197,12 @@ async function attempt(messages, { model, temperature, maxTokens, json, callType
  * Both attempts are recorded in the ledger. A retry that hides the first
  * failure would turn an 11% blank rate into a number nobody could see.
  */
-async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false, callType = null, retryOnEmpty = false } = {}) {
+async function complete(messages, { model = DEFAULT_MODEL, temperature = 0.7, maxTokens = 2000, json = false, callType = null, retryOnEmpty = false, timeoutMs = TIMEOUT_MS } = {}) {
   if (!isConfigured()) {
     throw new Error('OPENROUTER_API_KEY is not set — add it to backend/.env');
   }
 
-  const opts = { model, temperature, maxTokens, json, callType };
+  const opts = { model, temperature, maxTokens, json, callType, timeoutMs };
   try {
     return await attempt(messages, opts);
   } catch (err) {
