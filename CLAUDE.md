@@ -367,6 +367,16 @@ backfill under **daily caps** (spend + items, `perf_state.caps`).
 - `perf-assess.js` — the rules are enforced in `parseAssessment`, not the
   prompt: no accepted evidence → `no-evidence`; a rating citing nothing valid →
   `unrated`; under half the skills rated → readiness `too-little-evidence`.
+- **Development plan** (29 Oct 2026, Nick's three answers: a tab per role;
+  an agreed action goes to NEURO as a task; written with each reassessment).
+  Same model call as the assessment; `parsePlan` keeps actions only for a REAL
+  gap (skill not met, attribute below target or unseen). `perf_plan` table:
+  a reassessment SUPERSEDES open actions and never re-offers one already
+  pushed or dismissed (matched on normalised wording). "Add to NEURO" =
+  `neuro.createTask` (an existing write — the count is unchanged), source
+  `vantage-development`, origin **improvement** (his own development is never a
+  commitment), and the task's live status is read back via `allTasks`
+  ("status unknown" when NEURO does not answer, never "open").
 - `perf-export.js` — prints only items ticked into the case, as Nick's summary.
 - `sfia.js` — ⚠ repo is PUBLIC: only level and attribute NAMES live here. Codes
   are checked against a private `backend/data/sfia9-catalogue.json` on the Pi

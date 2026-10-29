@@ -501,6 +501,103 @@ function AssessTab({ data, reload }) {
 
 // ── Add evidence ─────────────────────────────────────────────────────────────
 
+const PRIORITY = { 1: ['Moves readiness most', 'var(--bad)'], 2: ['Solid step', 'var(--warn)'], 3: ['Nice to have', 'var(--muted)'] };
+const TASK_STATE = { open: 'open', 'in-progress': 'in progress', done: 'done ✓', dropped: 'dropped', gone: 'no longer in NEURO', unknown: 'status unknown — NEURO did not answer' };
+
+/** One role's development plan: the gaps, and what to do about each. */
+function PlanCard({ slot, label, data }) {
+  const [plan, setPlan] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const role = data.roles[slot];
+  const a = data.assessments[slot];
+  const load = useCallback(async () => {
+    try { setPlan(await api.perfPlan(slot)); setErr(null); } catch (x) { setErr(x.message); }
+  }, [slot]);
+  useEffect(() => { load(); }, [load, a?.id]);
+  const act = async (id, what) => {
+    setBusy(id); setErr(null);
+    try { await api.perfPlanAct(id, what); await load(); } catch (x) { setErr(x.message); } finally { setBusy(null); }
+  };
+  const nameOf = (code) => role?.profile.skills.find((s) => s.code === code)?.name || ATTRS.find(([k]) => k === code)?.[1] || code;
+  const ratingOf = (code) => {
+    const s = a?.skills.find((x) => x.code === code);
+    if (s) return { text: `${RATING[s.rating]?.label || s.rating} · target L${s.target}${s.observedLevel ? `, seen L${s.observedLevel}` : ''}`, color: RATING[s.rating]?.color };
+    const at = a?.attributes?.[code];
+    if (at) return { text: `Attribute · target L${role?.profile.attributes?.[code]?.level ?? '?'}, seen ${at.observedLevel ? `L${at.observedLevel}` : '—'}`, color: 'var(--warn)' };
+    return { text: '', color: undefined };
+  };
+  const items = plan?.items || [];
+  const live = items.filter((i) => i.state !== 'dismissed');
+  const dismissed = items.filter((i) => i.state === 'dismissed');
+  const groups = [];
+  for (const i of live) {
+    let g = groups.find((x) => x.code === i.code);
+    if (!g) { g = { code: i.code, items: [] }; groups.push(g); }
+    g.items.push(i);
+  }
+  groups.sort((x, y) => Math.min(...x.items.map((i) => i.priority)) - Math.min(...y.items.map((i) => i.priority)));
+  return (
+    <div className="card">
+      <h2 style={{ margin: 0 }}>{label}{role ? ` — ${role.profile.title}` : ''}</h2>
+      {err && <div className="banner bad">{err}</div>}
+      {plan?.tasksError && <div className="banner warn">Could not read NEURO for task status — {plan.tasksError}</div>}
+      {!a && <p className="small muted">Not assessed yet. The plan is written when you press Reassess on the Assessment tab.</p>}
+      {a && plan && !live.length && (
+        <p className="small muted">{a.skills.every((s) => s.rating === 'met') ? 'Every skill is met — nothing to close.' : 'No plan yet for this assessment. Press Reassess on the Assessment tab to write one.'}</p>
+      )}
+      {groups.map((g) => {
+        const r = ratingOf(g.code);
+        return (
+          <div key={g.code} style={{ marginTop: 14 }}>
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              <b>{/^[A-Z]+$/.test(g.code) ? `${g.code} ` : ''}{nameOf(g.code)}</b>
+              {r.text && <span className="small" style={{ color: r.color }}>{r.text}</span>}
+            </div>
+            {g.items.sort((x, y) => x.priority - y.priority).map((i) => (
+              <div key={i.id} className="row" style={{ alignItems: 'flex-start', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
+                <span className="small" style={{ color: PRIORITY[i.priority]?.[1], minWidth: 150 }}>{PRIORITY[i.priority]?.[0]}</span>
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div>{i.action}</div>
+                  {i.proves && <div className="small muted">Would show: {i.proves}</div>}
+                </div>
+                {i.state === 'open' && (
+                  <span className="row" style={{ gap: 6 }}>
+                    <button className="primary small" disabled={busy === i.id} onClick={() => act(i.id, 'push')}>{busy === i.id ? 'Adding…' : 'Add to NEURO'}</button>
+                    <button className="small" disabled={busy === i.id} onClick={() => act(i.id, 'dismiss')}>Not for me</button>
+                  </span>
+                )}
+                {i.state === 'pushed' && <span className="small" style={{ color: 'var(--good)' }}>In NEURO{i.neuroTaskId ? ` #${i.neuroTaskId}` : ''} · {TASK_STATE[i.taskStatus] || i.taskStatus || 'added'}</span>}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {dismissed.length > 0 && (
+        <p className="small muted" style={{ marginTop: 10 }}>
+          <button className="small" onClick={() => setShowDismissed(!showDismissed)}>{showDismissed ? 'Hide' : 'Show'} {dismissed.length} you said were not for you</button>
+        </p>
+      )}
+      {showDismissed && dismissed.map((i) => (
+        <div key={i.id} className="row small muted" style={{ gap: 12, padding: '4px 0' }}>
+          <span>{i.code}</span><span style={{ flex: 1 }}>{i.action}</span>
+          <button className="small" disabled={busy === i.id} onClick={() => act(i.id, 'restore')}>Bring back</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlanTab({ data }) {
+  return (
+    <div>
+      <p className="sub">What to do to close each gap, written with every reassessment from the evidence behind the rating. Only skills not yet met (and attributes below target) get actions. "Add to NEURO" makes it a task in your list as continual improvement — never a commitment — and finishing it there comes back here as evidence. An action you added or dismissed is never offered again.</p>
+      {SLOTS.map(([slot, label]) => <PlanCard key={slot} slot={slot} label={label} data={data} />)}
+    </div>
+  );
+}
+
 function AddTab({ data, onAdded }) {
   const [form, setForm] = useState({ occurredAt: today(), title: '', detail: '', ref: '', tags: [] });
   const [err, setErr] = useState(null);
@@ -663,6 +760,7 @@ export default function Evidence() {
     ['review', `Review${c.proposed ? ` (${c.proposed})` : ''}`],
     ['accepted', `Evidence (${c.accepted})`],
     ['assess', 'Assessment'],
+    ['plan', 'Development plan'],
     ['roles', 'Roles'],
     ['add', 'Add evidence'],
     ['closed', 'Rejected & not relevant'],
@@ -698,6 +796,7 @@ export default function Evidence() {
         </>
       )}
       {sub === 'assess' && <AssessTab data={data} reload={reload} />}
+      {sub === 'plan' && <PlanTab data={data} />}
       {sub === 'roles' && <RolesTab data={data} reload={reload} />}
       {sub === 'add' && <AddTab data={data} onAdded={reload} />}
       {sub === 'gather' && <GatherTab data={data} reload={reload} />}

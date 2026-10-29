@@ -155,4 +155,6 @@ export const api = {
   perfOverride: on => call('/perf/backfill-override', { method: 'POST', body: { on } }),
   perfAssess: slot => call(`/perf/assess/${slot}`, { method: 'POST' }),
   perfExport: slot => call(`/perf/export/${slot}`),
+  perfPlan: slot => call(`/perf/plan/${slot}`),
+  perfPlanAct: (id, act) => call(`/perf/plan/${id}/${act}`, { method: 'POST' }),
 };

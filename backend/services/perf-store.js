@@ -67,6 +67,26 @@ function db() {
         json       TEXT NOT NULL
       );
 
+      -- The development plan (29 Oct 2026): what to do to close each gap.
+      -- Written with each assessment. A plan action is 'open' until Nick pushes
+      -- it to NEURO ('pushed', with the task id) or dismisses it; a newer
+      -- assessment SUPERSEDES the open ones it no longer repeats and never
+      -- touches pushed or dismissed ones.
+      CREATE TABLE IF NOT EXISTS perf_plan (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        slot           TEXT NOT NULL,
+        assessment_id  INTEGER NOT NULL,
+        code           TEXT NOT NULL,
+        action         TEXT NOT NULL,
+        proves         TEXT,
+        priority       INTEGER NOT NULL DEFAULT 2,
+        state          TEXT NOT NULL CHECK (state IN ('open','pushed','dismissed','superseded')),
+        neuro_task_id  INTEGER,
+        created_at     TEXT NOT NULL,
+        decided_at     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_perf_plan_slot ON perf_plan(slot, state);
+
       CREATE TABLE IF NOT EXISTS perf_state (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -271,7 +291,50 @@ function assessmentHistory(slot, limit = 20) {
     .map((r) => { const j = parse(r.json, {}); return { id: r.id, roleId: r.role_id, createdAt: r.created_at, readiness: j.readiness?.rating || null, counts: j.counts || null }; });
 }
 
+// ── development plan ─────────────────────────────────────────────────────────
+
+const planKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const planRow = (r) => r && ({
+  id: r.id, slot: r.slot, assessmentId: r.assessment_id, code: r.code, action: r.action, proves: r.proves,
+  priority: r.priority, state: r.state, neuroTaskId: r.neuro_task_id, createdAt: r.created_at, decidedAt: r.decided_at,
+});
+
+/**
+ * Save a new assessment's plan. Open actions from earlier plans are superseded;
+ * an action already pushed or dismissed (same wording) is NOT offered again,
+ * so pressing Reassess never duplicates work already in NEURO.
+ */
+function savePlan(slot, assessmentId, items) {
+  const d = db();
+  const decided = new Set(d.prepare("SELECT action FROM perf_plan WHERE slot = ? AND state IN ('pushed','dismissed')").all(slot).map((r) => planKey(r.action)));
+  const ins = d.prepare(`INSERT INTO perf_plan (slot, assessment_id, code, action, proves, priority, state, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`);
+  let added = 0;
+  d.transaction(() => {
+    d.prepare("UPDATE perf_plan SET state = 'superseded', decided_at = ? WHERE slot = ? AND state = 'open'").run(now(), slot);
+    for (const it of items) {
+      if (decided.has(planKey(it.action))) continue;
+      ins.run(slot, assessmentId, it.code, it.action, it.proves || null, it.priority, now());
+      added += 1;
+    }
+  })();
+  return added;
+}
+
+function planFor(slot) {
+  return db().prepare("SELECT * FROM perf_plan WHERE slot = ? AND state IN ('open','pushed','dismissed') ORDER BY state = 'open' DESC, priority, id")
+    .all(slot).map(planRow);
+}
+
+const planItem = (id) => planRow(db().prepare('SELECT * FROM perf_plan WHERE id = ?').get(id));
+
+function setPlanState(id, state, taskId = null) {
+  db().prepare('UPDATE perf_plan SET state = ?, neuro_task_id = COALESCE(?, neuro_task_id), decided_at = ? WHERE id = ?').run(state, taskId, now(), id);
+  return planItem(id);
+}
+
 module.exports = {
+  savePlan, planFor, planItem, setPlanState,
   STATES, SLOTS, getState, setState,
   activeRole, roleHistory, saveRole,
   enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,

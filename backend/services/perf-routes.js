@@ -160,6 +160,58 @@ function mount(app, wrap) {
   }));
 
   app.post('/api/perf/assess/:slot', wrap((req) => assess.assess(req.params.slot)));
+
+  // Development plan. Live state of a pushed action is read back from NEURO;
+  // an unreadable NEURO is said ("status unknown"), never shown as open.
+  app.get('/api/perf/plan/:slot', wrap(async (req) => {
+    const slot = req.params.slot;
+    if (!store.SLOTS.includes(slot)) throw bad('slot must be current or future');
+    const items = store.planFor(slot);
+    let tasks = null; let tasksError = null;
+    if (items.some((i) => i.neuroTaskId)) {
+      try {
+        const r = await require('./neuro').allTasks();
+        const list = r?.tasks || r?.data?.tasks || r?.data || r || [];
+        tasks = new Map((Array.isArray(list) ? list : []).map((t) => [Number(t.id), t]));
+      } catch (e) { tasksError = e.message; }
+    }
+    return {
+      slot,
+      tasksError,
+      items: items.map((i) => {
+        const t = i.neuroTaskId && tasks ? tasks.get(Number(i.neuroTaskId)) : null;
+        return { ...i, taskStatus: i.neuroTaskId ? (t ? t.status : tasks ? 'gone' : 'unknown') : null };
+      }),
+    };
+  }));
+  app.post('/api/perf/plan/:id/push', wrap(async (req) => {
+    const it = store.planItem(Number(req.params.id));
+    if (!it) throw bad('No such plan action', 404);
+    if (it.state !== 'open') throw bad(`That action is already ${it.state}`, 409);
+    const role = store.activeRole(it.slot);
+    const neuro = require('./neuro');
+    const created = await neuro.createTask({
+      text: it.action,
+      source: 'vantage-development',
+      // His own development: nobody else is waiting on it, so it is never a commitment.
+      origin: 'improvement',
+      notes: [`Development plan — ${role?.profile?.title || it.slot} role, ${it.code}.`, it.proves ? `Would show: ${it.proves}` : null].filter(Boolean).join('\n'),
+    });
+    const taskId = created?.id ?? created?.task?.id ?? created?.data?.id ?? created?.data?.task?.id ?? null;
+    return store.setPlanState(it.id, 'pushed', taskId);
+  }));
+  app.post('/api/perf/plan/:id/dismiss', wrap((req) => {
+    const it = store.planItem(Number(req.params.id));
+    if (!it) throw bad('No such plan action', 404);
+    if (it.state !== 'open') throw bad(`That action is already ${it.state}`, 409);
+    return store.setPlanState(it.id, 'dismissed');
+  }));
+  app.post('/api/perf/plan/:id/restore', wrap((req) => {
+    const it = store.planItem(Number(req.params.id));
+    if (!it) throw bad('No such plan action', 404);
+    if (it.state !== 'dismissed') throw bad('Only a dismissed action can be brought back', 409);
+    return store.setPlanState(it.id, 'open');
+  }));
   app.get('/api/perf/export/:slot', wrap((req) => {
     if (!store.SLOTS.includes(req.params.slot)) throw bad('slot must be current or future');
     return exporter.exportSlot(req.params.slot);

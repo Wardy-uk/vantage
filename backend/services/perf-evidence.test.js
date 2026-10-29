@@ -147,3 +147,25 @@ test('NOVA: a 1-2-1 with a display-string completedAt is dated by its scheduled 
   assert.equal(items.length, 1, 'the live bridge shape must not be filtered out');
   assert.equal(items[0].at, '2026-03-10T12:00:00');
 });
+
+test('the development plan: only real gaps get actions, met skills get none, attributes only below target', () => {
+  const { parsePlan } = require('./perf-assess');
+  const role = { profile: { skills, attributes: { autonomy: { level: 5 }, influence: { level: 5 }, complexity: { level: 5 }, knowledge: { level: 5 }, business_skills: { level: 5 } } } };
+  const assessment = {
+    skills: [{ code: 'SLMO', rating: 'met' }, { code: 'PEMT', rating: 'partly' }, { code: 'QUAS', rating: 'no-evidence' }],
+    attributes: { autonomy: { observedLevel: 5 }, influence: { observedLevel: 4 }, complexity: { observedLevel: null }, knowledge: { observedLevel: 5 }, business_skills: { observedLevel: 6 } },
+  };
+  const plan = parsePlan({ plan: [
+    { code: 'SLMO', action: 'Homework for a skill already met', priority: 1 },
+    { code: 'pemt', action: 'Run a calibration session on 1-2-1 actions with both team leads', proves: 'calibration notes', priority: 1 },
+    { code: 'PEMT', action: 'Run a calibration session on 1-2-1 actions with both team leads', priority: 2 },
+    { code: 'QUAS', action: 'Publish the QA scorecard monthly to SMT', priority: 9 },
+    { code: 'Influence', action: 'Present the KB health report at the SLT meeting', priority: 2 },
+    { code: 'complexity', action: 'Lead the Intelligent Front Door design review', priority: 3 },
+    { code: 'autonomy', action: 'Something for an attribute already at target', priority: 1 },
+    { code: 'XXXX', action: 'Invented skill code action here', priority: 1 },
+    { code: 'PEMT', action: 'short' },
+  ] }, { assessment, role });
+  assert.deepEqual(plan.map((p) => p.code), ['PEMT', 'QUAS', 'influence', 'complexity']);
+  assert.equal(plan.find((p) => p.code === 'QUAS').priority, 2, 'an invalid priority falls back to 2');
+});
