@@ -295,10 +295,23 @@ function CloseBar({ closer, rows = [] }) {
         </>
       )}
       {closer.selectMode && replan && n > 0 && <ReplanPanel closer={closer} onClose={() => setReplan(false)} />}
-      {closer.undo && !closer.busy && (
-        <span>{closer.undo.label}. <button className="ghost small" onClick={closer.runUndo}>Undo</button></span>
-      )}
-      {closer.msg && <span style={{ color: 'var(--warn)' }}>{closer.msg}</span>}
+
+    </div>
+  );
+}
+
+/** Every tick or bulk change answers here, wherever on the page it was made. */
+function CloseToast({ closer }) {
+  if (!closer.busy && !closer.undo && !closer.msg) return null;
+  return (
+    <div className="row small" style={{
+      position: 'fixed', right: 16, bottom: 16, zIndex: 20, gap: 8, maxWidth: 520,
+      background: 'var(--panel)', border: `1px solid ${closer.msg ? 'var(--warn)' : 'var(--line)'}`,
+      borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 18px rgba(0,0,0,.4)',
+    }}>
+      {closer.busy && <span>Saving to the register…</span>}
+      {!closer.busy && closer.msg && <span style={{ color: 'var(--warn)' }}>{closer.msg}</span>}
+      {!closer.busy && closer.undo && <span>{closer.undo.label} — saved to the register. <button className="ghost small" onClick={closer.runUndo}>Undo</button></span>}
     </div>
   );
 }
@@ -378,6 +391,9 @@ function GenericPlan({ id, closer }) {
   useEffect(() => { if (closer.stamp) load(); }, [closer.stamp]);
 
   if (!d) return <div className="empty">{error || 'Loading…'}</div>;
+  // A reload that fails after a save must SAY so: the screen otherwise keeps the
+  // old state and a saved tick looks like it did nothing (29 Oct 2026).
+  const staleBanner = error ? <div className="banner warn">Could not refresh ({error}). What you see may be out of date — a change you just made may already be saved. Re-read before trying again.</div> : null;
   if (!d.available) {
     return <div className="banner bad">This plan's register could not be read ({d.reason}). It is unknown, not empty. Source: {d.path}</div>;
   }
@@ -386,6 +402,7 @@ function GenericPlan({ id, closer }) {
 
   return (
     <>
+      {staleBanner}
       {d.problems.length > 0 && <div className="banner warn">The register has rows VANTAGE could not read cleanly: {d.problems.join('; ')}.</div>}
       {d.board?.linked && !d.board.available && (
         <div className="banner warn">The Planner board could not be read ({d.board.reason}). Nothing below says a task is or isn't on it.</div>
@@ -469,6 +486,9 @@ function Consolidated({ plans, closer }) {
   const { busy, note, run } = useWrite(() => load());
 
   if (!d) return <div className="empty">{error || 'Loading…'}</div>;
+  // A reload that fails after a save must SAY so: the screen otherwise keeps the
+  // old state and a saved tick looks like it did nothing (29 Oct 2026).
+  const staleBanner = error ? <div className="banner warn">Could not refresh ({error}). What you see may be out of date — a change you just made may already be saved. Re-read before trying again.</div> : null;
   const version = Object.fromEntries(d.plans.map(p => [p.id, p.version]));
   const shown = d.tasks.filter(t =>
     (planF === 'all' || t.planId === planF)
@@ -478,6 +498,7 @@ function Consolidated({ plans, closer }) {
 
   return (
     <>
+      {staleBanner}
       {d.unavailable.length > 0 && (
         <div className="banner bad">
           Not on this list because their register could not be read: {d.unavailable.map(u => `${u.name} (${u.reason})`).join('; ')}.
@@ -754,6 +775,7 @@ export default function Plans() {
       {panel === 'reorder' && <ReorderPlans plans={plans} onDone={async saved => { setPanel(null); if (saved) await load(true); }} />}
       {panel === 'add' && <AddPlan onDone={async id => { setPanel(null); if (id) { await load(true); choose(id); } }} />}
 
+      <CloseToast closer={closer} />
       {view === 'all' && <Consolidated key={plans.map(p => `${p.id}:${p.rank}`).join()} plans={plans} closer={closer} />}
       {view !== 'all' && current?.isSip && (<><PriorityPanel id={current.id} closer={closer} /><SipPlan planId={current.id} closer={closer} CloseBar={CloseBar} RowControls={RowControls} /></>)}
       {view !== 'all' && current && !current.isSip && <GenericPlan id={current.id} closer={closer} />}
