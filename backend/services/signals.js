@@ -13,7 +13,12 @@
  * service desk.
  */
 
-const BUILD_EXPECTED = '2026-08-18-classifier-b';
+const BUILD_EXPECTED = '2026-10-26-bounced';
+// The 26 Oct build changed ping-pong to count BOUNCES (pingPong.data.measure
+// === 'bounced'), which summarise() and radar.js already read; rejections are
+// unchanged. classifier-b is still accepted so a NOVA rollback is not a blind
+// spot. Anything older counts every downward move as a rejection — refused.
+const BUILDS_ACCEPTED = new Set([BUILD_EXPECTED, '2026-08-18-classifier-b']);
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 150_000;
 
@@ -113,7 +118,7 @@ async function current({ force = false } = {}) {
     // rejection. Its numbers are wrong in a specific direction — overstating
     // friction — so they are refused rather than shown with a caveat nobody
     // reads.
-    if (flow.build !== BUILD_EXPECTED) {
+    if (!BUILDS_ACCEPTED.has(flow.build)) {
       const stale = {
         available: false,
         reason: `NOVA is on build "${flow.build || 'unknown'}"; VANTAGE reads "${BUILD_EXPECTED}". Redeploy NOVA.`,
@@ -141,4 +146,4 @@ async function current({ force = false } = {}) {
   }
 }
 
-module.exports = { current, summarise, isConfigured, BUILD_EXPECTED };
+module.exports = { current, summarise, isConfigured, BUILD_EXPECTED, BUILDS_ACCEPTED };
