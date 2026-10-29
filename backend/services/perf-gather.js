@@ -150,7 +150,7 @@ RULES
 /** Validate the model's triage answer for a batch. Pure. Refuses the whole batch if any item is missing. */
 function parseTriage(raw, batchSize, codesBySlot) {
   let j;
-  try { j = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { throw new Error('unreadable JSON'); }
+  try { j = require('./perf-json').parseModelJson(raw); } catch { throw new Error('unreadable JSON'); }
   if (!j || !Array.isArray(j.items)) throw new Error('no items array');
   const out = new Map();
   for (const r of j.items) {

@@ -120,3 +120,16 @@ test('the export prints only Nick\'s summaries, never the raw item', () => {
   assert.doesNotMatch(md, /RAW EMAIL|SECRET/);
   assert.match(md, /L5 \(Ensure, advise\)/);
 });
+
+test('a fenced JSON answer is read; anything else that is not JSON is still refused', () => {
+  const { parseModelJson } = require('./perf-json');
+  const fence = '`'.repeat(3);
+  const NL = String.fromCharCode(10);
+  assert.deepEqual(parseModelJson(`${fence}json${NL}{"a":1}${NL}${fence}`), { a: 1 });
+  assert.deepEqual(parseModelJson(`${fence}${NL}{"a":1}${fence}`), { a: 1 });
+  assert.deepEqual(parseModelJson(`${fence}json${NL}{"a":1}${NL}${fence}`.replace(/\n/g, String.fromCharCode(13, 10))), { a: 1 }, 'CRLF fence');
+  assert.deepEqual(parseModelJson('{"a":1}'), { a: 1 });
+  assert.throws(() => parseModelJson('Here you go: {"a":1}'));
+  const codes = { current: new Set(['SLMO']), future: new Set() };
+  assert.equal(parseTriage(`${fence}json${NL}{"items":[{"i":0,"tags":[]}]}${NL}${fence}`, 1, codes).size, 1, 'triage reads a fenced answer');
+});

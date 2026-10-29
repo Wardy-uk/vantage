@@ -73,7 +73,7 @@ async function propose(input = {}) {
     { role: 'user', content: `Document (${from}):\n\n${sent}` },
   ], { temperature: 0.1, maxTokens: 4000, json: true, callType: 'perf_profile' });
   let j;
-  try { j = JSON.parse(reply.text); } catch { throw new Error('The model\'s answer was not readable JSON — nothing proposed. Try again.'); }
+  try { j = require('./perf-json').parseModelJson(reply.text); } catch { throw new Error('The model\'s answer was not readable JSON — nothing proposed. Try again.'); }
   const profile = validateProfile(j);
   if (text.length > MAX_TEXT) profile.problems.push(`The document was ${text.length} characters; only the first ${MAX_TEXT} were read`);
   return { profile, sourceName: from, sourceText: text, catalogue: sfia.catalogue() ? 'checked' : 'not-checked' };

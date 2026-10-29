@@ -46,7 +46,7 @@ function selectEvidence(evidence, slot, skills) {
 /** Validate the model's assessment. Pure. */
 function parseAssessment(raw, { skills, bySkill }) {
   let j;
-  try { j = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { throw new Error('The model\'s answer was not readable JSON — nothing saved. Try again.'); }
+  try { j = require('./perf-json').parseModelJson(raw); } catch { throw new Error('The model\'s answer was not readable JSON — nothing saved. Try again.'); }
   const given = new Map((Array.isArray(j?.skills) ? j.skills : []).map((s) => [String(s?.code || '').toUpperCase(), s]));
   const out = [];
   for (const s of skills) {
