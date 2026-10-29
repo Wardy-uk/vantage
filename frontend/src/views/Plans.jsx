@@ -127,7 +127,7 @@ function useCloser() {
       for (const [planId, rows] of group(items)) {
         const r = await api.setTaskStatus(planId, versions.current[planId], rows.map(x => ({ id: x.id, to })));
         versions.current[planId] = r.version;
-        entries.push({ planId, before: r.before });
+        entries.push({ planId, kind: 'status', before: r.before });
       }
       setUndo({ entries, label });
       setSelected(new Map());
@@ -137,12 +137,34 @@ function useCloser() {
     } finally { setBusy(false); setStamp(s => s + 1); }
   };
 
+  /** Write replanned dates: `changes` [{ planId, id, to }] across any plans. */
+  const applyDue = async (changes) => {
+    setBusy(true); setMsg(null);
+    const entries = [];
+    try {
+      for (const [planId, rows] of group(changes)) {
+        const r = await api.setTaskDue(planId, versions.current[planId], rows.map(x => ({ id: x.id, due: x.to })));
+        versions.current[planId] = r.version;
+        entries.push({ planId, kind: 'due', before: r.before });
+      }
+      setUndo({ entries, label: `Rescheduled ${changes.length} task${changes.length === 1 ? '' : 's'}` });
+      setSelected(new Map());
+      return true;
+    } catch (e) {
+      setMsg(e.status === 409 ? e.message : `Not saved — ${e.message}`);
+      if (entries.length) setUndo({ entries, label: 'Rescheduled (partly)' });
+      return false;
+    } finally { setBusy(false); setStamp(s => s + 1); }
+  };
+
   const runUndo = async () => {
     if (!undo) return;
     setBusy(true); setMsg(null);
     try {
       for (const e of undo.entries) {
-        const r = await api.setTaskStatus(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, status: b.status })));
+        const r = e.kind === 'due'
+          ? await api.setTaskDue(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, dueRaw: b.dueRaw })))
+          : await api.setTaskStatus(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, status: b.status })));
         versions.current[e.planId] = r.version;
       }
       setUndo(null);
@@ -151,7 +173,7 @@ function useCloser() {
   };
 
   return {
-    selectMode, busy, msg, undo, stamp, selected, runUndo,
+    selectMode, busy, msg, undo, stamp, selected, runUndo, applyDue,
     setVersion: (planId, v) => { if (v) versions.current[planId] = v; },
     toggleSelectMode: () => { setSelectMode(m => !m); setSelected(new Map()); },
     isSelected: r => selected.has(keyOf(r)),
@@ -175,9 +197,77 @@ function RowControls({ closer, row }) {
   );
 }
 
-/** Select mode, the bulk actions with a confirm, Undo, and any refusal. */
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+/** Replan the selection: spread / shift / set → a before→after preview → save. */
+function ReplanPanel({ closer, onClose }) {
+  const [mode, setMode] = useState('spread');
+  const [start, setStart] = useState(todayIso);
+  const [perDay, setPerDay] = useState(3);
+  const [days, setDays] = useState(5);
+  const [date, setDate] = useState(todayIso);
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const items = [...closer.selected.values()].map(r => ({ planId: r.planId, id: r.id }));
+
+  const run = async () => {
+    setBusy(true); setError(null); setPreview(null);
+    try { setPreview(await api.replanPreview({ items, mode, start, perDay: Number(perDay), days: Number(days), date })); } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const writable = preview ? preview.changes.filter(c => c.to) : [];
+
+  return (
+    <div style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginTop: 6 }}>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <strong>Replan {items.length} task{items.length === 1 ? '' : 's'}</strong>
+        <Chips label="" value={mode} onChange={m => { setMode(m); setPreview(null); }}
+          options={[['spread', 'Spread over days'], ['shift', 'Shift dates'], ['set', 'One date for all']]} />
+      </div>
+      <div className="row small" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        {mode === 'spread' && <>
+          <label>from <input type="date" value={start} onChange={e => { setStart(e.target.value); setPreview(null); }} style={{ width: 160 }} /></label>
+          <label><input type="number" min="1" max="20" value={perDay} onChange={e => { setPerDay(e.target.value); setPreview(null); }} style={{ width: 70 }} /> a day, in priority order</label>
+        </>}
+        {mode === 'shift' && <label>by <input type="number" min="-260" max="260" value={days} onChange={e => { setDays(e.target.value); setPreview(null); }} style={{ width: 80 }} /> working days (negative = earlier)</label>}
+        {mode === 'set' && <label>to <input type="date" value={date} onChange={e => { setDate(e.target.value); setPreview(null); }} style={{ width: 160 }} /></label>}
+        <button className="small" disabled={busy || !items.length} onClick={run}>{busy ? 'Working…' : 'Preview'}</button>
+        <button className="ghost small" onClick={onClose}>Cancel</button>
+      </div>
+      {error && <div className="banner bad" style={{ marginTop: 8 }}>{error}</div>}
+      {preview && (
+        <div style={{ marginTop: 8 }}>
+          <p className="small muted">{preview.calendar}. Dates are written as day/month in the register.</p>
+          {preview.missing.length > 0 && <p className="small" style={{ color: 'var(--warn)' }}>Not found (re-read the page): {preview.missing.join(', ')}</p>}
+          <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            {preview.changes.map(c => (
+              <div key={`${c.planId}:${c.id}`} className="row small" style={{ gap: 8, padding: '3px 0', borderBottom: '1px solid var(--line)' }}>
+                <span className="pill">{c.planName}</span>
+                <span className="muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{c.id}</span>
+                <span style={{ flex: 1 }}>{c.action}</span>
+                <span className="muted">{c.from || 'no date'}</span>
+                <span>→</span>
+                <span style={{ color: c.to ? 'var(--text)' : 'var(--warn)', minWidth: 60 }}>{c.to ? c.toDdmm : c.skipped}</span>
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            <button className="primary small" disabled={closer.busy || !writable.length}
+              onClick={async () => { if (await closer.applyDue(writable)) onClose(); }}>
+              {closer.busy ? 'Saving…' : `Save ${writable.length} date${writable.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Select mode, the bulk actions with a confirm, Replan, Undo, and any refusal. */
 function CloseBar({ closer, rows = [] }) {
   const [confirm, setConfirm] = useState(null);
+  const [replan, setReplan] = useState(false);
   const n = closer.selected.size;
   const label = { done: 'Mark done', dropped: 'Not doing', open: 'Reopen' };
   return (
@@ -192,6 +282,7 @@ function CloseBar({ closer, rows = [] }) {
           {!confirm && ['done', 'dropped', 'open'].map(to => (
             <button key={to} className="small" disabled={!n || closer.busy} onClick={() => setConfirm(to)}>{label[to]}</button>
           ))}
+          {!confirm && <button className="small" disabled={!n || closer.busy} onClick={() => setReplan(r => !r)}>Replan…</button>}
           {confirm && (
             <>
               <span>{label[confirm]} for {n} task{n === 1 ? '' : 's'}? Written to the register in the vault.</span>
@@ -203,6 +294,7 @@ function CloseBar({ closer, rows = [] }) {
           )}
         </>
       )}
+      {closer.selectMode && replan && n > 0 && <ReplanPanel closer={closer} onClose={() => setReplan(false)} />}
       {closer.undo && !closer.busy && (
         <span>{closer.undo.label}. <button className="ghost small" onClick={closer.runUndo}>Undo</button></span>
       )}

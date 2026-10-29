@@ -583,6 +583,138 @@ async function setStatus(id, { version, changes } = {}) {
   return { ...r, before, changed: changes.length };
 }
 
+// ── Replan (Nick, 29 Oct 2026) ───────────────────────────────────────────────
+//
+// Spread the selected tasks over working days from a start date (N a day, in
+// the consolidated priority order), shift their dates by N working days, or set
+// one date for all. A PREVIEW is computed here and returned; nothing is written
+// until the screen sends the exact dates back to `setDue`.
+
+const pad2 = n => String(n).padStart(2, '0');
+const isoOf = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+const dayOf = iso => new Date(`${iso}T00:00:00Z`);
+const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && isoOf(dayOf(s)) === s;
+
+/** `21/08` (or `21/08, 24/08`) → this year's ISO date; anything else → null. Pure. */
+function ddmmToIso(cell, year = new Date().getFullYear()) {
+  const m = String(cell || '').match(/(\d{1,2})\/(\d{1,2})/);
+  if (!m) return null;
+  const iso = `${year}-${pad2(m[2])}-${pad2(m[1])}`;
+  return isIso(iso) ? iso : null;
+}
+
+function isWorking(iso, holidays) {
+  const dow = dayOf(iso).getUTCDay();
+  return dow !== 0 && dow !== 6 && !holidays.has(iso);
+}
+function nextWorking(iso, holidays) {
+  let d = dayOf(iso);
+  while (!isWorking(isoOf(d), holidays)) d.setUTCDate(d.getUTCDate() + 1);
+  return isoOf(d);
+}
+function addWorking(iso, n, holidays) {
+  let d = dayOf(iso); let left = Math.abs(n); const step = n < 0 ? -1 : 1;
+  while (left > 0) { d.setUTCDate(d.getUTCDate() + step); if (isWorking(isoOf(d), holidays)) left -= 1; }
+  return isoOf(d);
+}
+
+/**
+ * The new dates. Pure. `rows` are in priority order and carry `due` (the
+ * register cell). Returns [{ planId, id, from, to, skipped }].
+ */
+function computeReplan(rows, { mode, start, perDay, days, date }, holidays = new Set()) {
+  if (mode === 'spread') {
+    if (!isIso(start)) throw httpError('A start date is required', 400);
+    const n = Number(perDay);
+    if (!Number.isInteger(n) || n < 1 || n > 20) throw httpError('Tasks per day must be 1 to 20', 400);
+    let day = nextWorking(start, holidays); let used = 0;
+    return rows.map(r => {
+      if (used === n) { day = nextWorking(addWorking(day, 1, holidays), holidays); used = 0; }
+      used += 1;
+      return { planId: r.planId, id: r.id, from: r.due || '', to: day };
+    });
+  }
+  if (mode === 'shift') {
+    const n = Number(days);
+    if (!Number.isInteger(n) || n === 0 || Math.abs(n) > 260) throw httpError('Shift must be a whole number of working days, not 0, at most 260', 400);
+    return rows.map(r => {
+      const from = ddmmToIso(r.due);
+      if (!from) return { planId: r.planId, id: r.id, from: r.due || '', to: null, skipped: 'no date to shift' };
+      return { planId: r.planId, id: r.id, from: r.due, to: addWorking(from, n, holidays) };
+    });
+  }
+  if (mode === 'set') {
+    if (!isIso(date)) throw httpError('A date is required', 400);
+    return rows.map(r => ({ planId: r.planId, id: r.id, from: r.due || '', to: date }));
+  }
+  throw httpError('mode must be spread, shift or set', 400);
+}
+
+let holidayCache = null;
+/** NEURO's bank holiday list (its working-days calendar). Weekends-only, SAID, when NEURO cannot answer. */
+async function holidays() {
+  if (holidayCache && Date.now() - holidayCache.at < 12 * 3600 * 1000) return holidayCache;
+  try {
+    const r = await neuro.call('/api/time/working-days');
+    const dates = r.dates || r.data?.dates;
+    if (!Array.isArray(dates) || !dates.length) throw new Error('NEURO sent no holiday dates');
+    holidayCache = { at: Date.now(), set: new Set(dates), known: true };
+  } catch (e) {
+    holidayCache = { at: Date.now() - 11.5 * 3600 * 1000, set: new Set(), known: false, reason: e.message };
+  }
+  return holidayCache;
+}
+
+/** Preview a replan of tasks across any plans. Writes nothing. */
+async function replanPreview({ items, mode, start, perDay, days, date } = {}) {
+  if (!Array.isArray(items) || !items.length) throw httpError('Select some tasks first', 400);
+  if (items.length > MAX_STATUS_CHANGES) throw httpError(`At most ${MAX_STATUS_CHANGES} tasks at once`, 400);
+  const want = new Set(items.map(i => `${i.planId}:${i.id}`));
+  const all = await readAll();
+  const rows = [];
+  for (const p of all.plans) {
+    if (!p.available) continue;
+    for (const a of p.actions) {
+      if (want.has(`${p.id}:${a.id}`)) rows.push({ planId: p.id, planName: p.name, planRank: p.rank, id: a.id, action: a.action, due: a.due, rank: a.rank, starred: a.starred, order: a.order });
+    }
+  }
+  const ordered = orderTasks(rows);
+  const cal = await holidays();
+  const out = computeReplan(ordered, { mode, start, perDay, days, date }, cal.set);
+  const byKey = new Map(ordered.map(r => [`${r.planId}:${r.id}`, r]));
+  return {
+    changes: out.map(c => ({ ...c, planName: byKey.get(`${c.planId}:${c.id}`).planName, action: byKey.get(`${c.planId}:${c.id}`).action, toDdmm: c.to ? toDdmm(c.to) : null })),
+    missing: items.filter(i => !byKey.has(`${i.planId}:${i.id}`)).map(i => `${i.planId}:${i.id}`),
+    calendar: cal.known ? 'weekends and bank holidays skipped' : `weekends skipped; bank holidays NOT known (${cal.reason})`,
+  };
+}
+
+/**
+ * Write due dates into one register. `changes` [{ id, due: 'YYYY-MM-DD'|null }]
+ * or [{ id, dueRaw }] (Undo: the exact cell that was there). Returns `before`.
+ */
+async function setDue(id, { version, changes } = {}) {
+  if (!Array.isArray(changes) || !changes.length) throw httpError('changes is required', 400);
+  if (changes.length > MAX_STATUS_CHANGES) throw httpError(`At most ${MAX_STATUS_CHANGES} changes at once`, 400);
+  const { content } = await freshRegister(id, version);
+  const rows = new Map(plan.parseRegister(content).actions.map(a => [a.id, a]));
+  const updates = new Map();
+  const before = [];
+  for (const c of changes) {
+    const a = rows.get(c.id);
+    if (!a) throw httpError(`${c.id} is not in this register`, 400);
+    let cell;
+    if (c.dueRaw !== undefined) cell = cellSafe(c.dueRaw);
+    else if (c.due === null) cell = '';
+    else if (isIso(c.due)) cell = toDdmm(c.due);
+    else throw httpError(`${c.id}: "${c.due}" is not a date`, 400);
+    before.push({ id: a.id, dueRaw: a.due });
+    updates.set(a.id, { Due: cell });
+  }
+  const r = await writeCells(id, version, updates, []);
+  return { ...r, before, changed: changes.length };
+}
+
 /** Rank the plans themselves. `order` lists plan IDs top first; every register's plan-rank is set. */
 async function rankPlans({ order } = {}) {
   if (!Array.isArray(order) || !order.length) throw httpError('order (plan IDs, top first) is required', 400);
@@ -607,8 +739,9 @@ async function rankPlans({ order } = {}) {
 
 module.exports = {
   list, detail, consolidated, candidates, adopt, createPlan, fromPlanner, rankTasks, star, rankPlans, setStatus,
+  replanPreview, setDue,
   // pure, for tests
-  vocabularyOf, parseFrontmatter, setFrontmatterKey, setTaskCells, buildRegister, buildHub, orderTasks, sortPlans,
+  vocabularyOf, computeReplan, ddmmToIso, addWorking, parseFrontmatter, setFrontmatterKey, setTaskCells, buildRegister, buildHub, orderTasks, sortPlans,
   summariseGeneric, versionOf, slugOf, folderProblem, toDdmm, boardStatus,
   REGISTER_SUFFIX, TEMPLATE_COLUMNS, STAR,
   _invalidate: invalidate,

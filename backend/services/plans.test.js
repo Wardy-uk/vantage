@@ -196,3 +196,34 @@ test('a template register closes with its own words', () => {
   const rows = plan.parseRegister(out).actions;
   assert.deepStrictEqual(rows.map(a => a.statusKey), ['done', 'dropped']);
 });
+
+test('replan spread: N a day over working days, skipping weekends and bank holidays', () => {
+  const rows = ['A1', 'A2', 'A3', 'A4', 'A5'].map(id => ({ planId: 'p', id, due: '' }));
+  // Fri 30 Oct 2026; Mon 2 Nov treated as a holiday for the test.
+  const out = plans.computeReplan(rows, { mode: 'spread', start: '2026-10-30', perDay: 2 }, new Set(['2026-11-02']));
+  assert.deepStrictEqual(out.map(o => o.to), ['2026-10-30', '2026-10-30', '2026-11-03', '2026-11-03', '2026-11-04']);
+  // a weekend start moves to Monday
+  assert.equal(plans.computeReplan(rows.slice(0, 1), { mode: 'spread', start: '2026-10-31', perDay: 1 }).at(0).to, '2026-11-02');
+});
+
+test('replan shift: working days from the register date; undated rows are skipped, not invented', () => {
+  const out = plans.computeReplan([{ planId: 'p', id: 'A1', due: '30/10' }, { planId: 'p', id: 'A2', due: 'TBC' }], { mode: 'shift', days: 1 }, new Set());
+  const y = new Date().getFullYear();
+  assert.equal(out[0].from, '30/10');
+  assert.equal(out[0].to, plans.addWorking(`${y}-10-30`, 1, new Set()), 'one working day after 30/10 this year');
+  assert.notEqual(out[0].to, `${y}-10-30`);
+  assert.equal(out[1].to, null);
+  assert.equal(out[1].skipped, 'no date to shift');
+  assert.equal(plans.addWorking('2026-10-30', 1, new Set()), '2026-11-02');
+  assert.equal(plans.addWorking('2026-11-02', -1, new Set()), '2026-10-30');
+});
+
+test('replan refuses bad input rather than guessing', () => {
+  const r = [{ planId: 'p', id: 'A1', due: '' }];
+  assert.throws(() => plans.computeReplan(r, { mode: 'spread', start: '2026-02-31', perDay: 2 }), /start date/);
+  assert.throws(() => plans.computeReplan(r, { mode: 'spread', start: '2026-10-30', perDay: 0 }), /per day/);
+  assert.throws(() => plans.computeReplan(r, { mode: 'shift', days: 0 }), /Shift/);
+  assert.throws(() => plans.computeReplan(r, { mode: 'set', date: 'soon' }), /date is required/);
+  assert.equal(plans.ddmmToIso('31/02'), null);
+  assert.equal(plans.ddmmToIso('21/08, 24/08'), `${new Date().getFullYear()}-08-21`);
+});

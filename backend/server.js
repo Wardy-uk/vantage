@@ -284,6 +284,8 @@ app.post('/api/plans/import/save', wrap(req => {
   if (!sections.length) throw new Error('No actions to save');
   return plans.createPlan({ folder: String(b.folder || '').trim(), name: String(b.name || b.folder || '').trim(), sections, source: b.from || null, sourceText: b.sourceText || null });
 }));
+// POST /api/plans/replan/preview { items: [{ planId, id }], mode: spread|shift|set, start, perDay, days, date } — new due dates for selected tasks across plans, skipping weekends and NEURO's bank holidays. Writes nothing.
+app.post('/api/plans/replan/preview', wrap(req => plans.replanPreview(req.body || {})));
 // POST /api/plans/rank { order: [planId…] } — plan priority, written as plan-rank in each register.
 app.post('/api/plans/rank', wrap(req => plans.rankPlans(req.body || {})));
 // GET /api/plans/:id — one plan in full, with its version for edits.
@@ -292,6 +294,8 @@ app.get('/api/plans/:id', wrap(req => plans.detail(req.params.id, { force: req.q
 app.post('/api/plans/:id/tasks/rank', wrap(req => plans.rankTasks(req.params.id, req.body || {})));
 // POST /api/plans/:id/tasks/status { version, changes: [{ id, to: done|dropped|open } | { id, status }] } — close, drop or reopen tasks in the register (each register keeps its own words). Returns the previous statuses for Undo. 409 if the register changed.
 app.post('/api/plans/:id/tasks/status', wrap(req => plans.setStatus(req.params.id, req.body || {})));
+// POST /api/plans/:id/tasks/due { version, changes: [{ id, due: YYYY-MM-DD|null } | { id, dueRaw }] } — write due dates (Replan). Returns previous cells for Undo. 409 if the register changed.
+app.post('/api/plans/:id/tasks/due', wrap(req => plans.setDue(req.params.id, req.body || {})));
 // POST /api/plans/:id/tasks/:taskId/star { version, starred } — the Star column. 409 if the register changed.
 app.post('/api/plans/:id/tasks/:taskId/star', wrap(req => plans.star(req.params.id, req.params.taskId, req.body || {})));
 
