@@ -106,7 +106,9 @@ function groupOf(source) {
 function ownershipOf(owner) {
   if (/^nick\b/i.test(owner)) return 'mine';
   if (/\bnick\b/i.test(owner)) return 'shared';
-  if (!owner || /^per planner$/i.test(owner)) return 'unknown';
+  // "Unstated" is what a register VANTAGE wrote says for no owner, and
+  // "Unassigned" is SIP's word — both are "not said", never somebody else.
+  if (!owner || /^(per planner|unstated|unassigned)$/i.test(owner)) return 'unknown';
   return 'other';
 }
 
@@ -169,6 +171,9 @@ function parseRegister(markdown) {
       due: col('due'),
       notes,
       plannerIds: col('planner id').split(/[\s,;]+/).filter(Boolean),
+      // The NEURO task this row is worked as (29 Oct 2026): a task id, or
+      // `ms:<planner id>` when NEURO already mirrors it from the board.
+      neuroId: col('neuro id') || null,
       // `Planner: "title"` in the notes is how the register names a board task
       // today. A fallback only: board titles get edited, IDs do not.
       plannerTitles: [...notes.matchAll(/Planner(?: backlog)?:\s*"([^"]+)"/g)].map(m => m[1]),

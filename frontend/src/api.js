@@ -95,6 +95,8 @@ export const api = {
   rankTasks: (id, version, order) => call(`/plans/${encodeURIComponent(id)}/tasks/rank`, { method: 'POST', body: { version, order } }),
   // changes: [{ id, to: 'done'|'dropped'|'open' }] or [{ id, status }] (Undo). Returns { version, before }.
   setTaskStatus: (id, version, changes) => call(`/plans/${encodeURIComponent(id)}/tasks/status`, { method: 'POST', body: { version, changes } }),
+  handoffPreview: id => call(`/plans/${encodeURIComponent(id)}/handoff`),
+  handOff: (id, version) => call(`/plans/${encodeURIComponent(id)}/handoff`, { method: 'POST', body: { version } }),
   replanPreview: body => call('/plans/replan/preview', { method: 'POST', body }),
   // changes: [{ id, due: 'YYYY-MM-DD'|null }] or [{ id, dueRaw }] (Undo). Returns { version, before }.
   setTaskDue: (id, version, changes) => call(`/plans/${encodeURIComponent(id)}/tasks/due`, { method: 'POST', body: { version, changes } }),

@@ -15,7 +15,7 @@ const criticality = require('./criticality');
  *
  * Read-only by default, with ONE deliberate exception.
  *
- * ⚠ Every call here is a GET except **FOUR**. That count has been wrong twice —
+ * ⚠ Every call here is a GET except **SIX**. That count has been wrong twice —
  * the prose said "three" while listing four, and the `post()` helper below said
  * "the two writes" — which matters in a file whose entire safety argument is
  * that this is the CLOSED SET of things VANTAGE may change in NEURO. If you add
@@ -31,6 +31,16 @@ const criticality = require('./criticality');
  *   POST /api/vault/write        — a PLAN note only (29 Oct 2026): a register,
  *                                  hub or imported source under Projects/<F>/,
  *                                  path-checked in `writePlanNote` below
+ *   PATCH /api/tasks/:id         — a synced plan task's DUE DATE only (29 Oct
+ *                                  2026, Replan): `setTaskDue` sends exactly
+ *                                  { due_date } and nothing else
+ *   POST /api/todos/order        — one MoSCoW band's manual order, ONCE, when a
+ *                                  plan is handed to NEURO (its register rank
+ *                                  becomes NEURO's order) — `setBandOrder`
+ *
+ * Since 29 Oct 2026 a plan's tasks LIVE in NEURO once handed over ("tasks
+ * should only ever live in NEURO" — Nick); `createTask` (write 1) is how they
+ * get there, as continual improvement, never commitments.
  *
  * The vault write exists because each plan's truth is its vault register and
  * Nick asked VANTAGE to create plans, rank them and star tasks (decided 29 Oct
@@ -160,6 +170,40 @@ async function writePlanNote(relPath, content, { timeoutMs = TIMEOUT_MS } = {}) 
     throw new Error(payload?.error || `NEURO vault write returned ${res.status}`);
   }
   return { path: relPath };
+}
+
+/**
+ * The fifth write: move a synced plan task's due date in NEURO, so a Replan in
+ * VANTAGE reschedules the task where Nick works it (decided 29 Oct 2026). The
+ * body is built HERE and holds `due_date` alone — status, text and origin can
+ * never ride along. `null` clears the date.
+ */
+async function setTaskDue(taskId, dueIso, { timeoutMs = TIMEOUT_MS } = {}) {
+  const id = Number(taskId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error(`Refusing to edit NEURO task "${taskId}"`);
+  if (dueIso !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(dueIso))) throw new Error(`Refusing due date "${dueIso}"`);
+  const c = config();
+  if (!c.token && !c.pin) throw new Error('No NEURO credential set (NEURO_API_TOKEN preferred, NEURO_PIN accepted)');
+  const res = await fetch(`${c.url}/api/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { ...(c.token ? { 'X-Neuro-Api-Token': c.token } : { 'X-Neuro-Pin': c.pin }), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ due_date: dueIso }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) throw new Error(payload?.error || `NEURO task ${id} returned ${res.status}`);
+  return { id, due: payload?.task?.due_date ?? dueIso };
+}
+
+/**
+ * The sixth write: one MoSCoW band's manual order in NEURO (`keys` = the WHOLE
+ * band top to bottom, `task:N` / `ms:<id>`). Used once per hand-off so the
+ * plan's rank survives the move.
+ */
+async function setBandOrder(band, keys) {
+  if (!['must', 'should', 'could', 'wont', 'none'].includes(band)) throw new Error(`Refusing band "${band}"`);
+  if (!Array.isArray(keys) || !keys.length || !keys.every(k => /^(task:\d+|ms:[\w-]+)$/.test(k))) throw new Error('Refusing order keys');
+  return post('/api/todos/order', { band, keys });
 }
 
 /**
@@ -502,5 +546,5 @@ module.exports = {
   recentMeetings, bookedOneToOnes, oneToOneMoves, stateOfPlay, knowledgeGaps,
   friction, wins,
   createTask, queueSuggestion, proposeWork, todos,
-  writePlanNote, planNotePathProblem,
+  writePlanNote, planNotePathProblem, setTaskDue, setBandOrder,
 };

@@ -304,6 +304,7 @@ async function readOne(entry, { force = false } = {}) {
     rank: /^\d+$/.test(data['plan-rank'] || '') ? Number(data['plan-rank']) : null,
     plannerPlanId: data['planner-plan-id'] || (isSip ? plan.PLANNER_PLAN_ID : null),
     isSip,
+    moved: data['moved-to-neuro'] || null,
     available: true,
     version: versionOf(content),
     sections: register.sections,
@@ -343,8 +344,18 @@ async function readAll({ force = false } = {}) {
   const entries = folders.filter(registerOf);
   const plans = await Promise.all(entries.map(e => readOne(e, { force })));
   const side = await sideReads();
+  // A handed-over plan's tasks live in NEURO: read them live, once for all.
+  let live = null; let liveError = null;
+  if (plans.some(p => p.available && p.moved)) {
+    try { live = await require('./plan-neuro').context(); } catch (e) { liveError = e.message; }
+  }
+  const shaped = plans.map(p => {
+    if (!p.available || !p.moved) return withBoard(p, side);
+    if (!live) return { ...p, available: false, reason: `its tasks live in NEURO, which could not be read (${liveError})` };
+    return require('./plan-neuro').liveOf(p, live, toDdmm);
+  });
   return {
-    plans: sortPlans(plans.map(p => withBoard(p, side))),
+    plans: sortPlans(shaped),
     neuro: { available: Boolean(side.neuroMsIds), reason: side.neuroError },
     unreadableFolders: folders.filter(f => !f.readable).map(f => f.folder),
   };
@@ -355,7 +366,7 @@ async function list({ force = false } = {}) {
   const all = await readAll({ force });
   return {
     plans: all.plans.map(p => ({
-      id: p.id, name: p.name, folder: p.folder, path: p.path, rank: p.rank, isSip: Boolean(p.isSip),
+      id: p.id, name: p.name, folder: p.folder, path: p.path, rank: p.rank, isSip: Boolean(p.isSip), moved: p.moved || null,
       available: p.available, reason: p.reason || null,
       plannerPlanId: p.plannerPlanId || null, board: p.board || null,
       problems: p.problems || [],
@@ -384,12 +395,13 @@ async function consolidated({ force = false } = {}) {
         id: a.id, action: a.action, owner: a.owner, ownership: a.ownership, due: a.due,
         status: a.status, statusKey: a.statusKey, rank: a.rank, starred: a.starred, order: a.order,
         section: a.section, drift: a.drift || [], notes: a.notes,
+        inNeuro: Boolean(a.inNeuro), readOnly: Boolean(a.readOnly), viaPlanner: Boolean(a.viaPlanner), neuroTaskId: a.neuroTaskId || null,
       });
     }
   }
   return {
     tasks: orderTasks(rows),
-    plans: all.plans.map(p => ({ id: p.id, name: p.name, rank: p.rank, available: p.available, reason: p.reason || null, version: p.version || null })),
+    plans: all.plans.map(p => ({ id: p.id, name: p.name, rank: p.rank, moved: p.moved || null, available: p.available, reason: p.reason || null, version: p.version || null })),
     unavailable: all.plans.filter(p => !p.available).map(p => ({ name: p.name, reason: p.reason })),
   };
 }
@@ -496,6 +508,16 @@ async function fromPlanner({ planId, folder, name } = {}) {
   return createPlan({ folder: (folder || title).trim(), name: title, plannerPlanId: planId, source: `Planner board "${title}"`, sections: [{ title: 'Actions', actions }] });
 }
 
+/** One plan's register, read fresh, with no version check (the hand-off reads it twice itself). */
+async function _readRegister(id) {
+  const folders = await discover({ force: true });
+  const entry = folders.find(f => slugOf(f.folder) === id && registerOf(f));
+  if (!entry) throw httpError(`No plan "${id}"`, 404);
+  const path = `${PROJECTS}/${entry.folder}/${registerOf(entry)}`;
+  const content = await readNote(path, { force: true });
+  return { entry, path, content, folder: entry.folder, name: parseFrontmatter(content).data['plan-name'] || entry.folder };
+}
+
 /** Read the register fresh and refuse if it changed since the screen was drawn. */
 async function freshRegister(id, version) {
   if (!version) throw httpError('version is required — reload the plan', 400);
@@ -512,6 +534,9 @@ async function freshRegister(id, version) {
 
 async function writeCells(id, version, updates, columns) {
   const { path, content } = await freshRegister(id, version);
+  if (parseFrontmatter(content).data['moved-to-neuro']) {
+    throw httpError('This plan was handed to NEURO — tick, star and reorder its tasks in NEURO. The register is history now.', 409, 'moved');
+  }
   const { markdown, problems } = setTaskCells(content, updates, columns);
   const blocking = problems.filter(p => [...updates.keys()].some(k => p.startsWith(`${k}:`)));
   if (blocking.length) throw httpError(`Not written: ${blocking.join('; ')}`, 409, 'unwritable-row');
@@ -638,7 +663,7 @@ function computeReplan(rows, { mode, start, perDay, days, date }, holidays = new
     const n = Number(days);
     if (!Number.isInteger(n) || n === 0 || Math.abs(n) > 260) throw httpError('Shift must be a whole number of working days, not 0, at most 260', 400);
     return rows.map(r => {
-      const from = ddmmToIso(r.due);
+      const from = r.dueIso || ddmmToIso(r.due);
       if (!from) return { planId: r.planId, id: r.id, from: r.due || '', to: null, skipped: 'no date to shift' };
       return { planId: r.planId, id: r.id, from: r.due, to: addWorking(from, n, holidays) };
     });
@@ -675,7 +700,7 @@ async function replanPreview({ items, mode, start, perDay, days, date } = {}) {
   for (const p of all.plans) {
     if (!p.available) continue;
     for (const a of p.actions) {
-      if (want.has(`${p.id}:${a.id}`)) rows.push({ planId: p.id, planName: p.name, planRank: p.rank, id: a.id, action: a.action, due: a.due, rank: a.rank, starred: a.starred, order: a.order });
+      if (want.has(`${p.id}:${a.id}`)) rows.push({ planId: p.id, planName: p.name, planRank: p.rank, id: a.id, action: a.action, due: a.due, dueIso: a.dueIso || null, rank: a.rank, starred: a.starred, order: a.order });
     }
   }
   const ordered = orderTasks(rows);
@@ -696,6 +721,13 @@ async function replanPreview({ items, mode, start, perDay, days, date } = {}) {
 async function setDue(id, { version, changes } = {}) {
   if (!Array.isArray(changes) || !changes.length) throw httpError('changes is required', 400);
   if (changes.length > MAX_STATUS_CHANGES) throw httpError(`At most ${MAX_STATUS_CHANGES} changes at once`, 400);
+  for (const c of changes) if (c.due != null && !isIso(c.due)) throw httpError(`${c.id}: "${c.due}" is not a date`, 400);
+  // A handed-over plan's dates live in NEURO: Replan moves them there.
+  const p = (await readAll()).plans.find(x => x.id === id);
+  if (p && p.moved) {
+    if (!p.available) throw httpError(`Not rescheduled: ${p.reason}`, 503);
+    return require('./plan-neuro').setDueLive(p, changes);
+  }
   const { content } = await freshRegister(id, version);
   const rows = new Map(plan.parseRegister(content).actions.map(a => [a.id, a]));
   const updates = new Map();
@@ -744,5 +776,5 @@ module.exports = {
   vocabularyOf, computeReplan, ddmmToIso, addWorking, parseFrontmatter, setFrontmatterKey, setTaskCells, buildRegister, buildHub, orderTasks, sortPlans,
   summariseGeneric, versionOf, slugOf, folderProblem, toDdmm, boardStatus,
   REGISTER_SUFFIX, TEMPLATE_COLUMNS, STAR,
-  _invalidate: invalidate,
+  _invalidate: invalidate, _readRegister,
 };

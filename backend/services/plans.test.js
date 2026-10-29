@@ -227,3 +227,56 @@ test('replan refuses bad input rather than guessing', () => {
   assert.equal(plans.ddmmToIso('31/02'), null);
   assert.equal(plans.ddmmToIso('21/08, 24/08'), `${new Date().getFullYear()}-08-21`);
 });
+
+const pn = require('./plan-neuro');
+
+test('hand-off: only my open rows go; repeats are made distinct; board tasks are linked, not copied', () => {
+  const md = plans.buildRegister({ name: '90 Day Plan', folder: '90 Day Plan', rank: 1, created: '2026-10-29', sections: [{ title: 'W1', actions: [
+    { action: 'Weekly reflection.', owner: 'Nick', due: '30/10' },
+    { action: 'Weekly reflection.', owner: 'Nick', due: '06/11' },
+    { action: 'Done already', owner: 'Nick', status: 'Done' },
+    { action: 'Stephen does this', owner: 'Stephen Mitchell' },
+    { action: 'On the board', owner: 'Nick', plannerId: 'PB1' },
+    { action: 'No owner', owner: '' },
+  ] }] });
+  const rows = plan.parseRegister(md).actions;
+  rows[0].starred = true;
+  const items = pn.prepareHandoff(rows, { myBoardIds: new Map([['PB1', {}]]), planName: '90 Day Plan', ddmmToIso: plans.ddmmToIso });
+  assert.deepStrictEqual(items.map(i => i.row.id), ['A1', 'A2', 'A5'], 'not done, not Stephen\'s, not unstated');
+  assert.equal(items[0].create.text, 'Weekly reflection. (90 Day Plan A1)');
+  assert.equal(items[1].create.text, 'Weekly reflection. (90 Day Plan A2)');
+  assert.equal(items[0].create.moscow, 'must', 'a star becomes Must');
+  assert.equal(items[1].create.moscow, null);
+  assert.equal(items[0].create.dueDate, plans.ddmmToIso('30/10'));
+  assert.equal(items[2].link, 'ms:PB1');
+  assert.equal(items[2].create, undefined);
+  const imported = pn.prepareHandoff(rows, { myBoardIds: new Map(), includeUnstated: true, planName: 'X', ddmmToIso: plans.ddmmToIso });
+  assert.ok(imported.some(i => i.row.action === 'No owner'), 'an import counts unstated owners as Nick');
+});
+
+test('live view: NEURO tasks by link or by folder; others stay read-only; a lost link is said', () => {
+  const p = { folder: '90 Day Plan', actions: [
+    { id: 'A1', action: 'old wording', section: 'W1', neuroId: '11', plannerIds: [] },
+    { id: 'A2', action: 'Stephen', section: 'W1', neuroId: null, ownership: 'other', statusKey: 'todo', plannerIds: [] },
+    { id: 'A3', action: 'gone', section: 'W1', neuroId: '99', plannerIds: [] },
+  ] };
+  const ctx = {
+    tasks: new Map([
+      [11, { id: 11, text: 'live wording', status: 'done', due_date: '2026-11-03', moscow: 'must' }],
+      [12, { id: 12, text: 'added from folder', status: 'open', origin_path: 'Projects/90 Day Plan/90 Day Plan - Action Register.md' }],
+      [13, { id: 13, text: 'unrelated', status: 'open', origin_path: 'Projects/Other/x.md' }],
+    ]),
+    order: new Map([['task:12', 1]]), board: new Map(), orderKnown: true,
+  };
+  const live = pn.liveOf(p, ctx, plans.toDdmm);
+  const byId = Object.fromEntries(live.actions.map(a => [a.id, a]));
+  assert.equal(byId.A1.action, 'live wording', 'NEURO\'s text, not the frozen register');
+  assert.equal(byId.A1.statusKey, 'done');
+  assert.equal(byId.A1.starred, true);
+  assert.equal(byId.A1.due, '03/11');
+  assert.equal(byId.N12.rank, 1);
+  assert.ok(!live.actions.some(a => a.action === 'unrelated'));
+  assert.equal(byId.A2.readOnly, true);
+  assert.equal(byId.A2.inNeuro, false);
+  assert.equal(byId.A3.missing, true);
+});

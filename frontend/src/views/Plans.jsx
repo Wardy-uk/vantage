@@ -120,8 +120,12 @@ function useCloser() {
   const keyOf = r => `${r.planId}:${r.id}`;
   const group = items => items.reduce((m, r) => m.set(r.planId, [...(m.get(r.planId) || []), r]), new Map());
 
-  const apply = async (items, to, label) => {
-    setBusy(true); setMsg(null);
+  const apply = async (allItems, to, label) => {
+    // A task that lives in NEURO is ticked there; say how many were left alone.
+    const items = allItems.filter(r => !r.inNeuro && !r.readOnly);
+    const skipped = allItems.length - items.length;
+    if (!items.length) { setMsg(`${skipped} task${skipped === 1 ? '' : 's'} live in NEURO — tick ${skipped === 1 ? 'it' : 'them'} there.`); return; }
+    setBusy(true); setMsg(skipped ? `${skipped} task${skipped === 1 ? '' : 's'} in NEURO left alone — tick ${skipped === 1 ? 'it' : 'them'} there.` : null);
     const entries = [];
     try {
       for (const [planId, rows] of group(items)) {
@@ -144,7 +148,8 @@ function useCloser() {
     try {
       for (const [planId, rows] of group(changes)) {
         const r = await api.setTaskDue(planId, versions.current[planId], rows.map(x => ({ id: x.id, due: x.to })));
-        versions.current[planId] = r.version;
+        if (r.version) versions.current[planId] = r.version;
+        if (r.problems?.length) setMsg(`Some dates were not moved: ${r.problems.join('; ')}`);
         entries.push({ planId, kind: 'due', before: r.before });
       }
       setUndo({ entries, label: `Rescheduled ${changes.length} task${changes.length === 1 ? '' : 's'}` });
@@ -163,9 +168,9 @@ function useCloser() {
     try {
       for (const e of undo.entries) {
         const r = e.kind === 'due'
-          ? await api.setTaskDue(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, dueRaw: b.dueRaw })))
+          ? await api.setTaskDue(e.planId, versions.current[e.planId], e.before.map(b => (b.dueRaw !== undefined ? { id: b.id, dueRaw: b.dueRaw } : { id: b.id, due: b.due || null })))
           : await api.setTaskStatus(e.planId, versions.current[e.planId], e.before.map(b => ({ id: b.id, status: b.status })));
-        versions.current[e.planId] = r.version;
+        if (r.version) versions.current[e.planId] = r.version;
       }
       setUndo(null);
     } catch (e) { setMsg(`Undo failed — ${e.message}`); }
@@ -174,6 +179,7 @@ function useCloser() {
 
   return {
     selectMode, busy, msg, undo, stamp, selected, runUndo, applyDue,
+    bump: () => setStamp(s => s + 1),
     setVersion: (planId, v) => { if (v) versions.current[planId] = v; },
     toggleSelectMode: () => { setSelectMode(m => !m); setSelected(new Map()); },
     isSelected: r => selected.has(keyOf(r)),
@@ -184,11 +190,24 @@ function useCloser() {
   };
 }
 
+const NEURO_TASKS_URL = 'https://nuero.nickward.co.uk/?view=todos';
+
 /** The tick (or, in Select mode, the selection box) for one task. */
 function RowControls({ closer, row }) {
   if (!closer) return null;
+  if (row.readOnly) {
+    return <span className="small muted" title="Not yours, so it was not sent to NEURO. Kept here from the register, read-only." style={{ minWidth: 50 }}>register</span>;
+  }
   if (closer.selectMode) {
     return <input type="checkbox" checked={closer.isSelected(row)} onChange={() => closer.toggle(row)} title="Select" />;
+  }
+  if (row.inNeuro) {
+    return (
+      <a className="small" href={NEURO_TASKS_URL} target="_blank" rel="noreferrer" style={{ minWidth: 50 }}
+        title={row.viaPlanner ? 'On the Planner board — NEURO shows it from there. Tick it in NEURO.' : 'This task lives in NEURO — tick it there.'}>
+        {row.statusKey === 'done' ? '✓ NEURO' : 'NEURO ↗'}
+      </a>
+    );
   }
   const done = row.statusKey === 'done';
   return (
@@ -361,7 +380,7 @@ function PriorityPanel({ id, closer }) {
         onReorder={next => run(() => api.rankTasks(id, d.version, next.map(a => a.id)))}
         render={a => (
           <>
-            <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey }} />
+            <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey, inNeuro: a.inNeuro, readOnly: a.readOnly, viaPlanner: a.viaPlanner }} />
             <StarButton starred={a.starred} busy={busy} onClick={() => run(() => api.starTask(id, a.id, d.version, !a.starred))} />
             <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{a.id}</span>
             <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
@@ -372,6 +391,61 @@ function PriorityPanel({ id, closer }) {
             <StatusPill status={a.status} statusKey={a.statusKey} />
           </>
         )} />
+    </div>
+  );
+}
+
+/**
+ * "Send to NEURO": shows exactly what will happen, then hands the plan over.
+ * After this the plan's tasks live in NEURO and the register is history.
+ */
+function SendToNeuro({ id, closer }) {
+  const [p, setP] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const preview = async () => {
+    setOpen(true); setBusy(true); setError(null);
+    try { setP(await api.handoffPreview(id)); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const send = async () => {
+    setBusy(true); setError(null);
+    try { setResult(await api.handOff(id, p.version)); closer.bump(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return <button className="primary small" style={{ marginTop: 10 }} onClick={preview}>Send to NEURO…</button>;
+  }
+  return (
+    <div style={{ border: '1px solid var(--accent)', borderRadius: 8, padding: 12, marginTop: 10 }}>
+      <strong>Send this plan to NEURO</strong>
+      {busy && !p && <p className="sub">Working out what would be sent…</p>}
+      {error && <div className="banner bad" style={{ marginTop: 8 }}>{error}</div>}
+      {p && !result && (
+        <>
+          <ul className="small" style={{ margin: '8px 0', paddingLeft: 18, lineHeight: 1.6 }}>
+            <li><b>{p.create}</b> of your open tasks become NEURO tasks, as continual improvement (not commitments), with their dates.{p.must ? <> <b>{p.must}</b> starred → MoSCoW Must.</> : null} Their rank becomes their order in NEURO.</li>
+            {p.link > 0 && <li><b>{p.link}</b> are already in NEURO from the Planner board — linked, not copied.</li>}
+            {p.renamed.length > 0 && <li>{p.renamed.length} share a wording with another task, so the plan and ID are added to tell them apart (e.g. "{p.renamed[0]}").</li>}
+            {p.othersOpen.length > 0 && <li><b>{p.othersOpen.length}</b> open tasks belong to others or are shared — they are NOT sent and stay here read-only: {p.othersOpen.slice(0, 4).map(o => `${o.id} (${o.owner || 'no owner'})`).join(', ')}{p.othersOpen.length > 4 ? '…' : ''}.</li>}
+            <li>Done and not-doing tasks are not sent ({p.closed}).</li>
+            <li>The register is stamped "moved to NEURO" and kept as history. From then on you tick and edit these in NEURO; this screen shows them live.</li>
+          </ul>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="primary small" disabled={busy || (!p.create && !p.link)} onClick={send}>{busy ? 'Sending…' : `Send ${p.create + p.link} task${p.create + p.link === 1 ? '' : 's'} to NEURO`}</button>
+            <button className="ghost small" disabled={busy} onClick={() => { setOpen(false); setP(null); }}>Cancel</button>
+          </div>
+        </>
+      )}
+      {result && (
+        <div className="small" style={{ marginTop: 8 }}>
+          {result.moved
+            ? <>Done — {result.created} created{result.folded ? `, ${result.folded} matched tasks already in NEURO` : ''}{result.linked ? `, ${result.linked} linked to the Planner board` : ''}.{result.order?.error ? ` Their NEURO order could not be set (${result.order.error}) — reorder them in NEURO.` : ''}</>
+            : <span style={{ color: 'var(--warn)' }}>Partly sent — {result.failed.length} failed: {result.failed.slice(0, 3).join('; ')}. Press Send again: tasks already sent are found, not duplicated.</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -407,12 +481,22 @@ function GenericPlan({ id, closer }) {
       {d.board?.linked && !d.board.available && (
         <div className="banner warn">The Planner board could not be read ({d.board.reason}). Nothing below says a task is or isn't on it.</div>
       )}
+      {d.moved && (
+        <div className="banner" style={{ borderColor: 'var(--accent)' }}>
+          Handed to NEURO on {d.moved}. These tasks live in NEURO now — tick, edit and prioritise them there
+          (<a href={NEURO_TASKS_URL} target="_blank" rel="noreferrer">open NEURO tasks ↗</a>). Replan here moves their NEURO dates.
+          Rows marked "register" were not yours and stay here read-only.
+        </div>
+      )}
       <div className="card">
         <h2>{d.name}</h2>
         <p className="sub">
-          From <span style={{ fontFamily: 'var(--mono)' }}>{d.path}</span> — the source of truth. Status, owners and dates change there.{' '}
+          {d.moved
+            ? <>Live from NEURO; <span style={{ fontFamily: 'var(--mono)' }}>{d.path}</span> is kept as the hand-off record.{' '}</>
+            : <>From <span style={{ fontFamily: 'var(--mono)' }}>{d.path}</span> — the source of truth. Status, owners and dates change there.{' '}</>}
           <button className="ghost small" style={{ border: 'none' }} disabled={busy} onClick={() => load(true)}>re-read</button>
         </p>
+        {!d.moved && <SendToNeuro id={id} closer={closer} />}
         <div className="grid">
           <div className="metric"><div className="n">{s.done}/{s.total}</div><div className="l">Done</div><div className="d">{s.dropped} not doing</div></div>
           <div className="metric"><div className="n">{s.open}</div><div className="l">Open</div><div className="d">{s.doing} in progress, {s.todo} to do</div></div>
@@ -426,12 +510,12 @@ function GenericPlan({ id, closer }) {
         </div>
       </div>
 
-      <PriorityPanel id={id} closer={closer} />
+      {!d.moved && <PriorityPanel id={id} closer={closer} />}
 
       <div className="card">
         <Chips label="Status" value={status} onChange={setStatus}
           options={[['all', 'All'], ['open', 'Open'], ['todo', 'To do'], ['doing', 'In progress'], ['done', 'Done'], ['dropped', 'Not doing']]} />
-        <CloseBar closer={closer} rows={shown.map(a => ({ planId: id, id: a.id, statusKey: a.statusKey }))} />
+        <CloseBar closer={closer} rows={shown.map(a => ({ planId: id, id: a.id, statusKey: a.statusKey, inNeuro: a.inNeuro, readOnly: a.readOnly, viaPlanner: a.viaPlanner }))} />
       </div>
       {!d.actions.length && <div className="empty">This register has no actions yet. Add rows to its table in the vault.</div>}
       {d.sections.map(section => {
@@ -444,7 +528,7 @@ function GenericPlan({ id, closer }) {
             {rows.map(a => (
               <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
                 <div className="row" style={{ gap: 8 }}>
-                  <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey }} />
+                  <RowControls closer={closer} row={{ planId: id, id: a.id, statusKey: a.statusKey, inNeuro: a.inNeuro, readOnly: a.readOnly, viaPlanner: a.viaPlanner }} />
                   <span style={{ color: a.starred ? 'var(--warn)' : 'transparent' }}>★</span>
                   <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{a.id}</span>
                   <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
@@ -523,16 +607,18 @@ function Consolidated({ plans, closer }) {
         <label className="small row" style={{ gap: 6 }}>
           <input type="checkbox" checked={starredOnly} onChange={e => setStarredOnly(e.target.checked)} /> starred only
         </label>
-        <CloseBar closer={closer} rows={shown.map(t => ({ planId: t.planId, id: t.id, statusKey: t.statusKey }))} />
+        <CloseBar closer={closer} rows={shown.map(t => ({ planId: t.planId, id: t.id, statusKey: t.statusKey, inNeuro: t.inNeuro, readOnly: t.readOnly, viaPlanner: t.viaPlanner }))} />
       </div>
       <div className="card">
         <p className="sub">{shown.length} of {d.tasks.length} tasks</p>
         {!shown.length && <div className="empty">No tasks match these filters.</div>}
         {shown.map(t => (
           <div key={`${t.planId}:${t.id}`} className="row" style={{ gap: 8, padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
-            <RowControls closer={closer} row={{ planId: t.planId, id: t.id, statusKey: t.statusKey }} />
-            <StarButton starred={t.starred} busy={busy}
-              onClick={() => run(() => api.starTask(t.planId, t.id, version[t.planId], !t.starred))} />
+            <RowControls closer={closer} row={{ planId: t.planId, id: t.id, statusKey: t.statusKey, inNeuro: t.inNeuro, readOnly: t.readOnly, viaPlanner: t.viaPlanner }} />
+            {t.inNeuro || t.readOnly
+              ? <span title={t.inNeuro ? 'Priority lives in NEURO (★ = MoSCoW Must)' : ''} style={{ color: t.starred ? 'var(--warn)' : 'transparent', padding: '0 4px', fontSize: 16 }}>★</span>
+              : <StarButton starred={t.starred} busy={busy}
+                onClick={() => run(() => api.starTask(t.planId, t.id, version[t.planId], !t.starred))} />}
             <span className="pill" title={`Plan priority ${t.planRank ?? '—'}`} style={{ minWidth: 0 }}>{t.planName}</span>
             <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{t.id}</span>
             <span style={{ flex: 1, fontSize: 13 }}>{t.action}</span>
@@ -761,6 +847,7 @@ export default function Plans() {
               title={p.available ? p.path : `Unreadable: ${p.reason}`}>
               {p.rank != null && <span className="muted" style={{ marginRight: 4 }}>{p.rank}.</span>}
               {p.name}
+              {p.moved && <span className="muted" style={{ marginLeft: 6 }} title={`Handed to NEURO on ${p.moved}`}>· NEURO</span>}
               {p.summary ? <span className="muted" style={{ marginLeft: 6 }}>{p.summary.open}{p.summary.starred ? ` · ★${p.summary.starred}` : ''}</span> : <span style={{ color: 'var(--bad)', marginLeft: 6 }}>!</span>}
             </button>
           ))}
@@ -777,8 +864,12 @@ export default function Plans() {
 
       <CloseToast closer={closer} />
       {view === 'all' && <Consolidated key={plans.map(p => `${p.id}:${p.rank}`).join()} plans={plans} closer={closer} />}
-      {view !== 'all' && current?.isSip && (<><PriorityPanel id={current.id} closer={closer} /><SipPlan planId={current.id} closer={closer} CloseBar={CloseBar} RowControls={RowControls} /></>)}
-      {view !== 'all' && current && !current.isSip && <GenericPlan id={current.id} closer={closer} />}
+      {view !== 'all' && current?.isSip && !current.moved && (<>
+        <div className="card"><h2>Hand this plan to NEURO</h2><SendToNeuro id={current.id} closer={closer} /></div>
+        <PriorityPanel id={current.id} closer={closer} />
+        <SipPlan planId={current.id} closer={closer} CloseBar={CloseBar} RowControls={RowControls} />
+      </>)}
+      {view !== 'all' && current && (!current.isSip || current.moved) && <GenericPlan id={current.id} closer={closer} />}
     </div>
   );
 }

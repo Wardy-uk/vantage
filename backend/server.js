@@ -269,11 +269,15 @@ app.get('/api/plans/candidates', wrap(() => plans.candidates()));
 // POST /api/plans/adopt { folder } — make an existing vault project a plan (writes an empty register).
 app.post('/api/plans/adopt', wrap(req => plans.adopt(req.body || {})));
 // POST /api/plans/from-planner { planId, folder?, name? } — new vault project + register seeded from a Planner board.
-app.post('/api/plans/from-planner', wrap(req => plans.fromPlanner(req.body || {})));
+app.post('/api/plans/from-planner', wrap(async req => {
+  // Tasks live in NEURO (Nick, 29 Oct 2026): the new plan is handed over at once.
+  const made = await plans.fromPlanner(req.body || {});
+  return { ...made, handoff: await require('./services/plan-neuro').handOff(made.id) };
+}));
 // POST /api/plans/import/propose { text | filename+fileBase64 } — read a document and PROPOSE a plan. Writes nothing.
 app.post('/api/plans/import/propose', wrap(req => require('./services/plan-import').propose(req.body || {})));
 // POST /api/plans/import/save { folder, name, sections, sourceText, from } — write the edited proposal as a new project.
-app.post('/api/plans/import/save', wrap(req => {
+app.post('/api/plans/import/save', wrap(async req => {
   const b = req.body || {};
   const sections = (Array.isArray(b.sections) ? b.sections : []).map(s => ({
     title: s.title,
@@ -282,7 +286,10 @@ app.post('/api/plans/import/save', wrap(req => {
     })),
   })).filter(s => s.actions.length);
   if (!sections.length) throw new Error('No actions to save');
-  return plans.createPlan({ folder: String(b.folder || '').trim(), name: String(b.name || b.folder || '').trim(), sections, source: b.from || null, sourceText: b.sourceText || null });
+  const made = await plans.createPlan({ folder: String(b.folder || '').trim(), name: String(b.name || b.folder || '').trim(), sections, source: b.from || null, sourceText: b.sourceText || null });
+  // Tasks live in NEURO: an imported plan is handed over at once. Rows with no
+  // owner stated count as Nick's — it is his plan he is importing.
+  return { ...made, handoff: await require('./services/plan-neuro').handOff(made.id, { includeUnstated: true }) };
 }));
 // POST /api/plans/replan/preview { items: [{ planId, id }], mode: spread|shift|set, start, perDay, days, date } — new due dates for selected tasks across plans, skipping weekends and NEURO's bank holidays. Writes nothing.
 app.post('/api/plans/replan/preview', wrap(req => plans.replanPreview(req.body || {})));
@@ -292,6 +299,10 @@ app.post('/api/plans/rank', wrap(req => plans.rankPlans(req.body || {})));
 app.get('/api/plans/:id', wrap(req => plans.detail(req.params.id, { force: req.query.refresh === '1' })));
 // POST /api/plans/:id/tasks/rank { version, order: [taskId…] } — task priority (Rank column). 409 if the register changed.
 app.post('/api/plans/:id/tasks/rank', wrap(req => plans.rankTasks(req.params.id, req.body || {})));
+// GET /api/plans/:id/handoff — what "Send to NEURO" would do (counts, renamed duplicates, others' tasks that stay). Writes nothing.
+app.get('/api/plans/:id/handoff', wrap(req => require('./services/plan-neuro').previewHandoff(req.params.id)));
+// POST /api/plans/:id/handoff { version } — Send to NEURO: Nick's open tasks become NEURO tasks (improvement; star → Must; rank → NEURO order); the register is stamped moved-to-neuro and becomes history.
+app.post('/api/plans/:id/handoff', wrap(req => require('./services/plan-neuro').handOff(req.params.id, { version: (req.body || {}).version })));
 // POST /api/plans/:id/tasks/status { version, changes: [{ id, to: done|dropped|open } | { id, status }] } — close, drop or reopen tasks in the register (each register keeps its own words). Returns the previous statuses for Undo. 409 if the register changed.
 app.post('/api/plans/:id/tasks/status', wrap(req => plans.setStatus(req.params.id, req.body || {})));
 // POST /api/plans/:id/tasks/due { version, changes: [{ id, due: YYYY-MM-DD|null } | { id, dueRaw }] } — write due dates (Replan). Returns previous cells for Undo. 409 if the register changed.
