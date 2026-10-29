@@ -204,6 +204,21 @@ function setTriage(id, { state, tags, rolesKey }) {
     .run(state, JSON.stringify(tags || []), rolesKey || null, id, 'queued');
 }
 
+/** Gathered items judged under other rules or profiles than `rolesKey`, newest first. */
+function forRetriage(rolesKey, limit) {
+  return db().prepare(`SELECT * FROM perf_evidence WHERE origin != 'manual' AND state IN ('proposed','accepted')
+    AND (judged_roles IS NULL OR judged_roles != ?) ORDER BY occurred_at DESC LIMIT ?`).all(rolesKey, limit).map(evRow);
+}
+
+/** Apply a re-sort. Nick's decision stands; an accepted item left with no skill returns to Review. */
+function setRetriage(id, { tags, rolesKey }) {
+  const cur = getEvidence(id);
+  if (!cur || !['proposed', 'accepted'].includes(cur.state)) return;
+  const state = cur.state === 'accepted' ? (tags.length ? 'accepted' : 'proposed') : (tags.length ? 'proposed' : 'not-relevant');
+  db().prepare("UPDATE perf_evidence SET state = ?, tags_json = ?, judged_roles = ?, in_case = CASE WHEN ? = 'accepted' THEN in_case ELSE 0 END WHERE id = ?")
+    .run(state, JSON.stringify(tags || []), rolesKey, state, id);
+}
+
 /** Accepted evidence tagged to a slot. */
 function acceptedFor(slot) {
   return db().prepare("SELECT * FROM perf_evidence WHERE state = 'accepted' ORDER BY occurred_at DESC").all()
@@ -239,6 +254,6 @@ function assessmentHistory(slot, limit = 20) {
 module.exports = {
   STATES, SLOTS, getState, setState,
   activeRole, roleHistory, saveRole,
-  enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, acceptedFor, deleteManual,
+  enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptedFor, deleteManual,
   saveAssessment, latestAssessment, assessmentHistory,
 };

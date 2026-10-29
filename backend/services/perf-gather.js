@@ -154,15 +154,24 @@ function profileBlock(role) {
     + p.skills.map((s) => `  ${s.code} ${s.name} (target L${s.level})${/^Scope:/i.test(s.why || '') ? ` — ${String(s.why).slice(0, 200)}` : ''}`).join('\n');
 }
 
+/**
+ * ⚠ Rewritten 29 Oct 2026 after Nick's review: the first version treated
+ * lateness as evidence against, and a one-day slip on an SLA field Nick FOUND
+ * AND FIXED was sorted as evidence against service level management. Judge the
+ * substance of the work; timing is context, almost never the verdict.
+ */
 const TRIAGE_PROMPT = `You sort evidence of one manager's performance (Nick) against SFIA skills for his role(s).
-For EACH item decide which skills it is genuine evidence of, for which role, and whether it is evidence FOR (he did the thing well / at level) or AGAINST (missed, late, below level).
+For EACH item decide which skills its SUBSTANCE is genuine evidence of, for which role, and the stance.
 Answer ONLY with JSON: {"items":[{"i":0,"tags":[{"slot":"current","code":"SLMO","stance":"for","why":"one short sentence"}]}]}
+WHAT COUNTS
+- Judge WHAT the work was, not when it was done. Finding and fixing a problem, building a process, analysing data, raising and resolving issues, running meetings, coaching, deciding — is evidence FOR the skill it exercises, whether or not it finished on its due date.
+- Timing is context, never the verdict. A task finished late is still evidence FOR the skill its work shows. Lateness of up to 14 days is ignored completely.
+- AGAINST needs the item itself to show a poor outcome attributable to Nick: a commitment to someone left open more than 14 days past due, work dropped, a decision of his that caused a problem, or a failure he owned. "Done late" is not that. A problem Nick discovered or fixed is never against him — finding it is the skill.
+- Nick's own improvement goals (origin "improvement" or not classified) are never AGAINST for timing.
 RULES
 - Every item index must appear exactly once. tags:[] means it is not evidence of any listed skill.
-- Use only the skill codes listed for each role, with that role's slot.
-- An item can carry tags for both roles.
+- Use only the skill codes listed for each role, with that role's slot. An item can carry tags for both roles.
 - Routine admin with no skill content gets tags:[].
-- A missed or late task is AGAINST only if it plainly bears on the skill; a set date can be a plan, not a promise.
 - why: what in the item shows it. Never invent facts not in the item.`;
 
 /** Validate the model's triage answer for a batch. Pure. Refuses the whole batch if any item is missing. */
@@ -191,7 +200,18 @@ function parseTriage(raw, batchSize, codesBySlot) {
 
 let running = false;
 
-async function triage({ today = localKey() } = {}) {
+/** Bump when the sorting rules change: everything judged under an older version is re-read. */
+const RULES_VERSION = 'r2';
+
+/**
+ * mode 'queued'   — read new items (the normal pass).
+ * mode 'retriage' — re-read items already proposed or accepted that were judged
+ *   under older rules or an older role profile. Nick's decisions stand: an
+ *   accepted item stays accepted with its new tags, and one left tied to no
+ *   skill goes back to Review rather than disappearing. Manual entries are his
+ *   own tagging and are never re-read.
+ */
+async function triage({ today = localKey(), mode = 'queued' } = {}) {
   const openrouter = require('./openrouter');
   const roles = { current: store.activeRole('current'), future: store.activeRole('future') };
   if (!roles.current && !roles.future) return { stopped: 'no-roles', judged: 0 };
@@ -200,7 +220,7 @@ async function triage({ today = localKey() } = {}) {
     current: new Set((roles.current?.profile.skills || []).map((s) => s.code)),
     future: new Set((roles.future?.profile.skills || []).map((s) => s.code)),
   };
-  const rolesKey = `${roles.current?.id || '-'}/${roles.future?.id || '-'}`;
+  const rolesKey = `${RULES_VERSION}:${roles.current?.id || '-'}/${roles.future?.id || '-'}`;
   const system = `${TRIAGE_PROMPT}\n\n${[profileBlock(roles.current), profileBlock(roles.future)].filter(Boolean).join('\n\n')}`;
   const c = caps();
   let judged = 0; let proposed = 0; let failures = 0;
@@ -208,8 +228,8 @@ async function triage({ today = localKey() } = {}) {
     const room = c.dailyItems - itemsToday(today);
     if (room <= 0) return { stopped: 'item-cap', judged, proposed, failures };
     if (spentToday().usd >= c.dailyUsd) return { stopped: 'spend-cap', judged, proposed, failures };
-    const batch = store.queued(Math.min(BATCH, room));
-    if (!batch.length) return { stopped: 'queue-empty', judged, proposed, failures };
+    const batch = mode === 'retriage' ? store.forRetriage(rolesKey, Math.min(BATCH, room)) : store.queued(Math.min(BATCH, room));
+    if (!batch.length) return { stopped: mode === 'retriage' ? 'retriage-done' : 'queue-empty', judged, proposed, failures };
     const lines = batch.map((e, i) => JSON.stringify({ i, kind: e.kind, hint: e.hint, date: String(e.occurredAt || '').slice(0, 10), title: e.title, detail: String(e.detail || '').slice(0, 600) }));
     let tagsByIndex;
     try {
@@ -225,7 +245,8 @@ async function triage({ today = localKey() } = {}) {
       continue;
     }
     for (const [i, tags] of tagsByIndex) {
-      store.setTriage(batch[i].id, { state: tags.length ? 'proposed' : 'not-relevant', tags, rolesKey });
+      if (mode === 'retriage') store.setRetriage(batch[i].id, { tags, rolesKey });
+      else store.setTriage(batch[i].id, { state: tags.length ? 'proposed' : 'not-relevant', tags, rolesKey });
       if (tags.length) proposed += 1;
     }
     judged += batch.length;
@@ -244,8 +265,9 @@ async function run(reason = 'timer') {
   try {
     const g = await gather();
     const t = await triage();
-    const out = { reason, gather: g, triage: t, ms: Date.now() - started, at: new Date().toISOString() };
-    if (overrideOn() && g.backfill?.done && store.counts().queued === 0) {
+    const rt = (t.stopped === 'queue-empty') ? await triage({ mode: 'retriage' }) : null;
+    const out = { reason, gather: g, triage: t, retriage: rt, ms: Date.now() - started, at: new Date().toISOString() };
+    if (overrideOn() && g.backfill?.done && store.counts().queued === 0 && rt?.stopped === 'retriage-done') {
       store.setState('backfill_override', { on: false, at: out.at, by: 'auto', reason: 'backfill complete' });
       out.overrideEnded = true;
     }
