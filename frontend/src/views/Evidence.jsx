@@ -460,17 +460,25 @@ function AssessTab({ data, reload }) {
                         <td style={{ textAlign: 'center' }}>L{s.target}</td>
                         <td style={{ textAlign: 'center', color: RATING[s.rating]?.color }}>{RATING[s.rating]?.label || s.rating}</td>
                         <td style={{ textAlign: 'center' }}>{s.observedLevel ? `L${s.observedLevel}` : '—'}</td>
-                        <td className="small muted">{s.why}</td>
-                        <td className="small muted" style={{ fontFamily: 'var(--mono)' }}>{s.cite.length ? s.cite.map((c) => `#${c}`).join(' ') : '—'}</td>
+                        <td className="small muted" style={{ whiteSpace: 'normal' }}>{s.why}</td>
+                        <td className="small muted" style={{ fontFamily: 'var(--mono)', whiteSpace: 'normal', wordBreak: 'break-word', width: 120, maxWidth: 120 }}>{s.cite.length ? s.cite.map((c) => `#${c}`).join(' ') : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-                  {ATTRS.map(([k, l]) => (
-                    <Pill key={k} title={a.attributes?.[k]?.why || ''}>{l}: target L{role?.profile.attributes?.[k]?.level ?? '?'} · seen {a.attributes?.[k]?.observedLevel ? `L${a.attributes[k].observedLevel}` : '—'}</Pill>
-                  ))}
-                </div>
+                <table className="table" style={{ width: '100%', marginTop: 10 }}>
+                  <thead><tr><th style={{ textAlign: 'left' }}>Attribute</th><th>Target</th><th>Seen at</th><th style={{ textAlign: 'left' }}>Why</th></tr></thead>
+                  <tbody>
+                    {ATTRS.map(([k, l]) => (
+                      <tr key={k}>
+                        <td><b>{l}</b></td>
+                        <td style={{ textAlign: 'center' }}>L{role?.profile.attributes?.[k]?.level ?? '?'}</td>
+                        <td style={{ textAlign: 'center' }}>{a.attributes?.[k]?.observedLevel ? `L${a.attributes[k].observedLevel}` : '—'}</td>
+                        <td className="small muted" style={{ whiteSpace: 'normal' }}>{a.attributes?.[k]?.why || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
                 {data.assessments.history[slot].length > 1 && (
                   <p className="small muted" style={{ marginTop: 8 }}>History: {data.assessments.history[slot].map((h) => `${h.createdAt.slice(0, 10)} ${READY[h.readiness] || '—'}`).join(' · ')}</p>
                 )}

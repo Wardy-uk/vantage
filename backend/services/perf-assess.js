@@ -61,7 +61,7 @@ function parseAssessment(raw, { skills, bySkill }) {
       continue;
     }
     const lv = Number(m.observedLevel);
-    out.push({ ...base, rating, observedLevel: Number.isInteger(lv) && lv >= 1 && lv <= 7 ? lv : null, why: clip(m.why, 500) || null, cite });
+    out.push({ ...base, rating, observedLevel: Number.isInteger(lv) && lv >= 1 && lv <= 7 ? lv : null, why: clip(m.why, 2000) || null, cite });
   }
   const counts = { met: 0, partly: 0, 'not-yet': 0, 'no-evidence': 0, unrated: 0 };
   for (const r of out) counts[r.rating] += 1;
@@ -74,12 +74,12 @@ function parseAssessment(raw, { skills, bySkill }) {
   for (const a of sfia.ATTRIBUTES) {
     const g = j?.attributes?.[a.key];
     const lv = Number(g?.observedLevel);
-    attributes[a.key] = { observedLevel: Number.isInteger(lv) && lv >= 1 && lv <= 7 ? lv : null, why: clip(g?.why, 300) || null };
+    attributes[a.key] = { observedLevel: Number.isInteger(lv) && lv >= 1 && lv <= 7 ? lv : null, why: clip(g?.why, 1000) || null };
   }
   return {
     skills: out, counts, attributes,
-    readiness: { rating: readiness, why: clip(j?.readiness?.why, 600) || null },
-    summary: clip(j?.summary, 900) || null,
+    readiness: { rating: readiness, why: clip(j?.readiness?.why, 1500) || null },
+    summary: clip(j?.summary, 2500) || null,
   };
 }
 
@@ -118,7 +118,7 @@ async function assess(slot) {
   const reply = await openrouter.complete([
     { role: 'system', content: PROMPT },
     { role: 'user', content: `${profileText}\n\nACCEPTED EVIDENCE:\n${evText}` },
-  ], { temperature: 0.2, maxTokens: 4000, json: true, callType: 'perf_assess' });
+  ], { temperature: 0.2, maxTokens: 12000, json: true, callType: 'perf_assess' });
   const result = parseAssessment(reply.text, { skills, bySkill });
   return store.saveAssessment(slot, role.id, { ...result, evidenceRead: chosen.length, model: reply.model });
 }
