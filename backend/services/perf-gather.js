@@ -149,7 +149,9 @@ function profileBlock(role) {
   if (!role) return null;
   const p = role.profile;
   return `${role.slot.toUpperCase()} ROLE — ${p.title}\n`
-    + p.skills.map((s) => `  ${s.code} ${s.name} (target L${s.level})`).join('\n');
+    // A skill whose note starts "Scope:" carries what Nick can actually influence —
+    // the sorter needs it to recognise the evidence (e.g. leave approval as WFPL).
+    + p.skills.map((s) => `  ${s.code} ${s.name} (target L${s.level})${/^Scope:/i.test(s.why || '') ? ` — ${String(s.why).slice(0, 200)}` : ''}`).join('\n');
 }
 
 const TRIAGE_PROMPT = `You sort evidence of one manager's performance (Nick) against SFIA skills for his role(s).

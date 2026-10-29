@@ -110,7 +110,7 @@ async function assess(slot) {
     const result = parseAssessment({}, { skills, bySkill });
     return store.saveAssessment(slot, role.id, { ...result, evidenceRead: 0, model: null });
   }
-  const profileText = `ROLE: ${role.profile.title}\nSKILLS:\n${skills.map((s) => `  ${s.code} ${s.name} — target L${s.level}; evidence ids: ${(bySkill[s.code] || []).join(', ') || 'none'}`).join('\n')}\nGENERIC ATTRIBUTE TARGETS: ${sfia.ATTRIBUTES.map((a) => `${a.name} L${role.profile.attributes?.[a.key]?.level ?? '?'}`).join('; ')}`;
+  const profileText = `ROLE: ${role.profile.title}\nSKILLS (each with what the role expects and the scope Nick actually has — judge him WITHIN that scope, never against authority the role does not give him):\n${skills.map((s) => `  ${s.code} ${s.name} — target L${s.level}${s.why ? `; expected/scope: ${String(s.why).slice(0, 300)}` : ''}; evidence ids: ${(bySkill[s.code] || []).join(', ') || 'none'}`).join('\n')}\nGENERIC ATTRIBUTE TARGETS: ${sfia.ATTRIBUTES.map((a) => `${a.name} L${role.profile.attributes?.[a.key]?.level ?? '?'}`).join('; ')}`;
   const evText = chosen.map((e) => {
     const tags = e.tags.filter((t) => t.slot === slot).map((t) => `${t.code}:${t.stance}`).join(',');
     return `#${e.id} [${String(e.occurredAt || '').slice(0, 10)}] (${tags}) ${clip(e.title, 200)} — ${clip(e.detail, 400)}`;
