@@ -44,8 +44,19 @@ const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); 
 
 // ── shapers (pure) ───────────────────────────────────────────────────────────
 
+/**
+ * ⚠ The bridge's `completedAt` is a DISPLAY string ("Tue Mar 10" — no year),
+ * because NOVA slices the first 10 characters of a JS Date's toString. Compared
+ * as a date it matched nothing, so VANTAGE read ZERO 1-2-1s for a year while
+ * NOVA held them all (29 Oct 2026). NEURO's nova-121-writeback learned this in
+ * a five-night outage: use completedAt only when it IS a date, else scheduledDate.
+ */
+const isoDay = (v) => (/^\d{4}-\d{2}-\d{2}/.test(String(v || '')) ? String(v).slice(0, 10) : null);
+const sessionDay = (s) => isoDay(s.completedAt) || isoDay(s.scheduledDate);
+
 function oneToOneItems(sessions, from, to) {
-  return (sessions || []).filter((s) => s.completedAt && s.completedAt >= from && s.completedAt <= to).map((s) => {
+  return (sessions || []).map((s) => ({ ...s, completedAt: sessionDay(s) }))
+    .filter((s) => s.completedAt && s.completedAt >= from && s.completedAt <= to).map((s) => {
     const delivered = (s.reviewedActions || []).filter((a) => a.status === 'delivered').length;
     const missed = (s.reviewedActions || []).filter((a) => a.status === 'missed').length;
     const agreed = (s.actions || []).length;

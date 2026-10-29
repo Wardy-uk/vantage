@@ -141,3 +141,9 @@ test('NOVA: a 1-2-1 item carries the counts, never the session notes', () => {
   assert.doesNotMatch(it.detail, /PRIVATE|medical/);
   assert.match(it.detail, /1 action\(s\) agreed/);
 });
+
+test('NOVA: a 1-2-1 with a display-string completedAt is dated by its scheduled date, not lost', () => {
+  const items = nova.oneToOneItems([{ sessionId: 32, agentName: 'A Person', scheduledDate: '2026-03-10', completedAt: 'Tue Mar 10', actions: [], reviewedActions: [] }], '2026-03-01', '2026-03-31');
+  assert.equal(items.length, 1, 'the live bridge shape must not be filtered out');
+  assert.equal(items[0].at, '2026-03-10T12:00:00');
+});
