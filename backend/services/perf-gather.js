@@ -244,4 +244,4 @@ function status() {
   };
 }
 
-module.exports = { run, gather, triage, status, setCaps, caps, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays } };
+module.exports = { run, gather, triage, status, setCaps, caps, isNoise, parseTriage, DEFAULT_CAPS, _internals: { addDays, fetchWindow } };

@@ -133,3 +133,9 @@ test('a fenced JSON answer is read; anything else that is not JSON is still refu
   const codes = { current: new Set(['SLMO']), future: new Set() };
   assert.equal(parseTriage(`${fence}json${NL}{"items":[{"i":0,"tags":[]}]}${NL}${fence}`, 1, codes).size, 1, 'triage reads a fenced answer');
 });
+
+test('NOVA: a 1-2-1 item carries the counts, never the session notes', () => {
+  const [it] = nova.oneToOneItems([{ sessionId: 7, agentName: 'A Person', completedAt: '2026-10-05', notesText: 'PRIVATE medical detail', actions: [{}], reviewedActions: [{ status: 'delivered' }] }], '2026-10-01', '2026-10-07');
+  assert.doesNotMatch(it.detail, /PRIVATE|medical/);
+  assert.match(it.detail, /1 action\(s\) agreed/);
+});

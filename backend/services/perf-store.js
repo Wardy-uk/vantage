@@ -133,18 +133,25 @@ function evRow(r) {
   } : null;
 }
 
-/** Insert gathered items (`origin` 'neuro' | 'nova'); an existing source_key is left exactly as it is. Returns how many were new. */
+/** Insert gathered items (`origin` 'neuro' | 'nova'). An existing source_key keeps its state and tags; its text is refreshed. Returns how many were new. */
 function enqueue(items) {
-  const ins = db().prepare(`INSERT OR IGNORE INTO perf_evidence
+  // A re-fetched item REFRESHES its text (title/detail/hint/ref) and keeps its
+  // state and tags. The source is authoritative for what it says — and that is
+  // how a tightened privacy screen in NEURO reaches items stored before it.
+  const has = db().prepare('SELECT 1 FROM perf_evidence WHERE source_key = ?');
+  const ins = db().prepare(`INSERT INTO perf_evidence
     (source_key, origin, kind, hint, occurred_at, title, detail, ref, state, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source_key) DO UPDATE SET title = excluded.title, detail = excluded.detail, hint = excluded.hint, ref = excluded.ref`);
   let added = 0;
   db().transaction(() => {
     for (const it of items) {
       const origin = it.origin === 'nova' ? 'nova' : 'neuro';
-      const r = ins.run(`${origin}:${it.id}`, origin, it.kind, it.hint || null, it.at || null, String(it.title).slice(0, 400),
+      const key = `${origin}:${it.id}`;
+      const existed = Boolean(has.get(key));
+      ins.run(key, origin, it.kind, it.hint || null, it.at || null, String(it.title).slice(0, 400),
         it.detail || null, it.ref || null, it.skip ? 'not-relevant' : 'queued', now());
-      added += r.changes;
+      if (!existed) added += 1;
     }
   })();
   return added;

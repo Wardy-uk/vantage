@@ -48,20 +48,60 @@ function Pill({ children, color, title }) {
   return <span className="pill" title={title} style={color ? { color, borderColor: color } : undefined}>{children}</span>;
 }
 
-function TagPills({ tags, roles }) {
-  if (!tags?.length) return <span className="small muted">No skill</span>;
+/**
+ * One plain line per skill: "Incident management (USUP) — both roles — evidence for",
+ * the reason underneath. A tag the model gave for both roles with the same
+ * reason is ONE line, not two.
+ */
+function SkillLines({ tags, roles }) {
+  if (!tags?.length) return <div className="small muted">Not tied to a skill yet — Re-tag to choose one.</div>;
+  const groups = new Map();
+  for (const t of tags) {
+    const k = `${t.code}|${t.stance}|${t.why || ''}`;
+    if (!groups.has(k)) groups.set(k, { ...t, slots: [] });
+    groups.get(k).slots.push(t.slot);
+  }
   return (
-    <span className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
-      {tags.map((t, i) => {
-        const skill = roles[t.slot]?.profile?.skills?.find((s) => s.code === t.code);
+    <div style={{ display: 'grid', gap: 6 }}>
+      {[...groups.values()].map((g, i) => {
+        const name = roles.current?.profile.skills.find((s) => s.code === g.code)?.name
+          || roles.future?.profile.skills.find((s) => s.code === g.code)?.name || g.code;
+        const which = g.slots.length > 1 ? 'both roles' : g.slots[0] === 'future' ? 'future role' : 'current role';
+        const against = g.stance === 'against';
         return (
-          <Pill key={i} color={t.stance === 'against' ? 'var(--bad)' : 'var(--good)'}
-            title={`${t.slot === 'future' ? 'Future' : 'Current'} role · ${skill?.name || t.code} · evidence ${t.stance}${t.why ? ` — ${t.why}` : ''}`}>
-            {t.slot === 'future' ? 'F' : 'C'} · {t.code} · {t.stance === 'against' ? '−' : '+'}
-          </Pill>
+          <div key={i} style={{ borderLeft: `3px solid ${against ? 'var(--bad)' : 'var(--good)'}`, paddingLeft: 10 }}>
+            <div style={{ fontSize: 13 }}>
+              <b>{name}</b> <span className="muted">({g.code}) · {which} · </span>
+              <span style={{ color: against ? 'var(--bad)' : 'var(--good)' }}>{against ? 'evidence against' : 'evidence for'}</span>
+            </div>
+            {g.why && <div className="small muted" style={{ marginTop: 2 }}>{g.why}</div>}
+          </div>
         );
       })}
-    </span>
+    </div>
+  );
+}
+
+/** Strip markdown leftovers from text stored before NEURO cleaned it. Pure. */
+function cleanText(s) {
+  return String(s || '')
+    .replace(/!?\[[^\]]*\]\((?:plaud|https?):[^)]*\)/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .split('\n').map((l) => l.trim()).filter((l) => l && !/^(Summary|Overview|Meeting Notes)$/i.test(l)).join('\n');
+}
+
+/** The source text, three lines unless asked for more. */
+function Detail({ text }) {
+  const [open, setOpen] = useState(false);
+  const t = cleanText(text);
+  if (!t) return null;
+  const withheld = /^Details withheld/.test(t);
+  const long = t.length > 260 || t.split('\n').length > 3;
+  return (
+    <div className="small muted" style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontStyle: withheld ? 'italic' : 'normal' }}>
+      <div style={open ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{t}</div>
+      {long && <button className="small" style={{ marginTop: 4, padding: '2px 8px' }} onClick={() => setOpen(!open)}>{open ? 'Less' : 'More'}</button>}
+    </div>
   );
 }
 
@@ -118,13 +158,10 @@ function EvidenceRow({ e, roles, selectable, selected, onSelect, onChanged, mode
             <b style={{ fontSize: 13 }}>{e.title}</b>
             {e.inCase && <Pill color="var(--accent)" title={e.caseSummary}>In case</Pill>}
           </div>
-          {e.detail && <div className="small muted" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{e.detail}</div>}
-          <div style={{ marginTop: 6 }}>
-            {editing ? <TagEditor tags={tags} roles={roles} onChange={setTags} /> : <TagPills tags={e.tags} roles={roles} />}
+          <Detail text={e.detail} />
+          <div style={{ marginTop: 8 }}>
+            {editing ? <TagEditor tags={tags} roles={roles} onChange={setTags} /> : <SkillLines tags={e.tags} roles={roles} />}
           </div>
-          {!editing && e.tags.some((t) => t.why) && (
-            <div className="small muted" style={{ marginTop: 4 }}>{e.tags.filter((t) => t.why).map((t) => `${t.code}: ${t.why}`).join(' · ')}</div>
-          )}
           {caseOpen && (
             <div style={{ marginTop: 8 }}>
               <div className="small muted">The line that appears in your case. The item above is never exported.</div>

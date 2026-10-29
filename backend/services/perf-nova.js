@@ -53,7 +53,9 @@ function oneToOneItems(sessions, from, to) {
       origin: 'nova', id: `121:${s.sessionId}`, kind: '121-held', hint: 'for',
       at: `${s.completedAt}T12:00:00`,
       title: `1-2-1 held with ${s.agentName}`,
-      detail: clip(`${agreed} action(s) agreed.${delivered || missed ? ` Earlier actions reviewed: ${delivered} delivered, ${missed} missed.` : ''}${s.notesText ? ` Notes: ${s.notesText}` : ''}`, 700),
+      detail: clip(`${agreed} action(s) agreed.${delivered || missed ? ` Earlier actions reviewed: ${delivered} delivered, ${missed} missed.` : ''}`, 700),
+      // ⚠ Never the session notes: a 1-2-1 is a colleague's conversation (health,
+      // personal circumstances). That it was held, and what was agreed, is the evidence.
       ref: `nova:121:${s.sessionId}`,
     };
   });
