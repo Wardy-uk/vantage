@@ -196,7 +196,12 @@ const NEURO_TASKS_URL = 'https://nuero.nickward.co.uk/?view=todos';
 function RowControls({ closer, row }) {
   if (!closer) return null;
   if (row.readOnly) {
-    return <span className="small muted" title="Not yours, so it was not sent to NEURO. Kept here from the register, read-only." style={{ minWidth: 50 }}>register</span>;
+    // Two different reasons a row was not sent, and they must not share a word:
+    // closed before the hand-off (history), or open but not Nick's (others' work).
+    const closed = row.statusKey === 'done' || row.statusKey === 'dropped';
+    return closed
+      ? <span className="small muted" title="Finished (or dropped) before this plan was handed to NEURO, so it was not sent. Kept here as history, read-only." style={{ minWidth: 70 }}>done before</span>
+      : <span className="small muted" title="Open, but not yours (or shared), so it was not sent to NEURO. Shown here read-only from the plan's register." style={{ minWidth: 70, color: 'var(--warn)' }}>not sent</span>;
   }
   if (closer.selectMode) {
     return <input type="checkbox" checked={closer.isSelected(row)} onChange={() => closer.toggle(row)} title="Select" />;
@@ -532,7 +537,7 @@ function GenericPlan({ id, closer }) {
                   <span style={{ color: a.starred ? 'var(--warn)' : 'transparent' }}>★</span>
                   <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{a.id}</span>
                   <span style={{ flex: 1, fontSize: 13 }}>{a.action}</span>
-                  {a.rank != null && <span className="small muted">#{a.rank}</span>}
+                  {a.rank != null && !a.readOnly && <span className="small muted" title={a.inNeuro ? 'Position in NEURO\'s task order' : 'Rank in this plan'}>#{a.rank}</span>}
                   <span className="small muted">{a.owner}</span>
                   <StatusPill status={a.status} statusKey={a.statusKey} />
                 </div>
@@ -622,7 +627,7 @@ function Consolidated({ plans, closer }) {
             <span className="pill" title={`Plan priority ${t.planRank ?? '—'}`} style={{ minWidth: 0 }}>{t.planName}</span>
             <span className="small muted" style={{ fontFamily: 'var(--mono)', minWidth: 34 }}>{t.id}</span>
             <span style={{ flex: 1, fontSize: 13 }}>{t.action}</span>
-            {t.rank != null && <span className="small muted">#{t.rank}</span>}
+            {t.rank != null && !t.readOnly && <span className="small muted" title={t.inNeuro ? 'Position in NEURO\'s task order' : 'Rank in its plan'}>#{t.rank}</span>}
             <span className="small muted">{t.owner}</span>
             {t.due && <span className="small" style={{ color: isOverdue(t.due, t.statusKey) ? 'var(--bad)' : 'var(--muted)' }}>
               {isOverdue(t.due, t.statusKey) ? 'overdue ' : 'due '}{t.due}
