@@ -141,22 +141,25 @@ async function gather({ today = localKey() } = {}) {
   store.setState('last_sources', { at: new Date().toISOString(), sources: lastSources });
   report.backfill = { cursor, floor, done: cursor <= floor };
 
-  // 3. Feedback sweep (30 Oct 2026). NEURO reads feedback about Nick out of
-  // OLD meetings overnight, long after the backfill passed them, so once a day
-  // the whole year is re-read for `feedback` items only. Enqueue is idempotent
-  // on the item id, so a repeat adds nothing; a window that fails is skipped.
-  const lastSweep = store.getState('feedback_sweep_at', null);
-  if (!lastSweep || Date.now() - Date.parse(lastSweep) > 20 * 3600_000) {
+  // 3. Year sweeps (30 Oct 2026). NEURO finds some evidence long after the
+  // backfill has passed its week — feedback read out of OLD meetings overnight,
+  // and Confluence pages read hourly — so once a day the whole year is re-read
+  // for those sources only. Enqueue is idempotent on the item id, so a repeat
+  // adds nothing; a window that fails is skipped and the sweep retried.
+  for (const [source, key] of [['feedback', 'feedback_sweep_at'], ['confluence', 'confluence_sweep_at']]) {
+    const last = store.getState(key, null);
+    if (last && Date.now() - Date.parse(last) <= 20 * 3600_000) continue;
     let added = 0; let failed = 0;
     for (let to = today; to > floor; to = addDays(to, -31)) {
       const from = addDays(to, -30) < floor ? floor : addDays(to, -30);
       try {
         const r = await require('./neuro').call(`/api/perf-evidence/candidates?from=${from}&to=${to}`, { timeoutMs: 60_000 });
-        added += store.enqueue((r.items || []).filter((i) => i.source === 'feedback').map((i) => ({ ...i, origin: 'neuro' })));
+        if (r.sources?.[source] && r.sources[source].ok === false) { failed += 1; continue; }
+        added += store.enqueue((r.items || []).filter((i) => i.source === source).map((i) => ({ ...i, origin: 'neuro' })));
       } catch { failed += 1; }
     }
-    if (!failed) store.setState('feedback_sweep_at', new Date().toISOString());
-    report.feedbackSweep = { added, failed };
+    if (!failed) store.setState(key, new Date().toISOString());
+    report[`${source}Sweep`] = { added, failed };
     report.added += added;
   }
   return report;
