@@ -109,6 +109,9 @@ Rules, all of them hard:
 - NEVER name a colleague. Use their role instead: "a direct report", "a team lead", "my line manager", "a developer", "a colleague in Product". Customer and company names are fine.
 - Never invent numbers, dates, outcomes or facts not in the item. If an item is vague, say less.
 - Never quote an email or a meeting.
+- Never put anything personal about an individual in the case — health, welfare, family, pay, someone leaving, someone's performance problems or a disciplinary matter — even unnamed. Pick a different item.
+- Prefer work that was DONE over something promised or planned ("I committed to…" is not evidence).
+- Never write evidence numbers (#123) in the argument, position or lines — the reader has never seen them.
 - ids must be ids from the evidence given.`;
 
 const OPENING_PROMPT = `You are helping Nick Ward write the opening of a promotion case for his line manager, Chris. You get the role, VANTAGE's readiness verdict and each skill's rating.
@@ -118,6 +121,12 @@ Return JSON only: {"opening": "..."}
 The opening is 3–5 sentences in Nick's voice: where he stands against the role, the strongest areas, and the gaps he is working on. Honest — if the verdict is Not yet or Nearly, say so plainly. NEVER name a colleague (role only). No invented facts.`;
 
 /** Validate one skill's draft against the items it may cite. Pure. */
+/** Evidence numbers mean nothing to Chris: "(#366, #347)" and a bare "#31" are taken out. Pure. */
+function stripRefs(t) {
+  if (!t) return t;
+  return t.replace(/\s*\((?:\s*#\d+\s*,?)+\)/g, '').replace(/\s*#\d+/g, '').replace(/\s+([,.;])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
+
 function parseSkillDraft(raw, { candidateIds, rating }) {
   let j;
   try { j = require('./perf-json').parseModelJson(raw); } catch { throw new Error('the model\'s answer was not readable JSON'); }
@@ -126,15 +135,15 @@ function parseSkillDraft(raw, { candidateIds, rating }) {
   const items = [];
   for (const p of Array.isArray(j?.picks) ? j.picks : []) {
     const id = Number(p?.id);
-    const line = tidy(p?.line, LINE_MAX).replace(/\s+/g, ' ');
+    const line = stripRefs(tidy(p?.line, LINE_MAX).replace(/\s+/g, ' '));
     if (!valid.has(id) || seen.has(id) || !line) continue;
     seen.add(id);
     items.push({ id, line, included: true });
     if (items.length >= MAX_PICKS) break;
   }
   return {
-    argument: tidy(j?.argument, TEXT_MAX) || null,
-    position: rating === 'met' ? null : (tidy(j?.position, TEXT_MAX) || null),
+    argument: stripRefs(tidy(j?.argument, TEXT_MAX)) || null,
+    position: rating === 'met' ? null : (stripRefs(tidy(j?.position, TEXT_MAX)) || null),
     items,
   };
 }
@@ -560,5 +569,5 @@ function exportCase(slot) {
 module.exports = {
   view, draft, draftLine, editSkill, editOpening, candidates, exportCase, toMarkdown, toDocx, loadNames, runState,
   // pure, for tests
-  guardNames, nameHits, parseSkillDraft, candidatesFor, applySkillEdit, caseBlocks,
+  guardNames, nameHits, parseSkillDraft, stripRefs, candidatesFor, applySkillEdit, caseBlocks,
 };

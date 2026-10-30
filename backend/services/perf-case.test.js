@@ -44,6 +44,14 @@ test('the model may only pick accepted items for that skill, at most five, each 
   assert.ok(d.items.every((i) => i.included));
 });
 
+test('evidence numbers are taken out of drafted text', () => {
+  assert.equal(pc.stripRefs('I built processes to identify recurring issues (#366, #347, #111), and RCAs (#1186).'), 'I built processes to identify recurring issues, and RCAs.');
+  assert.equal(pc.stripRefs('Investigated NT-34994 #31 thoroughly'), 'Investigated NT-34994 thoroughly');
+  const d = pc.parseSkillDraft(JSON.stringify({ argument: 'Shown (#1).', picks: [{ id: 1, line: 'Did it #1.' }] }), { candidateIds: [1], rating: 'met' });
+  assert.equal(d.argument, 'Shown.');
+  assert.equal(d.items[0].line, 'Did it.');
+});
+
 test('edits are refused not repaired; confirming checks names, lines and the argument', () => {
   const names = pc.guardNames(ROSTER);
   assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 50, line: 'x', included: true }] }, { candidateIds: [1], names, gap: false }), /not accepted evidence/);
