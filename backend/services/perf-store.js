@@ -276,6 +276,13 @@ function forRetriage(rolesKey, limit) {
     AND (judged_roles IS NULL OR judged_roles != ?) ORDER BY occurred_at DESC LIMIT ?`).all(rolesKey, limit).map(evRow);
 }
 
+/** How many items a re-sort under `rolesKey` still has to read (the same set forRetriage draws from). */
+function retriageLeft(rolesKey) {
+  return db().prepare(`SELECT COUNT(*) AS n FROM perf_evidence WHERE origin != 'manual'
+    AND (state IN ('proposed','accepted') OR (state = 'not-relevant' AND judged_roles IS NOT NULL))
+    AND (judged_roles IS NULL OR judged_roles != ?)`).get(rolesKey).n;
+}
+
 /**
  * Apply a re-sort. Nick's decision stands: an ACCEPTED item stays accepted
  * whatever the re-sort finds — with no skill it simply counts towards nothing
