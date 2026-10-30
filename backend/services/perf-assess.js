@@ -129,6 +129,9 @@ THE BAR
 - Rate against THE BAR only: SFIA's own wording for the target level. "In this role" says what that level looks like in his job — use it to recognise evidence. Judge him within his scope, never against authority the role does not give him.
 - Outcome targets are CONTEXT ONLY. A missed, unproven or out-of-date target alone NEVER makes a skill partly or not-yet. Rate how he operates, not whether a KPI number was hit.
 - Lateness or a slip is not evidence against unless the substance shows he is below the bar.
+FEEDBACK
+- Items titled "Feedback from …" are what someone SAID about Nick's work, each with a weight (1 of 5 = strongest). Nick's order: 1 his line manager in a 1-2-1, 2 a tech leadership meeting, 3 the risk meeting, 4 a meeting with senior leaders, 5 any other meeting (peers and direct reports count). Give weight-1 and weight-2 feedback the most say; a single weight-5 remark should not move a rating on its own.
+- Feedback is about how he was seen at that date: weigh recent feedback above older, and note when later evidence shows he acted on criticism.
 RULES
 - met = the evidence shows him working at the bar consistently. partly = some of the bar shown, or below it, or real evidence against. not-yet = the evidence shows him below the bar.
 - Weigh evidence AGAINST honestly; do not ignore it.

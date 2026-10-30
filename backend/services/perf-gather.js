@@ -140,6 +140,25 @@ async function gather({ today = localKey() } = {}) {
   }
   store.setState('last_sources', { at: new Date().toISOString(), sources: lastSources });
   report.backfill = { cursor, floor, done: cursor <= floor };
+
+  // 3. Feedback sweep (30 Oct 2026). NEURO reads feedback about Nick out of
+  // OLD meetings overnight, long after the backfill passed them, so once a day
+  // the whole year is re-read for `feedback` items only. Enqueue is idempotent
+  // on the item id, so a repeat adds nothing; a window that fails is skipped.
+  const lastSweep = store.getState('feedback_sweep_at', null);
+  if (!lastSweep || Date.now() - Date.parse(lastSweep) > 20 * 3600_000) {
+    let added = 0; let failed = 0;
+    for (let to = today; to > floor; to = addDays(to, -31)) {
+      const from = addDays(to, -30) < floor ? floor : addDays(to, -30);
+      try {
+        const r = await require('./neuro').call(`/api/perf-evidence/candidates?from=${from}&to=${to}`, { timeoutMs: 60_000 });
+        added += store.enqueue((r.items || []).filter((i) => i.source === 'feedback').map((i) => ({ ...i, origin: 'neuro' })));
+      } catch { failed += 1; }
+    }
+    if (!failed) store.setState('feedback_sweep_at', new Date().toISOString());
+    report.feedbackSweep = { added, failed };
+    report.added += added;
+  }
   return report;
 }
 
