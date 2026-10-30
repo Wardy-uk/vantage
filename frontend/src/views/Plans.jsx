@@ -208,9 +208,10 @@ function RowControls({ closer, row }) {
   }
   if (row.inNeuro) {
     return (
-      <a className="small" href={NEURO_TASKS_URL} target="_blank" rel="noreferrer" style={{ minWidth: 50 }}
+      <a className={`neuro-tick${row.statusKey === 'done' ? ' neuro-tick--done' : ''}`} href={NEURO_TASKS_URL} target="_blank" rel="noreferrer"
+        aria-label={row.statusKey === 'done' ? 'Done in NEURO' : 'Open in NEURO to tick'}
         title={row.viaPlanner ? 'On the Planner board — NEURO shows it from there. Tick it in NEURO.' : 'This task lives in NEURO — tick it there.'}>
-        {row.statusKey === 'done' ? '✓ NEURO' : 'NEURO ↗'}
+        {row.statusKey === 'done' ? '✓' : '↗'}
       </a>
     );
   }

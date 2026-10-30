@@ -224,3 +224,14 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .statusbar-spacer { flex: 1; }
 .statusbar-update { font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 4px; border: 1px solid rgba(210,153,34,.5); background: rgba(210,153,34,.18); color: #fcd34d; cursor: pointer; }
 .statusbar-update:hover { background: rgba(210,153,34,.3); }
+
+/* A plan task that lives in NEURO: a box the size of the checkbox it stands in
+   for, so every row's controls line up. Ticking happens in NEURO. */
+.neuro-tick {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 16px; height: 16px; margin: 0 1px;
+  border: 1px solid var(--line); border-radius: 3px;
+  color: var(--muted); font-size: 11px; line-height: 1; text-decoration: none;
+}
+.neuro-tick:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.neuro-tick--done { border-color: var(--good); color: var(--good); }
