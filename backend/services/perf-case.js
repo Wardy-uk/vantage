@@ -124,7 +124,7 @@ The opening is 3–5 sentences in Nick's voice: where he stands against the role
 /** Evidence numbers mean nothing to Chris: "(#366, #347)" and a bare "#31" are taken out. Pure. */
 function stripRefs(t) {
   if (!t) return t;
-  return t.replace(/\s*\((?:\s*#\d+\s*,?)+\)/g, '').replace(/\s*#\d+/g, '').replace(/\s+([,.;])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  return t.replace(/\s*\((?:\s*#\d+\s*,?)+\)/g, '').replace(/\s*#\d+\b/g, '').replace(/\s+([,.;])/g, '$1').replace(/\s{2,}/g, ' ').trim();
 }
 
 function parseSkillDraft(raw, { candidateIds, rating }) {
