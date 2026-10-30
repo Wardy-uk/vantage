@@ -278,6 +278,14 @@ function ProfileView({ role }) {
   return (
     <div>
       <p className="sub">{p.summary || ''} {role.sourceName ? <span className="muted">· from {role.sourceName}</span> : null} <span className="muted">· saved {role.createdAt.slice(0, 10)}</span></p>
+      <div className="grid" style={{ margin: '12px 0' }}>
+        <div className="metric"><div className="n">{p.skills.length}</div><div className="l">Skills</div></div>
+        {[...new Set(p.skills.map((s) => s.level))].sort((x, y) => y - x).map((lv) => (
+          <div className="metric" key={lv}><div className="n">{p.skills.filter((s) => s.level === lv).length}</div><div className="l">at L{lv} {LEVEL_NAMES[lv]}</div><div className="d">{p.skills.filter((s) => s.level === lv).map((s) => s.code).join(', ')}</div></div>
+        ))}
+        <div className="metric"><div className="n">{p.skills.filter((s) => s.bar).length} of {p.skills.length}</div><div className="l">Judged on the SFIA bar</div><div className="d">{p.skills.some((s) => !s.bar) ? 'The rest are judged on the JD wording' : 'All aligned to SFIA wording'}</div></div>
+      </div>
+      <Fold id={`role_${role.id}`} label={`Skill descriptions (${p.skills.length}) and the five attributes`}>
       <table className="table" style={{ width: '100%' }}>
         <thead><tr><th style={{ textAlign: 'left' }}>Skill</th><th>Target</th><th style={{ textAlign: 'left' }}>Why (from the JD)</th></tr></thead>
         <tbody>
@@ -298,9 +306,19 @@ function ProfileView({ role }) {
           ))}
         </tbody>
       </table>
-      <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-        {ATTRS.map(([k, l]) => <Pill key={k} title={p.attributes?.[k]?.why || ''}>{l} L{p.attributes?.[k]?.level ?? '?'}</Pill>)}
-      </div>
+      <table className="table" style={{ width: '100%', marginTop: 10 }}>
+        <thead><tr><th style={{ textAlign: 'left' }}>Attribute</th><th>Target</th><th style={{ textAlign: 'left' }}>Why</th></tr></thead>
+        <tbody>
+          {ATTRS.map(([k, l]) => (
+            <tr key={k}>
+              <td><b>{l}</b></td>
+              <td style={{ textAlign: 'center' }}>L{p.attributes?.[k]?.level ?? '?'}</td>
+              <td className="small muted" style={{ whiteSpace: 'normal' }}>{p.attributes?.[k]?.why || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </Fold>
     </div>
   );
 }
@@ -408,6 +426,19 @@ function RolesTab({ data, reload }) {
 
 // ── Assessment ───────────────────────────────────────────────────────────────
 
+/** A section that starts closed and remembers, per browser, if you opened it. */
+function Fold({ id, label, children }) {
+  const key = `vantage_fold_${id}`;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
+  const toggle = () => { const v = !open; setOpen(v); try { localStorage.setItem(key, v ? '1' : '0'); } catch { /* private window */ } };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button className="small" onClick={toggle}>{open ? '▾' : '▸'} {label}</button>
+      {open && <div style={{ marginTop: 10 }}>{children}</div>}
+    </div>
+  );
+}
+
 function AssessTab({ data, reload }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
@@ -469,6 +500,7 @@ function AssessTab({ data, reload }) {
                   ))}
                 </div>
                 {a.summary && <p className="small">{a.summary}</p>}
+                <Fold id={`assess_${slot}`} label={`Skill-by-skill reasons (${a.skills.length} skills) and the five attributes`}>
                 <table className="table" style={{ width: '100%' }}>
                   <thead><tr><th style={{ textAlign: 'left' }}>Skill</th><th>Target</th><th>Rating</th><th>Seen at</th><th style={{ textAlign: 'left' }}>Why</th><th>Evidence</th></tr></thead>
                   <tbody>
@@ -500,6 +532,7 @@ function AssessTab({ data, reload }) {
                 {data.assessments.history[slot].length > 1 && (
                   <p className="small muted" style={{ marginTop: 8 }}>History: {data.assessments.history[slot].map((h) => `${h.createdAt.slice(0, 10)} ${READY[h.readiness] || '—'}`).join(' · ')}</p>
                 )}
+                </Fold>
               </>
             )}
           </div>
@@ -565,6 +598,28 @@ function PlanCard({ slot, label, data }) {
       {a && plan && !live.length && (
         <p className="small muted">{a.skills.every((s) => s.rating === 'met') ? 'Every skill is met — nothing to close.' : 'No plan yet for this assessment. Press Reassess on the Assessment tab to write one.'}</p>
       )}
+      {live.length > 0 && (() => {
+        const open = live.filter((i) => i.state === 'open');
+        const pushed = live.filter((i) => i.state === 'pushed');
+        const done = pushed.filter((i) => i.taskStatus === 'done');
+        const tiles = [
+          [open.length, 'Waiting for you', 'var(--accent)'],
+          [open.filter((i) => i.priority === 1).length, 'Move readiness most', 'var(--bad)'],
+          [pushed.length - done.length, 'In NEURO, open', 'var(--warn)'],
+          [done.length, 'Done in NEURO', 'var(--good)'],
+          [dismissed.length, 'Not for me', 'var(--muted)'],
+        ];
+        return (
+          <>
+            <div className="grid" style={{ margin: '12px 0' }}>
+              {tiles.map(([n, l, c]) => <div className="metric" key={l}><div className="n" style={{ color: c }}>{n}</div><div className="l">{l}</div></div>)}
+            </div>
+            <p className="small">Gaps this plan works on: {groups.map((g) => `${/^[A-Z]+$/.test(g.code) ? `${g.code} ` : ''}${nameOf(g.code)}`).join(' · ')}</p>
+          </>
+        );
+      })()}
+      {live.length > 0 && (
+      <Fold id={`plan_${slot}`} label={`The actions (${live.length})`}>
       {groups.map((g) => {
         const r = ratingOf(g.code);
         return (
@@ -592,6 +647,8 @@ function PlanCard({ slot, label, data }) {
           </div>
         );
       })}
+      </Fold>
+      )}
       {dismissed.length > 0 && (
         <p className="small muted" style={{ marginTop: 10 }}>
           <button className="small" onClick={() => setShowDismissed(!showDismissed)}>{showDismissed ? 'Hide' : 'Show'} {dismissed.length} you said were not for you</button>
