@@ -249,3 +249,9 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .peek-item { padding: 6px 0; border-top: 1px solid var(--line); }
 .peek-item:first-of-type { border-top: none; }
 @media (max-width: 760px) { .skillcard { grid-template-columns: 1fr; gap: 8px; } }
+
+/* The written case (30 Oct 2026): one block per skill, coloured edge = state */
+.case-skills { display: flex; flex-direction: column; gap: 10px; }
+.case-skill { padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; }
+.case-item { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+.case-item input[type=checkbox] { margin-top: 22px; width: auto; }

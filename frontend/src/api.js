@@ -158,6 +158,19 @@ export const api = {
   perfAnnex: body => call('/perf/roles/annex', { method: 'POST', body }),
   perfConfirmRole: (slot, confirmed) => call(`/perf/roles/${slot}/confirmation`, { method: 'POST', body: { confirmed } }),
   perfExport: slot => call(`/perf/export/${slot}`),
+  perfCaseView: slot => call(`/perf/case/${slot}`),
+  perfCaseDraft: (slot, code = null) => call(`/perf/case/${slot}/draft`, { method: 'POST', body: { code } }),
+  perfCaseOpening: (slot, opening) => call(`/perf/case/${slot}/opening`, { method: 'PUT', body: { opening } }),
+  perfCaseSkill: (slot, code, body) => call(`/perf/case/${slot}/skill/${code}`, { method: 'PUT', body }),
+  perfCaseCandidates: (slot, code) => call(`/perf/case/${slot}/skill/${code}/candidates`),
+  perfCaseAdd: (slot, code, id) => call(`/perf/case/${slot}/skill/${code}/add`, { method: 'POST', body: { id } }),
+  perfCaseText: slot => call(`/perf/case/${slot}/export`),
+  // The Word file comes back as bytes, not JSON (named by the page — a cross-origin page cannot read Content-Disposition); a refusal still comes back as the usual JSON error.
+  perfCaseDocx: async slot => {
+    const res = await fetch(`${API_BASE}/perf/case/${slot}/export?format=docx`, { headers: { 'X-Vantage-Pin': getPin() } });
+    if (!res.ok) { const p = await res.json().catch(() => ({})); throw new ApiError(p?.error || `Request failed (${res.status})`, res.status); }
+    return res.blob();
+  },
   perfPlan: slot => call(`/perf/plan/${slot}`),
   perfPlanAct: (id, act) => call(`/perf/plan/${id}/${act}`, { method: 'POST' }),
 };

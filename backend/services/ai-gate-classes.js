@@ -29,6 +29,8 @@ const REGISTRY = {
   perf_profile: { local: false, maxInputTokens: 15000, maxOutputTokens: 4000 },
   perf_evidence: { local: false, maxInputTokens: 12000, maxOutputTokens: 6000, maxConcurrent: 1 },
   perf_assess: { local: false, maxInputTokens: 150000, maxOutputTokens: 4000 },
+  // The written case (30 Oct 2026): one call per skill (≤25 items) + the opening, Nick-initiated.
+  perf_case: { local: false, maxInputTokens: 30000, maxOutputTokens: 1500 },
   // Admin → Test connections (a one-word completion).
   connection_test: { local: false, maxInputTokens: 100, maxOutputTokens: 8 },
 };

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
+import CaseBuilder from './CaseBuilder.jsx';
 
 /**
  * Performance Evidence (29 Oct 2026).
@@ -522,7 +523,7 @@ function SkillCard({ s }) {
 function AssessTab({ data, reload }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
-  const [md, setMd] = useState(null);
+  const [caseSlot, setCaseSlot] = useState(null);
   const runs = data.assessments.run || {};
   const anyRunning = SLOTS.some(([s]) => runs[s]?.running);
   // A reassessment runs in the background (one model call per skill); poll while it does.
@@ -535,10 +536,8 @@ function AssessTab({ data, reload }) {
     setBusy(slot); setErr(null);
     try { await api.perfAssess(slot, fresh); await reload(); } catch (x) { setErr(x.message); } finally { setBusy(null); }
   };
-  const exp = async (slot) => {
-    setErr(null);
-    try { setMd((await api.perfExport(slot)).markdown); } catch (x) { setErr(x.message); }
-  };
+  // The case takes the whole tab while it is open — it is a document being written, not a footnote to the assessment.
+  if (caseSlot) return <CaseBuilder key={caseSlot} slot={caseSlot} onClose={() => { setCaseSlot(null); reload(); }} />;
   return (
     <div>
       {err && <div className="banner bad">{err}</div>}
@@ -554,7 +553,7 @@ function AssessTab({ data, reload }) {
               {a && <span className="small muted">Assessed {new Date(a.createdAt).toLocaleString('en-GB')} from {a.evidenceRead} item(s)</span>}
               <button className="primary" disabled={!role || busy || runs[slot]?.running} onClick={() => run(slot)}>{runs[slot]?.running ? `Assessing… ${runs[slot].done} of ${runs[slot].total}` : busy === slot ? 'Starting…' : 'Reassess'}</button>
               <button disabled={!role || busy || runs[slot]?.running} title="Re-read every skill, ignoring ratings kept because their evidence had not changed" onClick={() => run(slot, true)}>Fresh reading</button>
-              <button disabled={!role} onClick={() => exp(slot)}>Build my case</button>
+              <button disabled={!role || !a} title={a ? 'A written case for Chris, skill by skill' : 'Assess this role first'} onClick={() => setCaseSlot(slot)}>Build my case</button>
             </div>
             {runs[slot]?.running && <div className="banner info" style={{ marginTop: 10 }}>Reading every accepted item, one skill at a time — {runs[slot].done} of {runs[slot].total} done. Takes a few minutes; you can leave this page.</div>}
             {!runs[slot]?.running && runs[slot]?.error && <div className="banner warn" style={{ marginTop: 10 }}>Last reassessment: {runs[slot].error}</div>}
@@ -607,14 +606,6 @@ function AssessTab({ data, reload }) {
           </div>
         );
       })}
-      {md && (
-        <div className="card">
-          <div className="row"><h2 style={{ margin: 0 }}>Your case</h2><span className="spacer" />
-            <button onClick={() => navigator.clipboard?.writeText(md)}>Copy</button><button onClick={() => setMd(null)}>Close</button></div>
-          <p className="sub">Only items you added to the case, in your words. Paste into Confluence, an email or a document.</p>
-          <textarea readOnly rows={18} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} value={md} />
-        </div>
-      )}
     </div>
   );
 }

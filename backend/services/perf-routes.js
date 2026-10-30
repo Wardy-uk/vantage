@@ -11,6 +11,7 @@ const gather = require('./perf-gather');
 const profile = require('./perf-profile');
 const assess = require('./perf-assess');
 const exporter = require('./perf-export');
+const perfCase = require('./perf-case');
 
 const bad = (msg, status = 400) => { const e = new Error(msg); e.status = status; return e; };
 const isDateKey = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
@@ -239,6 +240,34 @@ function mount(app, wrap) {
     if (!it) throw bad('No such plan action', 404);
     if (it.state !== 'dismissed') throw bad('Only a dismissed action can be brought back', 409);
     return store.setPlanState(it.id, 'open');
+  }));
+  // The written case (30 Oct 2026): drafted per skill, pruned and confirmed by Nick, exported as text or Word.
+  app.get('/api/perf/case/:slot', wrap((req) => perfCase.view(req.params.slot)));
+  app.post('/api/perf/case/:slot/draft', wrap((req) => {
+    const code = req.body?.code == null ? null : String(req.body.code).toUpperCase();
+    return perfCase.draft(req.params.slot, { code });
+  }));
+  app.put('/api/perf/case/:slot/opening', wrap((req) => perfCase.editOpening(req.params.slot, req.body?.opening ?? null)));
+  app.put('/api/perf/case/:slot/skill/:code', wrap((req) => perfCase.editSkill(req.params.slot, String(req.params.code).toUpperCase(), req.body || {})));
+  app.get('/api/perf/case/:slot/skill/:code/candidates', wrap((req) => perfCase.candidates(req.params.slot, String(req.params.code).toUpperCase())));
+  app.post('/api/perf/case/:slot/skill/:code/add', wrap((req) => {
+    const id = Number(req.body?.id);
+    if (!Number.isInteger(id) || id < 1) throw bad('id must be an evidence item number');
+    return perfCase.draftLine(req.params.slot, String(req.params.code).toUpperCase(), id);
+  }));
+  // The export: text (JSON) or a Word file. Confirmed skills only; a colleague's name refuses it.
+  app.get('/api/perf/case/:slot/export', wrap(async (req, res) => {
+    const { v, blocks, left } = perfCase.exportCase(req.params.slot);
+    if (req.query.format === 'docx') {
+      const buf = await perfCase.toDocx(blocks);
+      const name = `${v.role.title.replace(/[^A-Za-z0-9 -]+/g, '').trim() || 'Case'} - case.docx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+      res.setHeader('X-Case-Left-Out', String(left.length));
+      res.send(buf);
+      return null;
+    }
+    return { markdown: perfCase.toMarkdown(blocks), left };
   }));
   app.get('/api/perf/export/:slot', wrap((req) => {
     if (!store.SLOTS.includes(req.params.slot)) throw bad('slot must be current or future');
