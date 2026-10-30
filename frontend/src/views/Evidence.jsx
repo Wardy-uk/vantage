@@ -864,7 +864,7 @@ function GatherTab({ data, reload }) {
 function statusLine(g) {
   const s = statusCore(g);
   if (g.retriageLeft > 0) {
-    s.text = `${s.text} Re-sorting against the current roles: ${g.retriageLeft} still to re-read (your accepted evidence, plus items earlier dismissed as not relevant; your own entries are never re-read) — wait for this to finish before a Fresh reading.`;
+    s.text = `${s.text} Re-sorting against the current roles: ${g.retriageLeft} still to re-read (your accepted evidence, plus items VANTAGE itself set aside as not relevant — in case it was wrong; what you rejected is never re-read) — wait for this to finish before a Fresh reading.`;
   } else if (g.retriageLeft === 0 && s.tone === 'info' && g.counts.queued === 0) {
     s.text = `${s.text} Re-sort complete — ratings can be refreshed.`;
   }
