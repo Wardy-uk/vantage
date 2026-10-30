@@ -377,6 +377,16 @@ backfill under **daily caps** (spend + items, `perf_state.caps`).
   `vantage-development`, origin **improvement** (his own development is never a
   commitment), and the task's live status is read back via `allTasks`
   ("status unknown" when NEURO does not answer, never "open").
+- **Reassess reads EVERY accepted item** (29 Oct 2026): one call per skill
+  (4 at a time) + one call for attributes/readiness/summary, temperature 0,
+  in the background (`runState`, polled by the page; a run older than 30 min
+  is shown interrupted). A skill with `bar`/`inRole`/`targets` is rated against
+  the BAR (SFIA wording); targets are context only. The sort key is skills +
+  levels (`rolesKeyFor`), not role ids — rewording a profile re-sorts nothing.
+- **Feedback** (30 Oct 2026): NEURO's `feedback` source carries what people
+  said about Nick's work (weight 1–5 in the title, Nick's order: line-manager
+  1-2-1 strongest). Gather re-sweeps the whole year once a day for these items;
+  the skill prompt weighs them by that order.
 - `perf-export.js` — prints only items ticked into the case, as Nick's summary.
 - `sfia.js` — ⚠ repo is PUBLIC: only level and attribute NAMES live here. Codes
   are checked against a private `backend/data/sfia9-catalogue.json` on the Pi
