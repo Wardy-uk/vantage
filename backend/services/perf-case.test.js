@@ -52,6 +52,17 @@ test('evidence numbers are taken out of drafted text', () => {
   assert.equal(d.items[0].line, 'Did it.');
 });
 
+test('a drafted pick about a personal matter is dropped, not pre-ticked', () => {
+  const raw = JSON.stringify({ argument: 'A', picks: [
+    { id: 1, line: 'I committed to follow up with a direct report to finalize a welfare plan.' },
+    { id: 2, line: 'I confirmed a team member's potential departure timing to inform capacity planning.' },
+    { id: 3, line: 'I set up a monthly RCA process for the top five recurring failures.' },
+  ] });
+  assert.deepEqual(pc.parseSkillDraft(raw, { candidateIds: [1, 2, 3], rating: 'met' }).items.map((i) => i.id), [3]);
+  assert.equal(pc.personalHit('Ran the health check on the integration'), 'health', 'a flag, not a block — Nick judges it');
+  assert.equal(pc.personalHit('Led the Acme outage review'), null);
+});
+
 test('edits are refused not repaired; confirming checks names, lines and the argument', () => {
   const names = pc.guardNames(ROSTER);
   assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 50, line: 'x', included: true }] }, { candidateIds: [1], names, gap: false }), /not accepted evidence/);

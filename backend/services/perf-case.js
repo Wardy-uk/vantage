@@ -127,6 +127,16 @@ function stripRefs(t) {
   return t.replace(/\s*\((?:\s*#\d+\s*,?)+\)/g, '').replace(/\s*#\d+\b/g, '').replace(/\s+([,.;])/g, '$1').replace(/\s{2,}/g, ' ').trim();
 }
 
+/**
+ * Personal matters about an individual — health, welfare, someone leaving, pay,
+ * a disciplinary or a grievance. The prompt forbids them and the model picked
+ * them anyway (live, 30 Oct 2026: a welfare plan, a team member's departure
+ * date), so a drafted pick that reads like one is dropped, and a line Nick
+ * writes is flagged for him to judge. Pure.
+ */
+const PERSONAL_RE = /\b(welfare|wellbeing|well-being|health|sick(ness)?|medical|illness|occupational|bereave\w*|pregnan\w*|maternity|paternity|depart(ure|ing)|leaving|resign\w*|notice period|redundan\w*|salary|pay rise|disciplin\w*|grievance|capability process|PIP|performance improvement plan|family|divorce|personal (issue|matter)s?)\b/i;
+const personalHit = (t) => (t ? (String(t).match(PERSONAL_RE) || [null])[0] : null);
+
 function parseSkillDraft(raw, { candidateIds, rating }) {
   let j;
   try { j = require('./perf-json').parseModelJson(raw); } catch { throw new Error('the model\'s answer was not readable JSON'); }
@@ -136,7 +146,7 @@ function parseSkillDraft(raw, { candidateIds, rating }) {
   for (const p of Array.isArray(j?.picks) ? j.picks : []) {
     const id = Number(p?.id);
     const line = stripRefs(tidy(p?.line, LINE_MAX).replace(/\s+/g, ' '));
-    if (!valid.has(id) || seen.has(id) || !line) continue;
+    if (!valid.has(id) || seen.has(id) || !line || personalHit(line)) continue;
     seen.add(id);
     items.push({ id, line, included: true });
     if (items.length >= MAX_PICKS) break;
@@ -202,12 +212,12 @@ function view(slot) {
     const d = doc.skills[s.code] || null;
     const items = (d?.items || []).map((it) => {
       const e = byId.get(it.id);
-      return { ...it, title: e ? clip(e.title, 160) : null, occurredAt: e?.occurredAt || null, gone: !e, names: nameHits(it.line, names) };
+      return { ...it, title: e ? clip(e.title, 160) : null, occurredAt: e?.occurredAt || null, gone: !e, names: nameHits(it.line, names), personal: personalHit(it.line) };
     });
     const known = new Set(items.map((i) => i.id));
     for (const e of evidence) {
       if (!e.inCase || !e.caseSummary || known.has(e.id) || !e.tags.some((t) => t.code === s.code)) continue;
-      items.push({ id: e.id, line: e.caseSummary, included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false, names: nameHits(e.caseSummary, names) });
+      items.push({ id: e.id, line: e.caseSummary, included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false, names: nameHits(e.caseSummary, names), personal: personalHit(e.caseSummary) });
     }
     const candidates = candidatesFor(evidence, s.code, a?.cite || []);
     return {
@@ -569,5 +579,5 @@ function exportCase(slot) {
 module.exports = {
   view, draft, draftLine, editSkill, editOpening, candidates, exportCase, toMarkdown, toDocx, loadNames, runState,
   // pure, for tests
-  guardNames, nameHits, parseSkillDraft, stripRefs, candidatesFor, applySkillEdit, caseBlocks,
+  guardNames, nameHits, parseSkillDraft, stripRefs, personalHit, candidatesFor, applySkillEdit, caseBlocks,
 };

@@ -112,6 +112,7 @@ function SkillEditor({ slot, s, busyAll, onSaved, onRedraft }) {
                 <div className="small muted">#{it.id} · {String(it.occurredAt || '').slice(0, 10)}{it.title ? ` · ${it.title}` : ''}{it.gone ? ' · no longer accepted' : ''}{it.fromList ? ' · added from the evidence list' : ''}</div>
                 <input type="text" style={{ width: '100%' }} value={it.line} placeholder="One line on what you did and what came of it" onChange={(e) => edit(() => setItems(items.map((x, j) => (j === i ? { ...x, line: e.target.value } : x))))} />
                 <NameWarn names={dirty ? [] : it.names} />
+                {!dirty && it.personal && it.included && <div className="small" style={{ color: 'var(--warn)', marginTop: 4 }}>Reads as a personal matter (“{it.personal}”) — about someone else’s welfare, health, leaving or pay? Leave it out of a case Chris reads.</div>}
               </div>
             </div>
           ))}
