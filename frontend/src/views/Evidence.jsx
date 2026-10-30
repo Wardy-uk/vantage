@@ -864,7 +864,7 @@ function GatherTab({ data, reload }) {
 function statusLine(g) {
   const s = statusCore(g);
   if (g.retriageLeft > 0) {
-    s.text = `${s.text} Re-sorting against the current roles: ${g.retriageLeft} item${g.retriageLeft === 1 ? '' : 's'} still to re-read — wait for this to finish before a Fresh reading.`;
+    s.text = `${s.text} Re-sorting against the current roles: ${g.retriageLeft} still to re-read (your accepted evidence, plus items earlier dismissed as not relevant; your own entries are never re-read) — wait for this to finish before a Fresh reading.`;
   } else if (g.retriageLeft === 0 && s.tone === 'info' && g.counts.queued === 0) {
     s.text = `${s.text} Re-sort complete — ratings can be refreshed.`;
   }
@@ -875,7 +875,7 @@ function statusLine(g) {
 function statusCore(g) {
   const left = g.counts.queued;
   const today = `${g.itemsToday} of ${g.caps.dailyItems} items today, $${g.spentToday.usd.toFixed(2)} of $${g.caps.dailyUsd}`;
-  if (g.running) return { tone: 'info', text: `Reading now — ${left} still to read (${today}).` };
+  if (g.running) return { tone: 'info', text: left > 0 ? `Reading new evidence now — ${left} still to read (${today}).` : `Reading now (${today}).` };
   if (g.lastRun?.inProgress) return { tone: 'warn', text: `The last pass was interrupted (VANTAGE restarted). It resumes by itself within a few minutes — ${left} still to read.` };
   const stop = g.lastRun?.triage?.stopped;
   const at = g.lastRun?.at ? new Date(g.lastRun.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
