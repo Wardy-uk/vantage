@@ -125,6 +125,24 @@ function activeRole(slot) {
   return roleRow(db().prepare("SELECT * FROM perf_roles WHERE slot = ? AND status = 'active' ORDER BY id DESC LIMIT 1").get(slot));
 }
 
+/** Every saved profile, newest first (the annex reader looks here for SFIA wording). */
+function allRoles() {
+  return db().prepare('SELECT * FROM perf_roles ORDER BY id DESC').all().map(roleRow);
+}
+
+/**
+ * Proposed / confirmed (signed) — the one thing about a saved profile that may
+ * change in place: it records a signature, not a different target.
+ */
+function setRoleConfirmation(id, confirmation) {
+  const r = db().prepare('SELECT profile_json FROM perf_roles WHERE id = ?').get(id);
+  if (!r) { const e = new Error('No such role'); e.status = 404; throw e; }
+  const p = parse(r.profile_json, {});
+  p.confirmation = confirmation;
+  db().prepare('UPDATE perf_roles SET profile_json = ? WHERE id = ?').run(JSON.stringify(p), id);
+  return roleRow(db().prepare('SELECT * FROM perf_roles WHERE id = ?').get(id));
+}
+
 function roleHistory(slot) {
   return db().prepare("SELECT * FROM perf_roles WHERE slot = ? AND status = 'archived' ORDER BY id DESC").all(slot).map(roleRow);
 }
@@ -259,10 +277,10 @@ function setRetriage(id, { tags, rolesKey }) {
     .run(state, JSON.stringify(tags || []), rolesKey, state, id);
 }
 
-/** Accepted evidence tagged to a slot. */
+/** Accepted evidence tagged to a slot; `null` = tagged to either role (the assessment reads by skill code). */
 function acceptedFor(slot) {
   return db().prepare("SELECT * FROM perf_evidence WHERE state = 'accepted' ORDER BY occurred_at DESC").all()
-    .map(evRow).filter((e) => e.tags.some((t) => t.slot === slot));
+    .map(evRow).filter((e) => e.tags.some((t) => slot == null || t.slot === slot));
 }
 
 function deleteManual(id) {
@@ -336,7 +354,7 @@ function setPlanState(id, state, taskId = null) {
 module.exports = {
   savePlan, planFor, planItem, setPlanState,
   STATES, SLOTS, getState, setState,
-  activeRole, roleHistory, saveRole,
+  activeRole, roleHistory, saveRole, allRoles, setRoleConfirmation,
   enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
   saveAssessment, latestAssessment, assessmentHistory,
 };

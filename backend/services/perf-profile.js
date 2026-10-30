@@ -58,7 +58,16 @@ function validateProfile(p, { strict = false } = {}) {
   }
   if (!skills.length) throw new Error('The profile has no skills');
   if (strict && Object.keys(attributes).length < sfia.ATTRIBUTES.length) throw new Error('All five generic attributes need a level');
-  return { title, summary: str(p.summary, 400) || null, attributes, skills, problems };
+  return { title, summary: str(p.summary, 400) || null, attributes, skills, problems, ...(confirmationOf(p.confirmation) ? { confirmation: confirmationOf(p.confirmation) } : {}) };
+}
+
+/** proposed | confirmed (signed). Anything else is dropped, never guessed. Pure. */
+function confirmationOf(c) {
+  if (!c || !['proposed', 'confirmed'].includes(c.state)) return null;
+  return {
+    state: c.state,
+    ...(c.state === 'confirmed' ? { confirmedAt: str(c.confirmedAt, 40) || new Date().toISOString(), note: str(c.note, 300) || null } : {}),
+  };
 }
 
 const PROMPT = `You map a job description to the SFIA 9 framework. Answer ONLY with JSON:
@@ -87,4 +96,4 @@ async function propose(input = {}) {
   return { profile, sourceName: from, sourceText: text, catalogue: sfia.catalogue() ? 'checked' : 'not-checked' };
 }
 
-module.exports = { propose, validateProfile, PROMPT };
+module.exports = { propose, validateProfile, confirmationOf, PROMPT };

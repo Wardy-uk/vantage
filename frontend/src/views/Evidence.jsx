@@ -277,7 +277,10 @@ function ProfileView({ role }) {
   const p = role.profile;
   return (
     <div>
-      <p className="sub">{p.summary || ''} {role.sourceName ? <span className="muted">· from {role.sourceName}</span> : null} <span className="muted">· saved {role.createdAt.slice(0, 10)}</span></p>
+      <p className="sub">
+        {p.confirmation?.state === 'confirmed' && <Pill color="var(--good)" title={p.confirmation.note || ''}>Confirmed {String(p.confirmation.confirmedAt || '').slice(0, 10)}</Pill>}
+        {p.confirmation?.state === 'proposed' && <Pill color="var(--warn)" title="Targets are proposed until the annex is signed">Proposed — not yet signed</Pill>}
+        {' '}{p.summary || ''} {role.sourceName ? <span className="muted">· from {role.sourceName}</span> : null} <span className="muted">· saved {role.createdAt.slice(0, 10)}</span></p>
       <div className="grid" style={{ margin: '12px 0' }}>
         <div className="metric"><div className="n">{p.skills.length}</div><div className="l">Skills</div></div>
         {[...new Set(p.skills.map((s) => s.level))].sort((x, y) => y - x).map((lv) => (
@@ -329,11 +332,11 @@ function RoleImport({ slot, onSaved, onCancel }) {
   const [prop, setProp] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const propose = async () => {
-    setBusy(true); setErr(null);
+  const propose = async (how) => {
+    setBusy(how); setErr(null);
     try {
       const body = file ? { filename: file.name, fileBase64: await readFileBase64(file) } : { text };
-      setProp(await api.perfPropose(body));
+      setProp(await (how === 'annex' ? api.perfAnnex(body) : api.perfPropose(body)));
     } catch (x) { setErr(x.message); } finally { setBusy(false); }
   };
   const save = async () => {
@@ -348,11 +351,12 @@ function RoleImport({ slot, onSaved, onCancel }) {
       <h2>{slot === 'future' ? 'Future' : 'Current'} role — from a job description or framework</h2>
       {!prop && (
         <>
-          <p className="sub">Attach a .docx, .pdf, .md or .txt, or paste the text. VANTAGE drafts a SFIA 9 profile; nothing is saved until you press Save.</p>
+          <p className="sub">Attach a .docx, .pdf, .md or .txt, or paste the text. <b>Read the SFIA annex</b> takes the levels exactly as the signed annex table states them (no guessing). <b>Draft from the job description</b> asks the model to propose levels from the prose. Nothing is saved until you press Save.</p>
           <input type="file" accept=".docx,.pdf,.md,.txt" onChange={(x) => setFile(x.target.files?.[0] || null)} />
           {!file && <textarea rows={8} style={{ width: '100%', marginTop: 8 }} placeholder="…or paste the job description" value={text} onChange={(x) => setText(x.target.value)} />}
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="primary" disabled={busy || (!file && !text.trim())} onClick={propose}>{busy ? 'Reading…' : 'Draft the profile'}</button>
+            <button className="primary" disabled={busy || (!file && !text.trim())} onClick={() => propose('annex')}>{busy === 'annex' ? 'Reading…' : 'Read the SFIA annex'}</button>
+            <button disabled={busy || (!file && !text.trim())} onClick={() => propose('model')}>{busy === 'model' ? 'Reading…' : 'Draft from the job description'}</button>
             <button onClick={onCancel}>Cancel</button>
           </div>
         </>
@@ -372,7 +376,12 @@ function RoleImport({ slot, onSaved, onCancel }) {
                   <td><input style={{ width: 70 }} value={s.code} onChange={(x) => setSkill(i, { code: x.target.value.toUpperCase() })} /></td>
                   <td><input style={{ width: '100%' }} value={s.name} onChange={(x) => setSkill(i, { name: x.target.value })} /></td>
                   <td><select value={s.level} onChange={(x) => setSkill(i, { level: Number(x.target.value) })}>{[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>L{n} {LEVEL_NAMES[n]}</option>)}</select></td>
-                  <td className="small muted">{s.why}</td>
+                  <td className="small muted" style={{ whiteSpace: 'normal' }}>
+                    {s.why}
+                    {prop.from === 'annex' && (s.bar
+                      ? <div style={{ marginTop: 4 }}><b>SFIA wording:</b> {s.bar}</div>
+                      : <textarea rows={2} style={{ width: '100%', marginTop: 4 }} placeholder={`Paste SFIA's L${s.level} wording for ${s.code} (optional)`} value={s.bar || ''} onChange={(x) => setSkill(i, { bar: x.target.value })} />)}
+                  </td>
                   <td><button className="small" onClick={() => setP({ skills: p.skills.filter((_, j) => j !== i) })}>Remove</button></td>
                 </tr>
               ))}
@@ -414,6 +423,7 @@ function RolesTab({ data, reload }) {
         return (
           <div className="card" key={slot}>
             <div className="row"><h2 style={{ margin: 0 }}>{label}{role ? ` — ${role.profile.title}` : ''}</h2><span className="spacer" />
+              {role && <button onClick={async () => { await api.perfConfirmRole(slot, role.profile.confirmation?.state !== 'confirmed'); await reload(); }}>{role.profile.confirmation?.state === 'confirmed' ? 'Mark as proposed again' : 'Mark confirmed (signed)'}</button>}
               <button onClick={() => setImporting(slot)}>{role ? 'Replace from a job description' : 'Add from a job description'}</button></div>
             {role ? <ProfileView role={role} /> : <p className="small muted">Not set. Upload the job description or framework for your {slot} role.</p>}
             {hist.length > 0 && <p className="small muted" style={{ marginTop: 8 }}>Earlier: {hist.map((h) => `${h.profile?.title} (until ${h.archivedAt?.slice(0, 10)})`).join(' · ')}</p>}
@@ -451,9 +461,9 @@ function AssessTab({ data, reload }) {
     const t = setInterval(() => { reload(); }, 5000);
     return () => clearInterval(t);
   }, [anyRunning, reload]);
-  const run = async (slot) => {
+  const run = async (slot, fresh = false) => {
     setBusy(slot); setErr(null);
-    try { await api.perfAssess(slot); await reload(); } catch (x) { setErr(x.message); } finally { setBusy(null); }
+    try { await api.perfAssess(slot, fresh); await reload(); } catch (x) { setErr(x.message); } finally { setBusy(null); }
   };
   const exp = async (slot) => {
     setErr(null);
@@ -462,7 +472,7 @@ function AssessTab({ data, reload }) {
   return (
     <div>
       {err && <div className="banner bad">{err}</div>}
-      <p className="sub">VANTAGE's reading, from accepted evidence only. Every rating cites the items behind it; a skill with nothing accepted reads "No evidence yet", not "Not yet". Private until you export it.</p>
+      <p className="sub">VANTAGE's reading, from accepted evidence only. Every rating cites the items behind it; a skill with nothing accepted reads "No evidence yet", not "Not yet". A skill is read from evidence about it in either role, so a skill both roles hold at the same level gets one rating. Each rating is three readings: "3/3" is settled, "2 of 3" is borderline. A rating is kept until its evidence changes — use Fresh reading to re-read everything. Private until you export it.</p>
       {SLOTS.map(([slot, label]) => {
         const role = data.roles[slot];
         const a = data.assessments[slot];
@@ -473,6 +483,7 @@ function AssessTab({ data, reload }) {
               <span className="spacer" />
               {a && <span className="small muted">Assessed {new Date(a.createdAt).toLocaleString('en-GB')} from {a.evidenceRead} item(s)</span>}
               <button className="primary" disabled={!role || busy || runs[slot]?.running} onClick={() => run(slot)}>{runs[slot]?.running ? `Assessing… ${runs[slot].done} of ${runs[slot].total}` : busy === slot ? 'Starting…' : 'Reassess'}</button>
+              <button disabled={!role || busy || runs[slot]?.running} title="Re-read every skill, ignoring ratings kept because their evidence had not changed" onClick={() => run(slot, true)}>Fresh reading</button>
               <button disabled={!role} onClick={() => exp(slot)}>Build my case</button>
             </div>
             {runs[slot]?.running && <div className="banner info" style={{ marginTop: 10 }}>Reading every accepted item, one skill at a time — {runs[slot].done} of {runs[slot].total} done. Takes a few minutes; you can leave this page.</div>}
@@ -508,7 +519,15 @@ function AssessTab({ data, reload }) {
                       <tr key={s.code}>
                         <td><b>{s.code}</b> {s.name}</td>
                         <td style={{ textAlign: 'center' }}>L{s.target}</td>
-                        <td style={{ textAlign: 'center', color: RATING[s.rating]?.color }}>{RATING[s.rating]?.label || s.rating}</td>
+                        <td style={{ textAlign: 'center', color: RATING[s.rating]?.color }}>
+                          {RATING[s.rating]?.label || s.rating}
+                          {Array.isArray(s.votes) && s.votes.length > 1 && (
+                            <div className="small muted" title={s.votes.join(', ')}>
+                              {s.split ? 'split — no majority' : `${s.votes.filter((v) => v === s.rating).length} of ${s.votes.length}`}
+                            </div>
+                          )}
+                          {s.keptFrom && <div className="small muted" title="Evidence unchanged since this rating was made">kept from {String(s.keptFrom).slice(0, 10)}</div>}
+                        </td>
                         <td style={{ textAlign: 'center' }}>{s.observedLevel ? `L${s.observedLevel}` : '—'}</td>
                         <td className="small muted" style={{ whiteSpace: 'normal' }}>{s.why}</td>
                         <td className="small muted" style={{ fontFamily: 'var(--mono)', whiteSpace: 'normal', wordBreak: 'break-word', width: 120, maxWidth: 120 }}>{s.cite.length ? s.cite.map((c) => `#${c}`).join(' ') : '—'}</td>
@@ -579,8 +598,10 @@ function PlanCard({ slot, label, data }) {
     if (at) return { text: `Attribute · target L${role?.profile.attributes?.[code]?.level ?? '?'}, seen ${at.observedLevel ? `L${at.observedLevel}` : '—'}`, color: 'var(--warn)' };
     return { text: '', color: undefined };
   };
+  const [showHeld, setShowHeld] = useState(false);
   const items = plan?.items || [];
-  const live = items.filter((i) => i.state !== 'dismissed');
+  const heldBack = items.filter((i) => i.heldBack);
+  const live = items.filter((i) => i.state !== 'dismissed' && (showHeld || !i.heldBack));
   const dismissed = items.filter((i) => i.state === 'dismissed');
   const groups = [];
   for (const i of live) {
@@ -615,6 +636,12 @@ function PlanCard({ slot, label, data }) {
               {tiles.map(([n, l, c]) => <div className="metric" key={l}><div className="n" style={{ color: c }}>{n}</div><div className="l">{l}</div></div>)}
             </div>
             <p className="small">Gaps this plan works on: {groups.map((g) => `${/^[A-Z]+$/.test(g.code) ? `${g.code} ` : ''}${nameOf(g.code)}`).join(' · ')}</p>
+            {plan?.cap && (heldBack.length > 0 || showHeld) && (
+              <p className="small muted">
+                The {plan.futureTitle || 'future'} role is the focus, so this plan offers {plan.cap} actions at a time — skills that role also needs first. {heldBack.length} more held back.{' '}
+                <button className="small" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'Hide them' : 'Show them'}</button>
+              </p>
+            )}
           </>
         );
       })()}
@@ -632,7 +659,7 @@ function PlanCard({ slot, label, data }) {
               <div key={i.id} className="row" style={{ alignItems: 'flex-start', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
                 <span className="small" style={{ color: PRIORITY[i.priority]?.[1], minWidth: 150 }}>{PRIORITY[i.priority]?.[0]}</span>
                 <div style={{ flex: 1, minWidth: 280 }}>
-                  <div>{i.action}</div>
+                  <div>{i.action}{i.alsoFuture && <> <Pill color="var(--accent)" title="This skill is in the future role too, so the work counts for both">also counts for {plan?.futureTitle || 'the future role'}</Pill></>}{i.heldBack && <> <Pill color="var(--muted)">held back</Pill></>}</div>
                   {i.proves && <div className="small muted">Would show: {i.proves}</div>}
                 </div>
                 {i.state === 'open' && (

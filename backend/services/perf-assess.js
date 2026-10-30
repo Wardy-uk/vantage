@@ -36,7 +36,7 @@ function selectEvidence(evidence, slot, skills, cap = PER_SKILL) {
   const bySkill = {};
   const chosen = new Map();
   for (const s of skills) {
-    const list = evidence.filter((e) => e.tags.some((t) => t.slot === slot && t.code === s.code)).slice(0, cap);
+    const list = evidence.filter((e) => e.tags.some((t) => (slot == null || t.slot === slot) && t.code === s.code)).slice(0, cap);
     bySkill[s.code] = list.map((e) => e.id);
     for (const e of list) chosen.set(e.id, e);
   }
@@ -117,6 +117,26 @@ function parsePlan(j, { assessment, role }) {
   return out;
 }
 
+/**
+ * The plan leans to the future role (30 Oct 2026, Nick: the role he is working
+ * towards is the goal). The future role's plan is shown whole. The CURRENT
+ * role's open actions are ordered so that a skill the future role also holds
+ * comes first (it counts twice), then by priority, and only the first
+ * CURRENT_PLAN_CAP are offered; the rest are HELD BACK — counted and shown on
+ * request, never deleted, so nothing is lost if the focus changes. Read-time,
+ * so it applies to plans already written. Pure.
+ */
+const CURRENT_PLAN_CAP = 3;
+function weighPlan(items, { slot, futureCodes = [], cap = CURRENT_PLAN_CAP } = {}) {
+  if (slot !== 'current') return items.map((i) => ({ ...i, alsoFuture: false, heldBack: false }));
+  const fut = new Set(futureCodes);
+  const marked = items.map((i) => ({ ...i, alsoFuture: fut.has(i.code), heldBack: false }));
+  const open = marked.filter((i) => i.state === 'open')
+    .sort((a, b) => (b.alsoFuture - a.alsoFuture) || (a.priority - b.priority) || (a.id - b.id));
+  const held = new Set(open.slice(cap).map((i) => i.id));
+  return marked.map((i) => (held.has(i.id) ? { ...i, heldBack: true } : i));
+}
+
 const PLAN_RULES = `PLAN (the coaching) — only for a gap
 - One to three actions Nick can personally start in the next few weeks, within the scope he actually has. Concrete and specific to the gap and the evidence: name the thing to produce, the people or forum, the measure. Never generic advice ("communicate more", "be strategic").
 - If the work is happening but the evidence does not show it, say so and name what to record or produce so it shows.
@@ -158,6 +178,64 @@ const CONCURRENCY = 4;
 const RUN_KEY = (slot) => `assess_run_${slot}`;
 const STALE_MS = 30 * 60_000;
 
+/**
+ * Stable ratings (30 Oct 2026). Nick's two roles rated the same skill at the
+ * same level "met" in one and "partly" in the other, 14 seconds apart, because
+ * each role read only the evidence triage had tagged to THAT role. Three rules:
+ *  - A skill is rated on every accepted item tagged to its CODE, from either
+ *    role. Evidence about service level management is evidence about it,
+ *    whichever role the sorter happened to be reading for.
+ *  - A rating is KEPT while nothing it rests on has changed: same code, level,
+ *    bar and evidence (ids, wording, stance). Pressing Reassess cannot re-roll
+ *    a rating whose evidence has not moved, and both roles get the SAME rating
+ *    for a skill they hold at the same level and bar.
+ *  - A fresh rating is the majority of VOTES readings, and the split is shown:
+ *    "met 3/3" is settled, "met 2 · partly 1" is borderline. No majority
+ *    (three different answers) reads as partly, marked split.
+ * `fresh` ignores kept ratings (the "Fresh reading" button).
+ */
+const VOTES = Math.max(1, Math.min(5, Number(process.env.PERF_ASSESS_VOTES) || 3));
+const CACHE_KEY = 'assess_skill_cache';
+const FINAL_CACHE_KEY = 'assess_final_cache';
+const CACHE_MAX = 300;
+
+const sha = (s) => require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 32);
+
+/** What a skill's rating rests on. Pure. The role's "in this role" wording is not part of it. */
+function skillKey(s, items) {
+  const ev = items.map((e) => `${e.id}|${e.title}|${e.detail || ''}|${e.tags.filter((t) => t.code === s.code).map((t) => t.stance).sort().join(',')}`).sort();
+  return sha(JSON.stringify([s.code, s.level, s.bar || s.why || '', ev]));
+}
+
+/** Majority of the readings. Pure. */
+function majority(votes) {
+  const ok = votes.filter((v) => v && RATINGS.includes(v.rating));
+  if (!ok.length) return null;
+  const tally = {};
+  for (const v of ok) tally[v.rating] = (tally[v.rating] || 0) + 1;
+  const top = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+  const split = ok.length > 1 && top[0][1] * 2 <= ok.length;
+  const rating = split ? 'partly' : top[0][0];
+  const agree = ok.filter((v) => v.rating === rating);
+  const pick = agree[0] || ok[0];
+  const lvTally = {};
+  for (const n of agree.map((v) => Number(v.observedLevel)).filter((n) => Number.isInteger(n))) lvTally[n] = (lvTally[n] || 0) + 1;
+  const lv = Object.entries(lvTally).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]))[0];
+  return { ...pick, rating, observedLevel: lv ? Number(lv[0]) : (pick.observedLevel ?? null), votes: ok.map((v) => v.rating), split };
+}
+
+function cacheGet(key) { return (store.getState(CACHE_KEY, {}) || {})[key] || null; }
+function cachePut(key, value, stateKey = CACHE_KEY) {
+  const c = store.getState(stateKey, {}) || {};
+  c[key] = { ...value, at: new Date().toISOString() };
+  const keys = Object.keys(c);
+  if (keys.length > CACHE_MAX) {
+    keys.sort((a, b) => String(c[a].at).localeCompare(String(c[b].at)));
+    for (const k of keys.slice(0, keys.length - CACHE_MAX)) delete c[k];
+  }
+  store.setState(stateKey, c);
+}
+
 function skillText(s) {
   const lines = [`SKILL: ${s.code} ${s.name} — target L${s.level}`];
   if (s.bar) lines.push(`THE BAR (SFIA L${s.level}): ${s.bar}`);
@@ -167,8 +245,8 @@ function skillText(s) {
   return lines.join('\n');
 }
 
-function evLine(e, slot) {
-  const tags = e.tags.filter((t) => t.slot === slot).map((t) => `${t.code}:${t.stance}`).join(',');
+function evLine(e, code) {
+  const tags = [...new Set(e.tags.filter((t) => t.code === code).map((t) => `${t.code}:${t.stance}`))].join(',');
   return `#${e.id} [${String(e.occurredAt || '').slice(0, 10)}] (${tags}) ${clip(e.title, 200)}${e.detail ? ` — ${clip(e.detail, 300)}` : ''}`;
 }
 
@@ -189,7 +267,7 @@ function runState(slot) {
  * call for attributes, readiness and summary. Returns at once; progress is in
  * runState(slot), shown by the page.
  */
-function assess(slot) {
+function assess(slot, { fresh = false } = {}) {
   if (!store.SLOTS.includes(slot)) { const e = new Error('slot must be current or future'); e.status = 400; throw e; }
   const role = store.activeRole(slot);
   if (!role) { const e = new Error(`No ${slot} role saved yet — add its job description first`); e.status = 409; throw e; }
@@ -198,19 +276,19 @@ function assess(slot) {
   if (runState(slot)?.running) { const e = new Error('A reassessment of this role is already running'); e.status = 409; throw e; }
   const total = role.profile.skills.length + 1;
   store.setState(RUN_KEY(slot), { running: true, startedAt: new Date().toISOString(), done: 0, total });
-  runAssess(slot, role).catch((e) => {
+  runAssess(slot, role, { fresh }).catch((e) => {
     console.warn(`[VANTAGE] perf assess ${slot} failed: ${e.message}`);
     store.setState(RUN_KEY(slot), { ...(store.getState(RUN_KEY(slot), {})), running: false, error: e.message, finishedAt: new Date().toISOString() });
   });
   return { started: true, total };
 }
 
-async function runAssess(slot, role) {
+async function runAssess(slot, role, { fresh = false } = {}) {
   const openrouter = require('./openrouter');
   const { parseModelJson } = require('./perf-json');
   const skills = role.profile.skills;
-  const evidence = store.acceptedFor(slot);
-  const { bySkill, chosen } = selectEvidence(evidence, slot, skills, Infinity);
+  const evidence = store.acceptedFor(null);
+  const { bySkill, chosen } = selectEvidence(evidence, null, skills, Infinity);
   const byId = new Map(chosen.map((e) => [e.id, e]));
   let done = 0;
   const tick = () => { done += 1; store.setState(RUN_KEY(slot), { ...store.getState(RUN_KEY(slot), {}), done }); };
@@ -225,16 +303,32 @@ async function runAssess(slot, role) {
       const s = skills[i];
       const ids = bySkill[s.code] || [];
       if (!ids.length) { perSkill[i] = { code: s.code }; tick(); continue; }
-      try {
-        const reply = await withRetry(() => openrouter.complete([
-          { role: 'system', content: SKILL_PROMPT },
-          { role: 'user', content: `ROLE: ${role.profile.title}\n${skillText(s)}\n\nACCEPTED EVIDENCE (${ids.length} items):\n${ids.map((id) => evLine(byId.get(id), slot)).join('\n')}` },
-        ], { temperature: 0, maxTokens: 3000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
-        models.add(reply.model);
-        perSkill[i] = { code: s.code, ...parseModelJson(reply.text) };
-      } catch (e) {
-        failures.push(`${s.code}: ${e.message}`);
-        perSkill[i] = { code: s.code, failed: e.message };
+      const key = skillKey(s, ids.map((id) => byId.get(id)));
+      const kept = fresh ? null : cacheGet(key);
+      if (kept) { perSkill[i] = { code: s.code, ...kept, reused: kept.at }; tick(); continue; }
+      const prompt = [
+        { role: 'system', content: SKILL_PROMPT },
+        { role: 'user', content: `ROLE: ${role.profile.title}\n${skillText(s)}\n\nACCEPTED EVIDENCE (${ids.length} items):\n${ids.map((id) => evLine(byId.get(id), s.code)).join('\n')}` },
+      ];
+      const votes = [];
+      let lastErr = null;
+      for (let v = 0; v < VOTES; v += 1) {
+        try {
+          // The first reading is the deterministic one; the others sample, so a borderline skill shows as split.
+          const reply = await withRetry(() => openrouter.complete(prompt, { temperature: v === 0 ? 0 : 0.7, maxTokens: 3000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
+          models.add(reply.model);
+          votes.push(parseModelJson(reply.text));
+        } catch (e) { lastErr = e; }
+      }
+      const m = majority(votes);
+      if (!m) {
+        const msg = lastErr ? lastErr.message : 'no usable rating';
+        failures.push(`${s.code}: ${msg}`);
+        perSkill[i] = { code: s.code, failed: msg };
+      } else {
+        perSkill[i] = { code: s.code, ...m };
+        // Only a full set of readings is kept; a run that lost a reading is re-read next time.
+        if (votes.length === VOTES) cachePut(key, m);
       }
       tick();
     }
@@ -249,14 +343,21 @@ async function runAssess(slot, role) {
   }).join('\n');
   const attrText = sfia.ATTRIBUTES.map((a) => `${a.key} (${a.name}): target L${role.profile.attributes?.[a.key]?.level ?? '?'}${role.profile.attributes?.[a.key]?.why ? ` — ${clip(role.profile.attributes[a.key].why, 300)}` : ''}`).join('\n');
   let final = {};
-  try {
-    const reply = await withRetry(() => openrouter.complete([
-      { role: 'system', content: FINAL_PROMPT },
-      { role: 'user', content: `ROLE: ${role.profile.title}\nATTRIBUTE TARGETS:\n${attrText}\n\nPER-SKILL READINGS:\n${skillSummary}` },
-    ], { temperature: 0, maxTokens: 4000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
-    models.add(reply.model);
-    final = parseModelJson(reply.text);
-  } catch (e) { failures.push(`overall: ${e.message}`); }
+  const finalUser = `ROLE: ${role.profile.title}\nATTRIBUTE TARGETS:\n${attrText}\n\nPER-SKILL READINGS:\n${skillSummary}`;
+  const finalKey = sha(finalUser);
+  const keptFinal = fresh ? null : (store.getState(FINAL_CACHE_KEY, {}) || {})[finalKey];
+  if (keptFinal) final = keptFinal.final;
+  else {
+    try {
+      const reply = await withRetry(() => openrouter.complete([
+        { role: 'system', content: FINAL_PROMPT },
+        { role: 'user', content: finalUser },
+      ], { temperature: 0, maxTokens: 4000, json: true, callType: 'perf_assess', timeoutMs: 240_000 }));
+      models.add(reply.model);
+      final = parseModelJson(reply.text);
+      cachePut(finalKey, { final }, FINAL_CACHE_KEY);
+    } catch (e) { failures.push(`overall: ${e.message}`); }
+  }
   tick();
 
   const result = parseAssessment({
@@ -265,8 +366,12 @@ async function runAssess(slot, role) {
   }, { skills, bySkill });
   // A skill whose call failed says so, rather than reading as "the model did not rate it".
   for (const r of result.skills) {
-    const f = perSkill.find((x) => x && x.code === r.code && x.failed);
-    if (f) r.why = `The model call for this skill failed (${f.failed}) — press Reassess to try again.`;
+    const p = perSkill.find((x) => x && x.code === r.code);
+    if (p?.failed) r.why = `The model call for this skill failed (${p.failed}) — press Reassess to try again.`;
+    else if (p && RATINGS.includes(r.rating)) {
+      if (Array.isArray(p.votes)) { r.votes = p.votes; r.split = Boolean(p.split); }
+      if (p.reused) r.keptFrom = p.reused;
+    }
   }
   const saved = store.saveAssessment(slot, role.id, {
     ...result, evidenceRead: chosen.length, model: [...models].join(', ') || null,
@@ -287,4 +392,4 @@ async function runAssess(slot, role) {
   return saved;
 }
 
-module.exports = { assess, runState, parseAssessment, parsePlan, selectEvidence, RATINGS, READINESS };
+module.exports = { assess, runState, parseAssessment, parsePlan, selectEvidence, skillKey, majority, weighPlan, CURRENT_PLAN_CAP, RATINGS, READINESS, VOTES };

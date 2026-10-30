@@ -391,9 +391,38 @@ backfill under **daily caps** (spend + items, `perf_state.caps`).
 - `sfia.js` — ⚠ repo is PUBLIC: only level and attribute NAMES live here. Codes
   are checked against a private `backend/data/sfia9-catalogue.json` on the Pi
   when present; absent, a code is `not-checked`, never "verified".
-- Not built: re-reading old evidence against a NEW future role (items judged
-  before it keep their old tags; new items are read against it); Outlook Sent
-  Items outside NEURO; Jira ticket work.
+- **Stable ratings** (30 Oct 2026). Found: the two roles rated the same skill at
+  the same level "met" and "partly" 14 seconds apart, because each read only the
+  evidence triage had tagged to THAT role. Now (1) a skill is rated on every
+  accepted item tagged to its CODE in either role (`acceptedFor(null)`); (2) a
+  rating is KEPT while code, level, bar and evidence (ids, wording, stance) are
+  unchanged (`skillKey`, cache in `perf_state.assess_skill_cache`,
+  300 newest) — so Reassess cannot re-roll it, and both roles carry ONE rating for
+  a shared skill; the "in this role" wording is not part of the key; (3) a fresh
+  rating is the majority of `PERF_ASSESS_VOTES` (default 3) readings, the first at
+  temperature 0, the rest 0.7; no majority reads as `partly`, `split: true`.
+  Ratings carry `votes`, `split`, `keptFrom`. Only a full set of readings is kept.
+  The role-level call is cached on its exact input. `{ fresh: true }` (the "Fresh
+  reading" button) ignores both caches.
+- **The plan leans to the future role** (30 Oct 2026): `weighPlan`, read-time. The
+  future plan is whole; the CURRENT plan offers `CURRENT_PLAN_CAP` (3) open
+  actions, skills the future role also holds first (`alsoFuture`), then priority;
+  the rest are `heldBack` — counted and shown on request, never deleted.
+- **Roles from a signed SFIA annex** (30 Oct 2026): `perf-annex.js`,
+  `POST /api/perf/roles/annex` (own 12 MB parser in server.js). Reads the annex
+  TABLES exactly (Code / Skill / Level / Basis; Attribute / Level / Reasoning) —
+  no model call; a bad row or missing attribute is reported, never repaired. The
+  SFIA bar wording comes from an earlier saved profile with the same code AT THE
+  SAME LEVEL, else the import says so and Nick can paste it in. The job-description
+  reader (`propose`) still exists for a role with no annex. A profile carries
+  `confirmation` {proposed|confirmed}; `POST /api/perf/roles/:slot/confirmation`
+  is the one in-place change to a saved profile (it records a signature, never a
+  target). The Head of Technical Support role (role 9) was loaded from Annex A
+  v1.1 on 30 Oct 2026 — 14 skills, USUP 5 (6 only by documented delegation).
+- Re-reading old evidence against a new role profile IS built: the gather pass
+  runs `triage({ mode: 'retriage' })` once the queue is empty, re-reading proposed
+  and accepted items judged under an older profile, a batch per pass.
+- Not built: Outlook Sent Items outside NEURO; Jira ticket work.
 
 ## NOVA has no local instance
 

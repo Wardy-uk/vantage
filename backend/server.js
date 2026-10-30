@@ -61,6 +61,7 @@ const app = express();
 app.use('/api/plans/import/propose', express.json({ limit: '12mb' }));
 // A job description for Performance Evidence travels the same way (≤8 MB file).
 app.use('/api/perf/roles/propose', express.json({ limit: '12mb' }));
+app.use('/api/perf/roles/annex', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 /**

@@ -55,6 +55,20 @@ function mount(app, wrap) {
   app.get('/api/perf', wrap(() => overview()));
 
   app.post('/api/perf/roles/propose', wrap((req) => profile.propose(req.body || {})));
+  // A signed SFIA annex read exactly — no model guess (perf-annex). Writes nothing; Save stores it.
+  app.post('/api/perf/roles/annex', wrap((req) => require('./perf-annex').readAnnex(req.body || {})));
+  // Proposed → confirmed once the annex is signed (or back). Changes no target.
+  app.post('/api/perf/roles/:slot/confirmation', wrap((req) => {
+    const { slot } = req.params;
+    if (!store.SLOTS.includes(slot)) throw bad('slot must be current or future');
+    const role = store.activeRole(slot);
+    if (!role) throw bad(`No ${slot} role saved`, 404);
+    const { confirmed, note } = req.body || {};
+    if (typeof confirmed !== 'boolean') throw bad('confirmed must be true or false');
+    return store.setRoleConfirmation(role.id, profile.confirmationOf(confirmed
+      ? { state: 'confirmed', confirmedAt: new Date().toISOString(), note: typeof note === 'string' ? note : null }
+      : { state: 'proposed' }));
+  }));
   app.post('/api/perf/roles/save', wrap((req) => {
     const { slot, sourceName, sourceText } = req.body || {};
     if (!store.SLOTS.includes(slot)) throw bad('slot must be current or future');
@@ -160,7 +174,8 @@ function mount(app, wrap) {
     return gather.setBackfillOverride(on);
   }));
 
-  app.post('/api/perf/assess/:slot', wrap((req) => assess.assess(req.params.slot)));
+  // { fresh: true } ignores kept ratings and re-reads every skill (perf-assess "Stable ratings").
+  app.post('/api/perf/assess/:slot', wrap((req) => assess.assess(req.params.slot, { fresh: (req.body || {}).fresh === true })));
 
   // Development plan. Live state of a pushed action is read back from NEURO;
   // an unreadable NEURO is said ("status unknown"), never shown as open.
@@ -176,10 +191,15 @@ function mount(app, wrap) {
         tasks = new Map((Array.isArray(list) ? list : []).map((t) => [Number(t.id), t]));
       } catch (e) { tasksError = e.message; }
     }
+    const future = store.activeRole('future');
+    const futureCodes = future ? [...future.profile.skills.map((s) => s.code), ...Object.keys(future.profile.attributes || {})] : [];
+    const weighed = assess.weighPlan(items, { slot, futureCodes });
     return {
       slot,
       tasksError,
-      items: items.map((i) => {
+      cap: slot === 'current' ? assess.CURRENT_PLAN_CAP : null,
+      futureTitle: future?.profile.title || null,
+      items: weighed.map((i) => {
         const t = i.neuroTaskId && tasks ? tasks.get(Number(i.neuroTaskId)) : null;
         return { ...i, taskStatus: i.neuroTaskId ? (t ? t.status : tasks ? 'gone' : 'unknown') : null };
       }),
