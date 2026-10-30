@@ -449,6 +449,76 @@ function Fold({ id, label, children }) {
   );
 }
 
+/** "#123" in a reason becomes a link that opens item 123 underneath. */
+function CitedText({ text, onOpen }) {
+  const parts = String(text || '').split(/(#\d+)/);
+  return <>{parts.map((p, i) => (/^#\d+$/.test(p)
+    ? <button key={i} className="cite" title="Show this evidence" onClick={() => onOpen([Number(p.slice(1))])}>{p}</button>
+    : <React.Fragment key={i}>{p}</React.Fragment>))}</>;
+}
+
+function EvidencePeek({ ids, onClose }) {
+  const [items, setItems] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setItems(null); setErr(null);
+    api.perfEvidenceItems(ids).then((r) => { if (live) setItems(r.items); }).catch((x) => { if (live) setErr(x.message); });
+    return () => { live = false; };
+  }, [ids.join(',')]);
+  return (
+    <div className="peek">
+      <div className="row" style={{ marginBottom: 6 }}>
+        <b className="small">{ids.length === 1 ? `Evidence #${ids[0]}` : `${ids.length} evidence items`}</b>
+        <span className="spacer" />
+        <button className="small" onClick={onClose}>Close</button>
+      </div>
+      {err && <div className="small" style={{ color: 'var(--bad)' }}>Could not read the evidence — {err}</div>}
+      {!items && !err && <div className="small muted">Loading…</div>}
+      {items && !items.length && <div className="small muted">Not found — it may have been deleted since this rating was made.</div>}
+      {items?.map((e) => (
+        <div key={e.id} className="peek-item">
+          <div className="small muted">#{e.id} · {String(e.occurredAt || '').slice(0, 10)} · {ORIGIN[e.origin] || e.origin}{e.kind ? ` · ${e.kind}` : ''}{e.state !== 'accepted' ? ` · ${e.state}` : ''}</div>
+          <div><b>{e.title}</b></div>
+          {e.detail && <div className="small" style={{ whiteSpace: 'pre-wrap', marginTop: 2 }}>{e.detail.length > 600 ? `${e.detail.slice(0, 600)}…` : e.detail}</div>}
+          {e.ref && (/^https?:\/\//.test(e.ref)
+            ? <div className="small"><a href={e.ref} target="_blank" rel="noreferrer">Open source</a></div>
+            : <div className="small muted">Source: {e.ref}</div>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkillCard({ s }) {
+  const [open, setOpen] = useState(null);
+  const r = RATING[s.rating] || {};
+  return (
+    <div className="skillcard">
+      <div className="skillcard-head">
+        <div><b>{s.code}</b> {s.name}</div>
+        <div className="small muted">Target L{s.target} · seen at {s.observedLevel ? `L${s.observedLevel}` : '—'}</div>
+        <div style={{ marginTop: 6 }}><Pill color={r.color}>{r.label || s.rating}</Pill></div>
+        {Array.isArray(s.votes) && s.votes.length > 1 && (
+          <div className="small muted" title={s.votes.join(', ')}>{s.split ? 'split — no majority' : `${s.votes.filter((v) => v === s.rating).length} of ${s.votes.length} readings`}</div>
+        )}
+        {s.keptFrom && <div className="small muted" title="Evidence unchanged since this rating was made">kept from {String(s.keptFrom).slice(0, 10)}</div>}
+      </div>
+      <div className="skillcard-body">
+        <div className="why"><CitedText text={s.why} onOpen={setOpen} /></div>
+        {s.cite?.length > 0 && (
+          <div className="small muted" style={{ marginTop: 6 }}>
+            Evidence ({s.cite.length}):{' '}
+            {s.cite.map((c) => <button key={c} className="cite" onClick={() => setOpen([c])}>#{c}</button>)}
+            {s.cite.length > 1 && <button className="small" style={{ marginLeft: 6 }} onClick={() => setOpen(s.cite)}>Show all</button>}
+          </div>
+        )}
+        {open && <EvidencePeek ids={open} onClose={() => setOpen(null)} />}
+      </div>
+    </div>
+  );
+}
+
 function AssessTab({ data, reload }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
@@ -512,29 +582,9 @@ function AssessTab({ data, reload }) {
                 </div>
                 {a.summary && <p className="small">{a.summary}</p>}
                 <Fold id={`assess_${slot}`} label={`Skill-by-skill reasons (${a.skills.length} skills) and the five attributes`}>
-                <table className="table" style={{ width: '100%' }}>
-                  <thead><tr><th style={{ textAlign: 'left' }}>Skill</th><th>Target</th><th>Rating</th><th>Seen at</th><th style={{ textAlign: 'left' }}>Why</th><th>Evidence</th></tr></thead>
-                  <tbody>
-                    {a.skills.map((s) => (
-                      <tr key={s.code}>
-                        <td><b>{s.code}</b> {s.name}</td>
-                        <td style={{ textAlign: 'center' }}>L{s.target}</td>
-                        <td style={{ textAlign: 'center', color: RATING[s.rating]?.color }}>
-                          {RATING[s.rating]?.label || s.rating}
-                          {Array.isArray(s.votes) && s.votes.length > 1 && (
-                            <div className="small muted" title={s.votes.join(', ')}>
-                              {s.split ? 'split — no majority' : `${s.votes.filter((v) => v === s.rating).length} of ${s.votes.length}`}
-                            </div>
-                          )}
-                          {s.keptFrom && <div className="small muted" title="Evidence unchanged since this rating was made">kept from {String(s.keptFrom).slice(0, 10)}</div>}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>{s.observedLevel ? `L${s.observedLevel}` : '—'}</td>
-                        <td className="small muted" style={{ whiteSpace: 'normal' }}>{s.why}</td>
-                        <td className="small muted" style={{ fontFamily: 'var(--mono)', whiteSpace: 'normal', wordBreak: 'break-word', width: 120, maxWidth: 120 }}>{s.cite.length ? s.cite.map((c) => `#${c}`).join(' ') : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="skillcards">
+                  {a.skills.map((s) => <SkillCard key={s.code} s={s} />)}
+                </div>
                 <table className="table" style={{ width: '100%', marginTop: 10 }}>
                   <thead><tr><th style={{ textAlign: 'left' }}>Attribute</th><th>Target</th><th>Seen at</th><th style={{ textAlign: 'left' }}>Why</th></tr></thead>
                   <tbody>

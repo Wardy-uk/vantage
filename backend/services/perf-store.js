@@ -231,6 +231,14 @@ function listEvidence({ state, stance, limit = 200, offset = 0 } = {}) {
   return { items: rows.map(evRow), total };
 }
 
+/** The items with these ids, in the order asked; an id with no item is left out. */
+function getMany(ids) {
+  if (!ids.length) return [];
+  const rows = db().prepare(`SELECT * FROM perf_evidence WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  const byId = new Map(rows.map((r) => [r.id, evRow(r)]));
+  return ids.map((i) => byId.get(i)).filter(Boolean);
+}
+
 function counts() {
   const out = Object.fromEntries(STATES.map((s) => [s, 0]));
   for (const r of db().prepare('SELECT state, COUNT(*) AS n FROM perf_evidence GROUP BY state').all()) out[r.state] = r.n;
@@ -355,6 +363,6 @@ module.exports = {
   savePlan, planFor, planItem, setPlanState,
   STATES, SLOTS, getState, setState,
   activeRole, roleHistory, saveRole, allRoles, setRoleConfirmation,
-  enqueue, addManual, getEvidence, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
+  enqueue, addManual, getEvidence, getMany, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
   saveAssessment, latestAssessment, assessmentHistory,
 };

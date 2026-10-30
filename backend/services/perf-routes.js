@@ -89,6 +89,13 @@ function mount(app, wrap) {
     return store.listEvidence({ state, stance, limit, offset });
   }));
 
+  // The items an assessment cites, by id (1-200, whole numbers, refused not trimmed).
+  app.get('/api/perf/evidence/items', wrap((req) => {
+    const ids = String(req.query.ids || '').split(',').filter(Boolean).map(Number);
+    if (!ids.length || ids.length > 200 || !ids.every((n) => Number.isInteger(n) && n > 0)) throw bad('ids must be 1-200 comma-separated item numbers');
+    return { items: store.getMany([...new Set(ids)]) };
+  }));
+
   app.post('/api/perf/evidence', wrap((req) => {
     const b = req.body || {};
     const title = typeof b.title === 'string' ? b.title.trim() : '';

@@ -145,3 +145,12 @@ test('the annex table is read exactly; bad rows are reported', () => {
   assert.equal(h.skills[0].code, 'USUP');
   assert.equal(h.skills[0].inRole, "Operates Support's incident response.");
 });
+
+test('cited evidence is read back by id, in the order asked, missing ids left out', () => {
+  const d = require('../db').get();
+  const ids = d.prepare('SELECT id FROM perf_evidence ORDER BY id').all().map((r) => r.id);
+  const got = store.getMany([ids[1], 999999, ids[0]]);
+  assert.deepEqual(got.map((e) => e.id), [ids[1], ids[0]]);
+  assert.equal(got[0].title, 'Negotiated new SLA tiers');
+  assert.deepEqual(store.getMany([]), []);
+});

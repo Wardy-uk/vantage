@@ -143,6 +143,7 @@ export const api = {
   perfPropose: body => call('/perf/roles/propose', { method: 'POST', body }),
   perfSaveRole: body => call('/perf/roles/save', { method: 'POST', body }),
   perfEvidence: (state, limit = 100, offset = 0, stance) => call(`/perf/evidence?${new URLSearchParams({ ...(state ? { state } : {}), ...(stance ? { stance } : {}), limit, offset })}`),
+  perfEvidenceItems: ids => call(`/perf/evidence/items?ids=${ids.join(',')}`),
   perfAcceptAllFor: () => call('/perf/evidence/accept-all-for', { method: 'POST' }),
   perfAdd: body => call('/perf/evidence', { method: 'POST', body }),
   perfUpdate: (id, body) => call(`/perf/evidence/${id}`, { method: 'PUT', body }),
