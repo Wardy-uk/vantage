@@ -54,7 +54,7 @@ function Pill({ children, color, title }) {
  * reason is ONE line, not two.
  */
 function SkillLines({ tags, roles }) {
-  if (!tags?.length) return <div className="small muted">Not tied to a skill yet — Re-tag to choose one.</div>;
+  if (!tags?.length) return <div className="small muted">No skill found for this yet — Re-tag to choose one.</div>;
   const groups = new Map();
   for (const t of tags) {
     const k = `${t.code}|${t.stance}|${t.why || ''}`;

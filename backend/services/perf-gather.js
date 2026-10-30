@@ -190,7 +190,7 @@ WHAT COUNTS
 RULES
 - Every item index must appear exactly once. tags:[] means it is not evidence of any listed skill.
 - Use only the skill codes listed for each role, with that role's slot. An item can carry tags for both roles.
-- Routine admin with no skill content gets tags:[].
+- Routine admin with no skill content gets tags:[]. A task is NOT routine admin when its title is service-desk work: identifying or reducing escalations, planning or preparing a project, evaluating a new support channel or tool, investigating or migrating a system, routing, quality, reporting, staffing. Judge a task by what its TITLE says the work is; the "Due … / Done … / still open" line is timing context only.
 - A work meeting is evidence of the skills its TITLE shows (escalations, KPIs, capacity, quality, customers, process improvement, staffing...), even when its detail is withheld for privacy — "Details withheld" means the notes are private, not that nothing happened. Only a meeting that is plainly personal (Nick's own appointments) or has no meaningful title gets tags:[].
 - Commits are judged by what the work is FOR, not by which repo it is in. Tooling for the job — the service desk, the team, 1-2-1s, overtime and payroll, KPIs and reporting (weekly risk, SOAP), escalations, VANTAGE, NOVA — is evidence of the skills it serves. Features for Nick's personal life (nutrition, health, home, family, car, kiosk, watch, location, music, hobbies) are not.
 - why: what in the item shows it. Never invent facts not in the item.`;
@@ -222,7 +222,7 @@ function parseTriage(raw, batchSize, codesBySlot) {
 let running = false;
 
 /** Bump when the sorting rules change: everything judged under an older version is re-read. */
-const RULES_VERSION = 'r2';
+const RULES_VERSION = 'r3'; // r3 (30 Oct 2026): tasks judged by their title, not as admin
 
 /**
  * What the sorting depends on: the skills (code + level) in each role — NOT the

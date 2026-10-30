@@ -276,11 +276,17 @@ function forRetriage(rolesKey, limit) {
     AND (judged_roles IS NULL OR judged_roles != ?) ORDER BY occurred_at DESC LIMIT ?`).all(rolesKey, limit).map(evRow);
 }
 
-/** Apply a re-sort. Nick's decision stands; an accepted item left with no skill returns to Review. */
+/**
+ * Apply a re-sort. Nick's decision stands: an ACCEPTED item stays accepted
+ * whatever the re-sort finds — with no skill it simply counts towards nothing
+ * until a later sort or a Re-tag gives it one. (30 Oct 2026: it used to go back
+ * to Review, which read as new work, and the NEXT re-sort could then dismiss
+ * something Nick had accepted.)
+ */
 function setRetriage(id, { tags, rolesKey }) {
   const cur = getEvidence(id);
   if (!cur || !['proposed', 'accepted', 'not-relevant'].includes(cur.state)) return;
-  const state = cur.state === 'accepted' ? (tags.length ? 'accepted' : 'proposed') : (tags.length ? 'proposed' : 'not-relevant');
+  const state = cur.state === 'accepted' ? 'accepted' : (tags.length ? 'proposed' : 'not-relevant');
   db().prepare("UPDATE perf_evidence SET state = ?, tags_json = ?, judged_roles = ?, in_case = CASE WHEN ? = 'accepted' THEN in_case ELSE 0 END WHERE id = ?")
     .run(state, JSON.stringify(tags || []), rolesKey, state, id);
 }

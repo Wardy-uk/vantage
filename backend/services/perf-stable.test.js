@@ -154,3 +154,15 @@ test('cited evidence is read back by id, in the order asked, missing ids left ou
   assert.equal(got[0].title, 'Negotiated new SLA tiers');
   assert.deepEqual(store.getMany([]), []);
 });
+
+test('a re-sort never takes back an acceptance', () => {
+  const d = require('../db').get();
+  d.prepare(`INSERT INTO perf_evidence (source_key, origin, kind, occurred_at, title, state, tags_json, created_at, decided_at)
+    VALUES ('acc', 'neuro', 'task-overdue', '2026-10-29', 'Begin identifying unnecessary escalations', 'accepted', '[]', ?, ?)`).run(new Date().toISOString(), new Date().toISOString());
+  const id = d.prepare("SELECT id FROM perf_evidence WHERE source_key = 'acc'").get().id;
+  store.setRetriage(id, { tags: [], rolesKey: 'k1' });
+  assert.equal(store.getEvidence(id).state, 'accepted', 'no skill found: still accepted');
+  store.setRetriage(id, { tags: [{ slot: 'future', code: 'USUP', stance: 'for', why: 'w' }], rolesKey: 'k2' });
+  assert.equal(store.getEvidence(id).state, 'accepted');
+  assert.equal(store.getEvidence(id).tags[0].code, 'USUP');
+});
