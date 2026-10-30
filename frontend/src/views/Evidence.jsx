@@ -863,6 +863,11 @@ function GatherTab({ data, reload }) {
  */
 function statusLine(g) {
   const s = statusCore(g);
+  if (g.retriageLeft > 0) {
+    s.text = `${s.text} Re-sorting against the current roles: ${g.retriageLeft} item${g.retriageLeft === 1 ? '' : 's'} still to re-read — wait for this to finish before a Fresh reading.`;
+  } else if (g.retriageLeft === 0 && s.tone === 'info' && g.counts.queued === 0) {
+    s.text = `${s.text} Re-sort complete — ratings can be refreshed.`;
+  }
   if (g.override?.on) s.text = `Backfill override on — daily caps lifted until the year is read (safety ceiling $${g.caps.dailyUsd}/day). ${s.text}`;
   return s;
 }

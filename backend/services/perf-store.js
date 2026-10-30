@@ -369,6 +369,6 @@ module.exports = {
   savePlan, planFor, planItem, setPlanState,
   STATES, SLOTS, getState, setState,
   activeRole, roleHistory, saveRole, allRoles, setRoleConfirmation,
-  enqueue, addManual, getEvidence, getMany, queued, listEvidence, counts, update, setTriage, forRetriage, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
+  enqueue, addManual, getEvidence, getMany, queued, listEvidence, counts, update, setTriage, forRetriage, retriageLeft, setRetriage, acceptAllFor, STANCE_SQL, acceptedFor, deleteManual,
   saveAssessment, latestAssessment, assessmentHistory,
 };

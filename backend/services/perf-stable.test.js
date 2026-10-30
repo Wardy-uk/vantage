@@ -166,3 +166,11 @@ test('a re-sort never takes back an acceptance', () => {
   assert.equal(store.getEvidence(id).state, 'accepted');
   assert.equal(store.getEvidence(id).tags[0].code, 'USUP');
 });
+
+test('the re-sort reports how many items it still has to read', () => {
+  const before = store.retriageLeft('nobody-has-this-key');
+  assert.ok(before > 0);
+  const d = require('../db').get();
+  d.prepare("UPDATE perf_evidence SET judged_roles = 'kx' WHERE origin != 'manual'").run();
+  assert.equal(store.retriageLeft('kx'), 0);
+});

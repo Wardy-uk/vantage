@@ -239,8 +239,7 @@ function rolesKeyFor(roles) {
  * mode 'queued'   — read new items (the normal pass).
  * mode 'retriage' — re-read items already proposed or accepted that were judged
  *   under older rules or an older role profile. Nick's decisions stand: an
- *   accepted item stays accepted with its new tags, and one left tied to no
- *   skill goes back to Review rather than disappearing. Manual entries are his
+ *   accepted item stays accepted whatever the re-sort finds (30 Oct 2026). Manual entries are his
  *   own tagging and are never re-read.
  */
 async function triage({ today = localKey(), mode = 'queued' } = {}) {
@@ -342,6 +341,10 @@ function status() {
     caps: caps(), spentToday: spentToday(), itemsToday: itemsToday(),
     override: store.getState('backfill_override', null),
     counts: store.counts(),
+    retriageLeft: (() => {
+      const roles = { current: store.activeRole('current'), future: store.activeRole('future') };
+      return roles.current || roles.future ? store.retriageLeft(rolesKeyFor(roles)) : 0;
+    })(),
     backfill: { cursor: store.getState('backfill_cursor', null), floorDays: BACKFILL_DAYS },
     lastRun: store.getState('last_run', null),
     lastSources: store.getState('last_sources', null),
