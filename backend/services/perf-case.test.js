@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * The written case (30 Oct 2026), on a real temp SQLite file: the colleague-name
- * guard, the model's picks held to that skill's accepted evidence, confirmation
- * refused while a line names someone, and the export carrying confirmed skills
- * only — as text and as a Word file that opens.
+ * The written case (30 Oct 2026), on a real temp SQLite file: the model's picks
+ * held to that skill's accepted evidence, and the export carrying confirmed
+ * skills only — as text and as a Word file that opens. No name or personal
+ * guard (removed 31 Oct 2026).
  */
 
 const { test } = require('node:test');
@@ -17,20 +17,6 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-case-'));
 require('../db').init(path.join(dir, 'v.db'));
 const store = require('./perf-store');
 const pc = require('./perf-case');
-
-const ROSTER = ['Hope Goodall', 'Nathan Button', 'Nathan Rutland', 'Nick Ward', 'Adele Smith'];
-
-test('the name guard: full names, unique first names, never Nick, never a lower-case word', () => {
-  const g = pc.guardNames(ROSTER);
-  assert.ok(g.full.includes('Hope Goodall'));
-  assert.ok(!g.full.includes('Nick Ward'));
-  assert.ok(g.first.includes('Hope') && g.first.includes('Adele'));
-  assert.ok(!g.first.includes('Nathan'), 'a shared first name is checked by full name only');
-  assert.deepEqual(pc.nameHits('Coached Hope through her first escalation', g), ['Hope']);
-  assert.deepEqual(pc.nameHits('Worked with Nathan Rutland on the rota', g), ['Nathan Rutland']);
-  assert.deepEqual(pc.nameHits('I hope this shows ownership; Nathan helped', g), [], 'lower-case hope and an ambiguous Nathan are not hits');
-  assert.deepEqual(pc.nameHits('Coached a direct report', g), []);
-});
 
 test('the model may only pick accepted items for that skill, at most five, each with a line', () => {
   const raw = JSON.stringify({
@@ -52,30 +38,24 @@ test('evidence numbers are taken out of drafted text', () => {
   assert.equal(d.items[0].line, 'Did it.');
 });
 
-test('a drafted pick about a personal matter is dropped, not pre-ticked', () => {
+test('a pick that mentions a colleague or a personal matter is kept — no guard', () => {
   const raw = JSON.stringify({ argument: 'A', picks: [
-    { id: 1, line: 'I committed to follow up with a direct report to finalize a welfare plan.' },
-    { id: 2, line: "I confirmed a team member's potential departure timing to inform capacity planning." },
-    { id: 3, line: 'I set up a monthly RCA process for the top five recurring failures.' },
+    { id: 1, line: 'Coached Hope Goodall through a welfare plan.' },
+    { id: 2, line: 'I set up a monthly RCA process.' },
   ] });
-  assert.deepEqual(pc.parseSkillDraft(raw, { candidateIds: [1, 2, 3], rating: 'met' }).items.map((i) => i.id), [3]);
-  assert.equal(pc.personalHit('Ran the health check on the integration'), 'health', 'a flag, not a block — Nick judges it');
-  assert.equal(pc.personalHit('Led the Acme outage review'), null);
+  assert.deepEqual(pc.parseSkillDraft(raw, { candidateIds: [1, 2], rating: 'met' }).items.map((i) => i.id), [1, 2]);
 });
 
-test('edits are refused not repaired; confirming checks names, lines and the argument', () => {
-  const names = pc.guardNames(ROSTER);
-  assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 50, line: 'x', included: true }] }, { candidateIds: [1], names, gap: false }), /not accepted evidence/);
-  assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 1, line: 'Coached Hope', included: true }], argument: 'A', reviewed: true }, { candidateIds: [1], names, gap: false }), /Names a colleague \(Hope\)/);
-  assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 1, line: '', included: true }], argument: 'A', reviewed: true }, { candidateIds: [1], names, gap: false }), /needs its line/);
-  assert.throws(() => pc.applySkillEdit(null, { items: [], reviewed: true }, { candidateIds: [], names, gap: false }), /argument/);
-  assert.throws(() => pc.applySkillEdit(null, { items: [], reviewed: true }, { candidateIds: [], names, gap: true }), /where you stand/i);
-  assert.throws(() => pc.applySkillEdit(null, { argument: 'A', reviewed: true }, { candidateIds: [], names: null, gap: false }), /no roster/);
-  // An unticked line naming someone does not block: it is not going in the case.
-  const ok = pc.applySkillEdit(null, { argument: 'A', items: [{ id: 1, line: 'Coached Hope', included: false }], reviewed: true }, { candidateIds: [1], names, gap: false });
+test('edits are refused not repaired; confirming checks lines and the argument', () => {
+  assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 50, line: 'x', included: true }] }, { candidateIds: [1], gap: false }), /not accepted evidence/);
+  assert.equal(pc.applySkillEdit(null, { items: [{ id: 1, line: 'Coached Hope', included: true }], argument: 'A', reviewed: true }, { candidateIds: [1], gap: false }).reviewed, true, 'a named colleague does not block');
+  assert.throws(() => pc.applySkillEdit(null, { items: [{ id: 1, line: '', included: true }], argument: 'A', reviewed: true }, { candidateIds: [1], gap: false }), /needs its line/);
+  assert.throws(() => pc.applySkillEdit(null, { items: [], reviewed: true }, { candidateIds: [], gap: false }), /argument/);
+  assert.throws(() => pc.applySkillEdit(null, { items: [], reviewed: true }, { candidateIds: [], gap: true }), /where you stand/i);
+  const ok = pc.applySkillEdit(null, { argument: 'A', items: [{ id: 1, line: 'Coached Hope', included: false }], reviewed: true }, { candidateIds: [1], gap: false });
   assert.equal(ok.reviewed, true);
   // Any later change unconfirms.
-  const changed = pc.applySkillEdit(ok, { argument: 'B' }, { candidateIds: [1], names, gap: false });
+  const changed = pc.applySkillEdit(ok, { argument: 'B' }, { candidateIds: [1], gap: false });
   assert.equal(changed.reviewed, false);
 });
 
@@ -94,7 +74,6 @@ test('end to end on the store: only confirmed skills are exported, and the Word 
       { code: 'KNOW', name: 'Knowledge management', target: 5, rating: 'partly', observedLevel: 4, why: 'Some.', cite: [ids[1]] }],
     readiness: { rating: 'nearly', why: 'w' }, summary: 's', counts: { met: 1, partly: 1 },
   });
-  store.setState('case_roster_names', { names: pc.guardNames(ROSTER), at: '2026-10-30T00:00:00Z' });
 
   assert.throws(() => pc.exportCase('future'), /Confirm at least one skill/);
   const usup = await pc.editSkill('future', 'USUP', { argument: 'I lead major incidents end to end.', items: [{ id: ids[0], line: 'Led the Acme outage review and its fixes.', included: true }], reviewed: true });
@@ -106,7 +85,7 @@ test('end to end on the store: only confirmed skills are exported, and the Word 
   assert.match(md, /Led the Acme outage review/);
   assert.doesNotMatch(md, /KB health report/, 'an unconfirmed skill is left out');
   assert.deepEqual(left.map((x) => x.code), ['KNOW']);
-  assert.doesNotMatch(md, /Ran the Acme outage review/, 'the raw item title is never exported');
+  assert.doesNotMatch(md, /Ran the Acme outage review/, 'the case prints its own lines, not item titles');
 
   const buf = await pc.toDocx(blocks);
   assert.equal(buf.slice(0, 2).toString(), 'PK');
@@ -116,9 +95,9 @@ test('end to end on the store: only confirmed skills are exported, and the Word 
   assert.match(doc, /w:pStyle w:val="Heading1"/);
   for (const part of ['[Content_Types].xml', '_rels/.rels', 'word/styles.xml', 'word/numbering.xml']) assert.ok(zip.file(part), part);
 
-  // A name slipped into a confirmed skill by editing the store directly still refuses the export.
+  // A colleague's name in a confirmed skill exports as written.
   const st = store.getState('case_future');
   st.skills.USUP.argument = 'With Adele I led incidents.';
   store.setState('case_future', st);
-  assert.throws(() => pc.exportCase('future'), /names a colleague \(Adele\)/);
+  assert.match(pc.toMarkdown(pc.exportCase('future').blocks), /With Adele I led incidents/);
 });

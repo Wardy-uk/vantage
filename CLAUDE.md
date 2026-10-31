@@ -14,6 +14,7 @@ expectation to be evidenced NOW, no day-number is ever rendered and no date is
 ever computed from one; and a blank SFIA cell is a JD that did not evidence a
 skill, **not** a capability Nick lacks — the same absent-is-not-zero rule, one
 document over.
+**No HR / personal restrictions (31 Oct 2026)** — Nick had the case-export name/personal guards, evidence privacy screening, 1-2-1 note omission and the people verification fence removed; don't add new ones. Coaching privacy kept (undecided).
 **Then read `.claude/memory/mistakes.md`.** It is not a formality — the same
 class of error has recurred four times in this codebase.
 
@@ -349,7 +350,7 @@ five generic attributes, edited before save; a **full assessment** (met / partly
 / not yet + readiness) — a written exception to `self.js`'s no-grading rule, for
 this section only; NEURO gathers **everything incl. counter-evidence**, and NOVA
 too; the model **proposes**, only what Nick **accepts** counts; one current +
-one future role; private, exported only as summaries he writes; 12-month
+one future role; exported as his summaries (or an item's own title); 12-month
 backfill under **daily caps** (spend + items, `perf_state.caps`).
 
 - `perf-store.js` — REAL TABLES (`perf_roles`, `perf_evidence`,
@@ -357,7 +358,7 @@ backfill under **daily caps** (spend + items, `perf_state.caps`).
   rejected or not-relevant item is never bought again.
 - `perf-gather.js` — pulls NEURO `GET /api/perf-evidence/candidates` (tasks
   overdue / done late, wins, replies, management log, decisions, meeting
-  write-ups) and NOVA via `perf-nova.js` (1-2-1s held, Nick's own manual
+  write-ups) and NOVA via `perf-nova.js` (1-2-1s held, with their notes and agreed actions, Nick's own manual
   escalations, finished-week department KPIs; ⚠ never per-agent ticket counts —
   see role.md). GET only: **no new write between the systems**. Drops automated
   mail free, then batches of 20 to the model (`perf_evidence` gate class). A
@@ -387,8 +388,8 @@ backfill under **daily caps** (spend + items, `perf_state.caps`).
   said about Nick's work (weight 1–5 in the title, Nick's order: line-manager
   1-2-1 strongest). Gather re-sweeps the whole year once a day for these items;
   the skill prompt weighs them by that order.
-- `perf-export.js` — prints only items ticked into the case, as Nick's summary.
-- `perf-case.js` (30 Oct 2026) — **Build my case** is a written case for Chris, not a dump. Per skill (one `perf_case` call each, background, `case_run_<slot>`): an argument, the 3–5 strongest accepted items (cited first) as one-line summaries, pre-ticked; gaps (Partly / Not yet / No evidence / unrated) get an honest position plus the Plan tab's actions. Nick unticks, edits, adds more (`/candidates`, `/add` drafts one line), and presses "Happy with this skill"; ONLY confirmed skills are exported (`/api/perf/case/:slot/export`, text or `?format=docx` — a hand-built .docx via jszip). A full redraft never touches confirmed skills; any edit unconfirms. ⚠ Colleagues are never named: lines are checked against NEURO's roster (full names + unique first names, cached in `case_roster_names`); confirming and exporting refuse on a hit, and refuse when the roster was never read. ⚠ The model ignored the prompt on personal matters (a welfare plan, a team member's departure), so `PERSONAL_RE` drops such picks at draft time and flags lines Nick writes. Evidence numbers (#123) are stripped. Stored in `perf_state` `case_<slot>`. Tests `perf-case.test.js`.
+- `perf-export.js` — prints only items ticked into the case, as Nick's summary, else the item's title.
+- `perf-case.js` (30 Oct 2026) — **Build my case** is a written case for Chris, not a dump. Per skill (one `perf_case` call each, background, `case_run_<slot>`): an argument, the 3–5 strongest accepted items (cited first) as one-line summaries, pre-ticked; gaps (Partly / Not yet / No evidence / unrated) get an honest position plus the Plan tab's actions. Nick unticks, edits, adds more (`/candidates`, `/add` drafts one line), and presses "Happy with this skill"; ONLY confirmed skills are exported (`/api/perf/case/:slot/export`, text or `?format=docx` — a hand-built .docx via jszip). A full redraft never touches confirmed skills; any edit unconfirms. Evidence numbers (#123) are stripped. Stored in `perf_state` `case_<slot>`. Tests `perf-case.test.js`.
 - `sfia.js` — ⚠ repo is PUBLIC: only level and attribute NAMES live here. Codes
   are checked against a private `backend/data/sfia9-catalogue.json` on the Pi
   when present; absent, a code is `not-checked`, never "verified".

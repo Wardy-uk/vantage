@@ -7,10 +7,8 @@
  *  - A WRITTEN case, skill by skill: a short argument per SFIA skill drawn from
  *    the latest assessment, the strongest evidence as one-line summaries, then
  *    readiness and gaps. Exported as Word and as text for Confluence.
- *  - Written for Chris (line manager). Customers may be named; colleagues are
- *    NEVER named — role only ("a direct report"). Enforced here, not just asked
- *    for: every line is checked against NEURO's team roster, and a line naming
- *    someone cannot be confirmed or exported.
+ *  - Written for Chris (line manager). No name or personal-matter guard (Nick,
+ *    31 Oct 2026): what goes in the case is his call.
  *  - VANTAGE proposes, Nick prunes: per skill it pre-ticks the 3–5 strongest
  *    items the assessment cited and drafts their wording. Nick unticks, edits,
  *    adds more, and presses "Happy with this skill". Nothing reaches the export
@@ -28,7 +26,6 @@ const sfia = require('./sfia');
 
 const KEY = (slot) => `case_${slot}`;
 const RUN_KEY = (slot) => `case_run_${slot}`;
-const NAMES_KEY = 'case_roster_names';
 const STALE_MS = 30 * 60_000;
 const CONCURRENCY = 3;
 const MAX_PICKS = 5;
@@ -44,56 +41,6 @@ const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); 
 const tidy = (s, n) => String(s || '').replace(/\r/g, '').trim().slice(0, n);
 const bad = (msg, status = 400) => { const e = new Error(msg); e.status = status; return e; };
 
-// ── colleague-name guard ─────────────────────────────────────────────────────
-
-/**
- * Names that must not appear: each roster full name, and each first name that
- * belongs to one person only (a shared first name is checked by full name).
- * Nick's own name never counts. Pure.
- */
-function guardNames(people) {
-  const full = [...new Set((people || []).map((p) => String(p || '').trim()).filter((p) => p.includes(' ')))]
-    .filter((p) => !/^nick ward$/i.test(p));
-  const firstCount = new Map();
-  for (const f of full) { const k = f.split(/\s+/)[0]; firstCount.set(k, (firstCount.get(k) || 0) + 1); }
-  const first = [...firstCount].filter(([k, n]) => n === 1 && k.length >= 3 && k !== 'Nick').map(([k]) => k);
-  return { full, first };
-}
-
-/** Which roster names a text contains. Case-sensitive whole words (a capital "Will" is a name, "will" is not). Pure. */
-function nameHits(text, names) {
-  const t = String(text || '');
-  if (!t || !names) return [];
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const hits = new Set();
-  for (const f of names.full || []) if (new RegExp(`\\b${esc(f).replace(/\s+/g, '\\s+')}\\b`).test(t)) hits.add(f);
-  for (const f of names.first || []) {
-    if ([...hits].some((h) => h.startsWith(`${f} `))) continue;
-    if (new RegExp(`\\b${esc(f)}\\b`).test(t)) hits.add(f);
-  }
-  return [...hits];
-}
-
-/** The roster from NEURO, cached; a failed read falls back to the last good list and says so. */
-async function loadNames() {
-  const cached = store.getState(NAMES_KEY, null);
-  try {
-    const neuro = require('./neuro');
-    if (!neuro.isConfigured()) throw new Error('NEURO is not configured');
-    const roster = await neuro.call('/api/team-health/roster');
-    const people = (roster.people || roster.data?.people || []).map((p) => p.name).filter(Boolean);
-    if (!people.length) throw new Error('NEURO returned an empty roster');
-    const v = { names: guardNames(people), at: new Date().toISOString() };
-    store.setState(NAMES_KEY, v);
-    return { names: v.names, fresh: true, at: v.at };
-  } catch (e) {
-    if (cached) return { names: cached.names, fresh: false, at: cached.at, error: e.message };
-    return { names: null, fresh: false, at: null, error: e.message };
-  }
-}
-
-const cachedNames = () => store.getState(NAMES_KEY, null)?.names || null;
-
 // ── the model's draft ────────────────────────────────────────────────────────
 
 const SKILL_PROMPT = `You are helping Nick Ward write a promotion case for his line manager, Chris. You get one SFIA skill, VANTAGE's assessment of it, and Nick's accepted evidence for it.
@@ -106,10 +53,8 @@ Return JSON only:
 - picks: the 3–5 STRONGEST items for this skill (fewer if fewer are good), best first. Prefer items the assessment cited. Each line is one sentence (under 35 words), past tense, what Nick did and the outcome, readable by someone who has never seen the item.
 
 Rules, all of them hard:
-- NEVER name a colleague. Use their role instead: "a direct report", "a team lead", "my line manager", "a developer", "a colleague in Product". Customer and company names are fine.
 - Never invent numbers, dates, outcomes or facts not in the item. If an item is vague, say less.
 - Never quote an email or a meeting.
-- Never put anything personal about an individual in the case — health, welfare, family, pay, someone leaving, someone's performance problems or a disciplinary matter — even unnamed. Pick a different item.
 - Prefer work that was DONE over something promised or planned ("I committed to…" is not evidence).
 - Never write evidence numbers (#123) in the argument, position or lines — the reader has never seen them.
 - ids must be ids from the evidence given.`;
@@ -118,7 +63,7 @@ const OPENING_PROMPT = `You are helping Nick Ward write the opening of a promoti
 
 Return JSON only: {"opening": "..."}
 
-The opening is 3–5 sentences in Nick's voice: where he stands against the role, the strongest areas, and the gaps he is working on. Honest — if the verdict is Not yet or Nearly, say so plainly. NEVER name a colleague (role only). No invented facts.`;
+The opening is 3–5 sentences in Nick's voice: where he stands against the role, the strongest areas, and the gaps he is working on. Honest — if the verdict is Not yet or Nearly, say so plainly. No invented facts.`;
 
 /** Validate one skill's draft against the items it may cite. Pure. */
 /** Evidence numbers mean nothing to Chris: "(#366, #347)" and a bare "#31" are taken out. Pure. */
@@ -126,16 +71,6 @@ function stripRefs(t) {
   if (!t) return t;
   return t.replace(/\s*\((?:\s*#\d+\s*,?)+\)/g, '').replace(/\s*#\d+\b/g, '').replace(/\s+([,.;])/g, '$1').replace(/\s{2,}/g, ' ').trim();
 }
-
-/**
- * Personal matters about an individual — health, welfare, someone leaving, pay,
- * a disciplinary or a grievance. The prompt forbids them and the model picked
- * them anyway (live, 30 Oct 2026: a welfare plan, a team member's departure
- * date), so a drafted pick that reads like one is dropped, and a line Nick
- * writes is flagged for him to judge. Pure.
- */
-const PERSONAL_RE = /\b(welfare|wellbeing|well-being|health|sick(ness)?|medical|illness|occupational|bereave\w*|pregnan\w*|maternity|paternity|depart(ure|ing)|leaving|resign\w*|notice period|redundan\w*|salary|pay rise|disciplin\w*|grievance|capability process|PIP|performance improvement plan|family|divorce|personal (issue|matter)s?)\b/i;
-const personalHit = (t) => (t ? (String(t).match(PERSONAL_RE) || [null])[0] : null);
 
 function parseSkillDraft(raw, { candidateIds, rating }) {
   let j;
@@ -146,7 +81,7 @@ function parseSkillDraft(raw, { candidateIds, rating }) {
   for (const p of Array.isArray(j?.picks) ? j.picks : []) {
     const id = Number(p?.id);
     const line = stripRefs(tidy(p?.line, LINE_MAX).replace(/\s+/g, ' '));
-    if (!valid.has(id) || seen.has(id) || !line || personalHit(line)) continue;
+    if (!valid.has(id) || seen.has(id) || !line) continue;
     seen.add(id);
     items.push({ id, line, included: true });
     if (items.length >= MAX_PICKS) break;
@@ -206,18 +141,17 @@ function view(slot) {
   const byId = new Map(evidence.map((e) => [e.id, e]));
   const aBy = new Map((assessment?.skills || []).map((s) => [s.code, s]));
   const plan = store.planFor(slot).filter((p) => p.state !== 'dismissed');
-  const names = cachedNames();
   const skills = role.profile.skills.map((s) => {
     const a = aBy.get(s.code) || null;
     const d = doc.skills[s.code] || null;
     const items = (d?.items || []).map((it) => {
       const e = byId.get(it.id);
-      return { ...it, title: e ? clip(e.title, 160) : null, occurredAt: e?.occurredAt || null, gone: !e, names: nameHits(it.line, names), personal: personalHit(it.line) };
+      return { ...it, title: e ? clip(e.title, 160) : null, occurredAt: e?.occurredAt || null, gone: !e };
     });
     const known = new Set(items.map((i) => i.id));
     for (const e of evidence) {
-      if (!e.inCase || !e.caseSummary || known.has(e.id) || !e.tags.some((t) => t.code === s.code)) continue;
-      items.push({ id: e.id, line: e.caseSummary, included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false, names: nameHits(e.caseSummary, names), personal: personalHit(e.caseSummary) });
+      if (!e.inCase || known.has(e.id) || !e.tags.some((t) => t.code === s.code)) continue;
+      items.push({ id: e.id, line: e.caseSummary || clip(e.title, 320), included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false });
     }
     const candidates = candidatesFor(evidence, s.code, a?.cite || []);
     return {
@@ -225,7 +159,6 @@ function view(slot) {
       rating: a?.rating || 'unrated', observedLevel: a?.observedLevel || null, why: a?.why || null,
       drafted: Boolean(d), draftedAt: d?.draftedAt || null, error: d?.error || null,
       argument: d?.argument ?? null, position: d?.position ?? null,
-      argumentNames: nameHits(d?.argument, names), positionNames: nameHits(d?.position, names),
       items, available: candidates.filter((e) => !known.has(e.id)).length,
       reviewed: Boolean(d?.reviewed), reviewedAt: d?.reviewedAt || null,
       plan: plan.filter((p) => p.code === s.code).map((p) => ({ id: p.id, action: p.action, proves: p.proves, state: p.state })),
@@ -236,10 +169,9 @@ function view(slot) {
     assessment: assessment ? { id: assessment.id, createdAt: assessment.createdAt, readiness: assessment.readiness || null, roleId: assessment.roleId } : null,
     stale: Boolean(assessment && doc.assessmentId && doc.assessmentId !== assessment.id),
     roleChanged: Boolean(assessment && assessment.roleId !== role.id),
-    opening: doc.opening, openingNames: nameHits(doc.opening, names),
+    opening: doc.opening,
     skills, run: runState(slot),
     reviewedCount: skills.filter((s) => s.reviewed).length,
-    nameCheck: names ? { ready: true, at: store.getState(NAMES_KEY, null)?.at || null } : { ready: false },
   };
 }
 
@@ -295,7 +227,6 @@ function draft(slot, { code = null } = {}) {
 }
 
 async function run(slot, role, assessment, targets, { opening }) {
-  await loadNames();
   const evidence = store.acceptedFor(null);
   const aBy = new Map((assessment.skills || []).map((s) => [s.code, s]));
   const failures = [];
@@ -359,7 +290,6 @@ async function draftLine(slot, code, id) {
   const existing = sk.items.find((i) => i.id === id);
   let line = existing?.line || '';
   if (!line) {
-    await loadNames();
     const openrouter = require('./openrouter');
     const reply = await openrouter.complete([
       { role: 'system', content: SKILL_PROMPT },
@@ -377,8 +307,8 @@ async function draftLine(slot, code, id) {
 
 // ── Nick's edits ─────────────────────────────────────────────────────────────
 
-/** Validate an edit to one skill. Refused, never repaired. Pure apart from the names it is given. */
-function applySkillEdit(prev, body, { candidateIds, names, gap }) {
+/** Validate an edit to one skill. Refused, never repaired. Pure. */
+function applySkillEdit(prev, body, { candidateIds, gap }) {
   const next = { ...(prev || { argument: null, position: null, items: [] }) };
   if (body.argument !== undefined) {
     if (body.argument !== null && typeof body.argument !== 'string') throw bad('argument must be text');
@@ -404,11 +334,8 @@ function applySkillEdit(prev, body, { candidateIds, names, gap }) {
   if (body.reviewed !== undefined) {
     if (typeof body.reviewed !== 'boolean') throw bad('reviewed must be true or false');
     if (body.reviewed) {
-      if (!names) throw bad('Cannot confirm yet — the colleague-name check has no roster (NEURO did not answer). Try again shortly.', 503);
       const inc = next.items.filter((i) => i.included);
       if (inc.some((i) => !i.line)) throw bad('Every ticked item needs its line — write one or untick it');
-      const hits = [next.argument, next.position, ...inc.map((i) => i.line)].flatMap((t) => nameHits(t, names));
-      if (hits.length) throw bad(`Names a colleague (${[...new Set(hits)].join(', ')}) — use their role instead`);
       if (!gap && !next.argument) throw bad('Write the argument for this skill first');
       if (gap && !next.position) throw bad('Say where you stand on this skill first');
     }
@@ -425,13 +352,12 @@ function applySkillEdit(prev, body, { candidateIds, names, gap }) {
 async function editSkill(slot, code, body) {
   const role = needRole(slot);
   if (!role.profile.skills.some((s) => s.code === code)) throw bad(`${code} is not a skill in this role`);
-  if (body?.reviewed === true) await loadNames();
   const assessment = store.latestAssessment(slot);
   const a = (assessment?.skills || []).find((s) => s.code === code);
   const candidateIds = store.acceptedFor(null).filter((e) => e.tags.some((t) => t.code === code)).map((e) => e.id);
   const doc = getDoc(slot) || emptyDoc(role, assessment);
   // The view folds in items ticked from the evidence list; an edit made from that view carries them, so they are valid here too.
-  doc.skills[code] = applySkillEdit(doc.skills[code], body || {}, { candidateIds, names: cachedNames(), gap: GAP.includes(a?.rating || 'unrated') });
+  doc.skills[code] = applySkillEdit(doc.skills[code], body || {}, { candidateIds, gap: GAP.includes(a?.rating || 'unrated') });
   putDoc(slot, doc);
   return view(slot).skills.find((s) => s.code === code);
 }
@@ -564,20 +490,16 @@ async function toDocx(blocks) {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-/** The export. Refuses rather than ship a colleague's name; says which skills were left out. */
+/** The export. Confirmed skills only; says which skills were left out. */
 function exportCase(slot) {
   const v = view(slot);
   if (!v.reviewedCount) throw bad('Confirm at least one skill ("Happy with this skill") before exporting — unconfirmed skills are never exported', 409);
-  const names = cachedNames();
-  const texts = [v.opening, ...v.skills.filter((s) => s.reviewed).flatMap((s) => [s.argument, s.position, ...s.items.filter((i) => i.included).map((i) => i.line)])];
-  const hits = [...new Set(texts.flatMap((t) => nameHits(t, names)))];
-  if (hits.length) throw bad(`The case names a colleague (${hits.join(', ')}) — use their role instead`, 409);
   const blocks = caseBlocks(v);
   return { v, blocks, left: v.skills.filter((s) => !s.reviewed).map((s) => ({ code: s.code, name: s.name })) };
 }
 
 module.exports = {
-  view, draft, draftLine, editSkill, editOpening, candidates, exportCase, toMarkdown, toDocx, loadNames, runState,
+  view, draft, draftLine, editSkill, editOpening, candidates, exportCase, toMarkdown, toDocx, runState,
   // pure, for tests
-  guardNames, nameHits, parseSkillDraft, stripRefs, personalHit, candidatesFor, applySkillEdit, caseBlocks,
+  parseSkillDraft, stripRefs, candidatesFor, applySkillEdit, caseBlocks,
 };

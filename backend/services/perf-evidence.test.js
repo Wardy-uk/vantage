@@ -107,17 +107,19 @@ test('NOVA: a week whose Sunday is today or later is not emitted', () => {
   assert.equal(nova.kpiWeekItem({ kpis: [{ label: 'X', value: null }] }, '2026-10-18'), null, 'no values is no item, not a zero week');
 });
 
-test('the export prints only Nick\'s summaries, never the raw item', () => {
+test('the export prints ticked items only: Nick\'s summary, else the item\'s own title', () => {
   const md = render({
     role: { slot: 'current', profile: { title: 'Head', skills: [{ code: 'SLMO', name: 'Service level management', level: 5 }] } },
     assessment: null,
     items: [
       { inCase: true, caseSummary: 'Led the SLA recovery', occurredAt: '2026-10-01', title: 'RAW EMAIL SUBJECT about Customer X', tags: [{ slot: 'current', code: 'SLMO' }] },
-      { inCase: false, caseSummary: null, occurredAt: '2026-10-02', title: 'SECRET', tags: [{ slot: 'current', code: 'SLMO' }] },
+      { inCase: false, caseSummary: null, occurredAt: '2026-10-02', title: 'NOT TICKED', tags: [{ slot: 'current', code: 'SLMO' }] },
+      { inCase: true, caseSummary: null, occurredAt: '2026-10-03', title: 'Ran the Acme outage review', tags: [{ slot: 'current', code: 'SLMO' }] },
     ],
   });
   assert.match(md, /Led the SLA recovery/);
-  assert.doesNotMatch(md, /RAW EMAIL|SECRET/);
+  assert.doesNotMatch(md, /RAW EMAIL|NOT TICKED/, 'a summary wins over the title; an unticked item is left out');
+  assert.match(md, /Ran the Acme outage review/, 'ticked without a summary prints its title');
   assert.match(md, /L5 \(Ensure, advise\)/);
 });
 
@@ -136,9 +138,10 @@ test('a fenced JSON answer is read; anything else that is not JSON is still refu
   assert.equal(parseTriage(`${fence}json${NL}{"items":[{"i":0,"tags":[]}]}${NL}${fence}`, 1, codes).size, 1, 'triage reads a fenced answer');
 });
 
-test('NOVA: a 1-2-1 item carries the counts, never the session notes', () => {
-  const [it] = nova.oneToOneItems([{ sessionId: 7, agentName: 'A Person', completedAt: '2026-10-05', notesText: 'PRIVATE medical detail', actions: [{}], reviewedActions: [{ status: 'delivered' }] }], '2026-10-01', '2026-10-07');
-  assert.doesNotMatch(it.detail, /PRIVATE|medical/);
+test('NOVA: a 1-2-1 item carries the counts, the agreed actions and the session notes', () => {
+  const [it] = nova.oneToOneItems([{ sessionId: 7, agentName: 'A Person', completedAt: '2026-10-05', notesText: 'Talked through the rota and a medical appointment', actions: [{ description: 'Draft the rota' }], reviewedActions: [{ status: 'delivered' }] }], '2026-10-01', '2026-10-07');
+  assert.match(it.detail, /Notes: Talked through the rota and a medical appointment/);
+  assert.match(it.detail, /Actions: Draft the rota/);
   assert.match(it.detail, /1 action\(s\) agreed/);
 });
 

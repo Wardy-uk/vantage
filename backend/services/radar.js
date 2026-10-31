@@ -351,7 +351,6 @@ Rules:
   actually do next, specific enough to start today. If you cannot name one
   without guessing, OMIT the field. A vague remedy ("monitor the situation") is
   worse than none, because it reads as advice and costs nothing to ignore.
-- Ignore anything purely personal or pastoral.
 
 DATES AND SCHEDULING — read this carefully:
 - A meeting note is NOT the system of record for what is scheduled. Diaries,
