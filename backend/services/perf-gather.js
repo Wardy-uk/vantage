@@ -146,7 +146,7 @@ async function gather({ today = localKey() } = {}) {
   // and Confluence pages read hourly — so once a day the whole year is re-read
   // for those sources only. Enqueue is idempotent on the item id, so a repeat
   // adds nothing; a window that fails is skipped and the sweep retried.
-  for (const [source, key] of [['feedback', 'feedback_sweep_at'], ['confluence', 'confluence_sweep_at'], ['reports', 'reports_sweep_at'], ['sends', 'sends_sweep_at'], ['tickets', 'tickets_sweep_at'], ['workforce', 'workforce_sweep_at'], ['people', 'people_sweep_at'], ['work-notes', 'work_notes_sweep_at']]) {
+  for (const [source, key] of [['feedback', 'feedback_sweep_at'], ['confluence', 'confluence_sweep_at'], ['reports', 'reports_sweep_at'], ['sends', 'sends_sweep_at'], ['tickets', 'tickets_sweep_at'], ['workforce', 'workforce_sweep_at'], ['people', 'people_sweep_at'], ['work-notes', 'work_notes_sweep_at'], ['mail', 'mail_sweep_at']]) {
     const last = store.getState(key, null);
     if (last && Date.now() - Date.parse(last) <= 20 * 3600_000) continue;
     let added = 0; let failed = 0;
