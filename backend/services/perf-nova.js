@@ -167,4 +167,10 @@ async function candidates({ from, to, today }) {
   return { items, sources };
 }
 
-module.exports = { candidates, isConfigured, _internals: { oneToOneItems, escalationItems, kpiWeekItem, finishedSundays } };
+/** One window of Nick's NOVA activity alone, with NOVA's build stamp (for the year re-sweep). */
+async function activity(from, to) {
+  const d = await get(`/perf-activity?from=${from}&to=${to}`);
+  return { build: d?.build || null, items: (d?.items || []).map((i) => ({ ...i, origin: 'nova', id: `act:${i.id}` })) };
+}
+
+module.exports = { candidates, activity, isConfigured, _internals: { oneToOneItems, escalationItems, kpiWeekItem, finishedSundays } };

@@ -162,6 +162,28 @@ async function gather({ today = localKey() } = {}) {
     report[`${source}Sweep`] = { added, failed };
     report.added += added;
   }
+
+  // 4. NOVA year re-sweep (31 Oct 2026). NOVA adds evidence sources by
+  // shipping a new /perf-activity build (Jira replies, KPI decisions, AI
+  // governance); the backfill passed those weeks long ago. When the build
+  // NOVA reports differs from the one last swept, the year is re-read once.
+  // Enqueue is idempotent on item id, so old kinds add nothing.
+  try {
+    const nova = require('./perf-nova');
+    if (nova.isConfigured()) {
+      const head = await nova.activity(addDays(today, -6), today);
+      if (head.build && head.build !== store.getState('nova_activity_swept_build', null)) {
+        let added = 0; let failed = 0;
+        for (let to = today; to > floor; to = addDays(to, -31)) {
+          const from = addDays(to, -30) < floor ? floor : addDays(to, -30);
+          try { added += store.enqueue((await nova.activity(from, to)).items); } catch { failed += 1; }
+        }
+        if (!failed) store.setState('nova_activity_swept_build', head.build);
+        report.novaSweep = { build: head.build, added, failed };
+        report.added += added;
+      }
+    }
+  } catch (e) { report.novaSweep = { error: e.message }; }
   return report;
 }
 
