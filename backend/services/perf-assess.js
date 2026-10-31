@@ -152,6 +152,13 @@ THE BAR
 FEEDBACK
 - Items titled "Feedback from …" are what someone SAID about Nick's work, each with a weight (1 of 5 = strongest). Nick's order: 1 his line manager in a 1-2-1, 2 a tech leadership meeting, 3 the risk meeting, 4 a meeting with senior leaders, 5 any other meeting (peers and direct reports count). Give weight-1 and weight-2 feedback the most say; a single weight-5 remark should not move a rating on its own.
 - Feedback is about how he was seen at that date: weigh recent feedback above older, and note when later evidence shows he acted on criticism.
+RECENCY (31 Oct 2026, Nick: ratings were resting on things from May)
+- The rating is about how he works NOW. TODAY is given; each item shows the date it was recorded.
+- Recent evidence (the last 3 months) decides the rating. Older items show history: they can confirm a pattern that recent evidence also shows, but on their own they never hold a skill below the bar.
+- A problem in an older item that later evidence shows addressed or fixed is NOT evidence against; say it was addressed.
+- Recent feedback can describe something that happened earlier: judge it by what it says about him now.
+- In why, give the month of any item you rely on that is more than 3 months old ("in May (#9389)").
+- Never base a plan action on an old problem that later evidence shows fixed.
 RULES
 - met = the evidence shows him working at the bar consistently. partly = some of the bar shown, or below it, or real evidence against. not-yet = the evidence shows him below the bar.
 - Weigh evidence AGAINST honestly; do not ignore it.
@@ -171,6 +178,7 @@ RULES
 - Judge the five SFIA generic attributes from the per-skill readings and their evidence notes; observedLevel null if they cannot tell.
 - readiness: ready = the role's bar is met across nearly all skills; nearly = most met, gaps closable; not-yet = substantial gaps.
 - plan: only for attributes seen below their target (code = the attribute key).
+- Judge how he works NOW: the per-skill readings already weigh recent evidence above old; do not plan around a problem they say was addressed.
 - Do not invent facts.
 ${PLAN_RULES}`;
 
@@ -194,6 +202,8 @@ const STALE_MS = 30 * 60_000;
  *    (three different answers) reads as partly, marked split.
  * `fresh` ignores kept ratings (the "Fresh reading" button).
  */
+// Bumped when the rating rules change, so kept ratings are re-read under the new rules.
+const PROMPT_VERSION = 'recency-1';
 const VOTES = Math.max(1, Math.min(5, Number(process.env.PERF_ASSESS_VOTES) || 3));
 const CACHE_KEY = 'assess_skill_cache';
 const FINAL_CACHE_KEY = 'assess_final_cache';
@@ -204,7 +214,7 @@ const sha = (s) => require('crypto').createHash('sha256').update(s).digest('hex'
 /** What a skill's rating rests on. Pure. The role's "in this role" wording is not part of it. */
 function skillKey(s, items) {
   const ev = items.map((e) => `${e.id}|${e.title}|${e.detail || ''}|${e.tags.filter((t) => t.code === s.code).map((t) => t.stance).sort().join(',')}`).sort();
-  return sha(JSON.stringify([s.code, s.level, s.bar || s.why || '', ev]));
+  return sha(JSON.stringify([PROMPT_VERSION, s.code, s.level, s.bar || s.why || '', ev]));
 }
 
 /** Majority of the readings. Pure. */
@@ -308,7 +318,7 @@ async function runAssess(slot, role, { fresh = false } = {}) {
       if (kept) { perSkill[i] = { code: s.code, ...kept, reused: kept.at }; tick(); continue; }
       const prompt = [
         { role: 'system', content: SKILL_PROMPT },
-        { role: 'user', content: `ROLE: ${role.profile.title}\n${skillText(s)}\n\nACCEPTED EVIDENCE (${ids.length} items):\n${ids.map((id) => evLine(byId.get(id), s.code)).join('\n')}` },
+        { role: 'user', content: `ROLE: ${role.profile.title}\nTODAY: ${new Date().toISOString().slice(0, 10)}\n${skillText(s)}\n\nACCEPTED EVIDENCE (${ids.length} items):\n${ids.map((id) => evLine(byId.get(id), s.code)).join('\n')}` },
       ];
       const votes = [];
       let lastErr = null;

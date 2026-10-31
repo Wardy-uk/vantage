@@ -34,7 +34,7 @@ require.cache[require.resolve('./openrouter')] = {
         return { model: 'stub', text: JSON.stringify({ attributes: {}, readiness: { rating: 'nearly', why: 'w' }, summary: 's', plan: [] }) };
       }
       const code = user.match(/SKILL: (\w{4})/)[1];
-      calls.push({ code, role: user.match(/^ROLE: (.*)$/m)[1], temperature: opts.temperature });
+      calls.push({ code, role: user.match(/^ROLE: (.*)$/m)[1], temperature: opts.temperature, today: /^TODAY: \d{4}-\d{2}-\d{2}$/m.test(user), recency: /RECENCY/.test(messages[0].content) });
       const ids = [...user.matchAll(/^#(\d+) /gm)].map((m) => Number(m[1]));
       const rating = script(code, calls.filter((c) => c.code === code).length);
       return { model: 'stub', text: JSON.stringify({ rating, observedLevel: 5, why: `reason ${ids.length}`, cite: [ids[0]], plan: rating === 'met' ? [] : [{ action: `Close the ${code} gap with a monthly review`, proves: 'p', priority: 1 }] }) };
@@ -71,6 +71,7 @@ test('one rating per skill across roles; kept until evidence changes; majority o
   const f = await waitFor('future');
   assert.equal(calls.length, 3, 'three readings for a fresh rating');
   assert.equal(calls[0].temperature, 0);
+  assert.ok(calls[0].today && calls[0].recency, 'the rater is told the date and the recency rule');
   const s = f.skills[0];
   assert.equal(s.rating, 'met');
   assert.deepEqual(s.votes, ['met', 'partly', 'met']);
