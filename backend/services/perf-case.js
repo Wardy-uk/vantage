@@ -150,8 +150,8 @@ function view(slot) {
     });
     const known = new Set(items.map((i) => i.id));
     for (const e of evidence) {
-      if (!e.inCase || !e.caseSummary || known.has(e.id) || !e.tags.some((t) => t.code === s.code)) continue;
-      items.push({ id: e.id, line: e.caseSummary, included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false });
+      if (!e.inCase || known.has(e.id) || !e.tags.some((t) => t.code === s.code)) continue;
+      items.push({ id: e.id, line: e.caseSummary || clip(e.title, 320), included: true, fromList: true, title: clip(e.title, 160), occurredAt: e.occurredAt, gone: false });
     }
     const candidates = candidatesFor(evidence, s.code, a?.cite || []);
     return {

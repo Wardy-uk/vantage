@@ -3,11 +3,9 @@
 /**
  * "Build my case" — the one way Performance Evidence leaves VANTAGE (29 Oct 2026).
  *
- * Nick's decision (Q6): private by default; the export carries ONLY items he has
- * ticked into the case, each as the summary HE approved. A gathered item's raw
- * title and detail are never printed — they can quote emails and meetings that
- * name colleagues and customers. An item ticked without a summary is refused at
- * the tick (perf routes), so nothing here has to fall back to raw text.
+ * The export carries ONLY items Nick has ticked into the case, each as the
+ * summary he wrote, or its own title when he wrote none (no privacy screen —
+ * Nick, 31 Oct 2026).
  */
 
 const store = require('./perf-store');
@@ -31,13 +29,13 @@ function render({ role, assessment, items }) {
     if (assessment.summary) lines.push('', assessment.summary);
   }
   lines.push('', '## Evidence', '');
-  const ticked = items.filter((e) => e.inCase && e.caseSummary);
+  const ticked = items.filter((e) => e.inCase);
   if (!ticked.length) lines.push('_No evidence has been added to the case yet._');
   for (const s of p.skills) {
     const mine = ticked.filter((e) => e.tags.some((t) => t.slot === role.slot && t.code === s.code));
     if (!mine.length) continue;
     lines.push(`### ${s.code} ${s.name}`, '');
-    for (const e of mine) lines.push(`- ${String(e.occurredAt || '').slice(0, 10)} — ${e.caseSummary}`);
+    for (const e of mine) lines.push(`- ${String(e.occurredAt || '').slice(0, 10)} — ${e.caseSummary || e.title}`);
     lines.push('');
   }
   return lines.join('\n');

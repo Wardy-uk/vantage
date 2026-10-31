@@ -175,7 +175,7 @@ function evRow(r) {
 function enqueue(items) {
   // A re-fetched item REFRESHES its text (title/detail/hint/ref) and keeps its
   // state and tags. The source is authoritative for what it says — and that is
-  // how a tightened privacy screen in NEURO reaches items stored before it.
+  // how a change to what NEURO or NOVA sends reaches items stored before it.
   const has = db().prepare('SELECT 1 FROM perf_evidence WHERE source_key = ?');
   const ins = db().prepare(`INSERT INTO perf_evidence
     (source_key, origin, kind, hint, occurred_at, title, detail, ref, state, created_at)

@@ -165,9 +165,9 @@ function mount(app, wrap) {
     const { inCase, summary } = req.body || {};
     if (inCase) {
       if (cur.state !== 'accepted') throw bad('Only accepted evidence can go in the case', 409);
+      // No summary = the item's own title goes in the case as written.
       const s = typeof summary === 'string' ? summary.trim() : '';
-      if (!s) throw bad('Write the summary that will appear in the case — the raw item is never exported');
-      return store.update(id, { inCase: true, caseSummary: s.slice(0, 600) });
+      return store.update(id, { inCase: true, caseSummary: s ? s.slice(0, 600) : null });
     }
     return store.update(id, { inCase: false });
   }));
@@ -255,7 +255,7 @@ function mount(app, wrap) {
     if (!Number.isInteger(id) || id < 1) throw bad('id must be an evidence item number');
     return perfCase.draftLine(req.params.slot, String(req.params.code).toUpperCase(), id);
   }));
-  // The export: text (JSON) or a Word file. Confirmed skills only; a colleague's name refuses it.
+  // The export: text (JSON) or a Word file. Confirmed skills only.
   app.get('/api/perf/case/:slot/export', wrap(async (req, res) => {
     const { v, blocks, left } = perfCase.exportCase(req.params.slot);
     if (req.query.format === 'docx') {

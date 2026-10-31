@@ -96,10 +96,9 @@ function Detail({ text }) {
   const [open, setOpen] = useState(false);
   const t = cleanText(text);
   if (!t) return null;
-  const withheld = /^Details withheld/.test(t);
   const long = t.length > 260 || t.split('\n').length > 3;
   return (
-    <div className="small muted" style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontStyle: withheld ? 'italic' : 'normal' }}>
+    <div className="small muted" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>
       <div style={open ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{t}</div>
       {long && <button className="small" style={{ marginTop: 4, padding: '2px 8px' }} onClick={() => setOpen(!open)}>{open ? 'Less' : 'More'}</button>}
     </div>
@@ -165,10 +164,10 @@ function EvidenceRow({ e, roles, selectable, selected, onSelect, onChanged, mode
           </div>
           {caseOpen && (
             <div style={{ marginTop: 8 }}>
-              <div className="small muted">The line that appears in your case. The item above is never exported.</div>
+              <div className="small muted">The line that appears in your case. Leave it blank to use the item's title as written.</div>
               <textarea rows={2} style={{ width: '100%' }} value={summary} onChange={(x) => setSummary(x.target.value)} />
               <div className="row" style={{ marginTop: 4 }}>
-                <button className="primary small" disabled={busy || !summary.trim()} onClick={() => act(async () => { await api.perfCase(e.id, true, summary); setCaseOpen(false); })}>Add to case</button>
+                <button className="primary small" disabled={busy} onClick={() => act(async () => { await api.perfCase(e.id, true, summary); setCaseOpen(false); })}>Add to case</button>
                 <button className="small" onClick={() => setCaseOpen(false)}>Cancel</button>
               </div>
             </div>
@@ -541,7 +540,7 @@ function AssessTab({ data, reload }) {
   return (
     <div>
       {err && <div className="banner bad">{err}</div>}
-      <p className="sub">VANTAGE's reading, from accepted evidence only. Every rating cites the items behind it; a skill with nothing accepted reads "No evidence yet", not "Not yet". A skill is read from evidence about it in either role, so a skill both roles hold at the same level gets one rating. Each rating is three readings: "3/3" is settled, "2 of 3" is borderline. A rating is kept until its evidence changes — use Fresh reading to re-read everything. Private until you export it.</p>
+      <p className="sub">VANTAGE's reading, from accepted evidence only. Every rating cites the items behind it; a skill with nothing accepted reads "No evidence yet", not "Not yet". A skill is read from evidence about it in either role, so a skill both roles hold at the same level gets one rating. Each rating is three readings: "3/3" is settled, "2 of 3" is borderline. A rating is kept until its evidence changes — use Fresh reading to re-read everything.</p>
       {SLOTS.map(([slot, label]) => {
         const role = data.roles[slot];
         const a = data.assessments[slot];
