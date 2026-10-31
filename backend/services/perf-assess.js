@@ -154,11 +154,13 @@ FEEDBACK
 - Feedback is about how he was seen at that date: weigh recent feedback above older, and note when later evidence shows he acted on criticism.
 RECENCY (31 Oct 2026, Nick: ratings were resting on things from May)
 - The rating is about how he works NOW. TODAY is given; each item shows the date it was recorded.
-- Recent evidence (the last 3 months) decides the rating. Older items show history: they can confirm a pattern that recent evidence also shows, but on their own they never hold a skill below the bar.
-- A problem in an older item that later evidence shows addressed or fixed is NOT evidence against; say it was addressed.
+- It cuts ONE way (Nick: old evidence can still be appropriate, particularly the good stuff):
+  - Evidence FOR keeps its value whatever its age: something he built, wrote or led in the last year still shows he can work at that level.
+  - Evidence AGAINST fades with age: an item more than 3 months old counts against him only if recent evidence shows the same problem still happening. On its own it never holds a skill below the bar.
+- A problem that later evidence shows addressed or fixed is NOT evidence against; say it was addressed.
 - Recent feedback can describe something that happened earlier: judge it by what it says about him now.
-- In why, give the month of any item you rely on that is more than 3 months old ("in May (#9389)").
-- Never base a plan action on an old problem that later evidence shows fixed.
+- In why, give the month of any item more than 3 months old that you rely on ("in May (#9389)").
+- Never base a plan action on an old problem that later evidence shows fixed or does not repeat.
 RULES
 - met = the evidence shows him working at the bar consistently. partly = some of the bar shown, or below it, or real evidence against. not-yet = the evidence shows him below the bar.
 - Weigh evidence AGAINST honestly; do not ignore it.
@@ -178,7 +180,7 @@ RULES
 - Judge the five SFIA generic attributes from the per-skill readings and their evidence notes; observedLevel null if they cannot tell.
 - readiness: ready = the role's bar is met across nearly all skills; nearly = most met, gaps closable; not-yet = substantial gaps.
 - plan: only for attributes seen below their target (code = the attribute key).
-- Judge how he works NOW: the per-skill readings already weigh recent evidence above old; do not plan around a problem they say was addressed.
+- Judge how he works NOW: old achievements still count; old problems count only if the readings show them still happening. Do not plan around a problem they say was addressed.
 - Do not invent facts.
 ${PLAN_RULES}`;
 
@@ -203,7 +205,7 @@ const STALE_MS = 30 * 60_000;
  * `fresh` ignores kept ratings (the "Fresh reading" button).
  */
 // Bumped when the rating rules change, so kept ratings are re-read under the new rules.
-const PROMPT_VERSION = 'recency-1';
+const PROMPT_VERSION = 'recency-2';
 const VOTES = Math.max(1, Math.min(5, Number(process.env.PERF_ASSESS_VOTES) || 3));
 const CACHE_KEY = 'assess_skill_cache';
 const FINAL_CACHE_KEY = 'assess_final_cache';
