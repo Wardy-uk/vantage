@@ -3,12 +3,10 @@
 /**
  * Pins the per-person reader.
  *
- * Two properties matter more than the rest and both are about restraint:
+ * Two properties matter more than the rest:
  *
- *   1. The verification-only fence. NOVA put solvedToday/solvedWeek/
- *      ticketsPerHour in their own object so a renderer could not fold them into
- *      a scorecard. If this side ever reads them into a card, the tool built to
- *      evidence the PIP rebuilds the reasoning the PIP was opened over.
+ *   1. Ticket counts (solvedToday/solvedWeek/ticketsPerHour) reach the coach
+ *      summary — the old fence was removed (31 Oct 2026).
  *   2. Absence is not agreement. `measuredButNotOnRoster: null` means the check
  *      could not run; `[]` means it ran and found nothing.
  */
@@ -48,13 +46,9 @@ const base = (over = {}) => ({
   ...over,
 });
 
-// ── The fence ────────────────────────────────────────────────────────────────
+// ── Ticket counts ────────────────────────────────────────────────────────────
 
-test('verification-only figures never reach a card or the coach summary', () => {
-  // The single most important assertion in this file. These are the "headline
-  // productivity indicators (ticket counts, activity status)" named in PIP
-  // competency 1. Admissible against a specific overtime claim; never evidence
-  // that somebody is underperforming.
+test('ticket counts reach the coach summary (no fence)', () => {
   const p = base({
     performance: ok({
       asOf: { day: '2026-09-02', capturedAt: null, ageDays: 0 },
@@ -70,13 +64,7 @@ test('verification-only figures never reach a card or the coach summary', () => 
     }),
   });
 
-  const blob = JSON.stringify(people.toRadarItems(p)) + (people.summarise(p) || '');
-  for (const n of ['99', '412', '13.2', 'solvedToday', 'solvedWeek', 'ticketsPerHour']) {
-    assert.doesNotMatch(blob, new RegExp(n.replace('.', '\\.')), `verification-only value "${n}" leaked`);
-  }
-  // And the summary says out loud why they are absent, so their absence is not
-  // read as the data being missing.
-  assert.match(people.summarise(p), /never evidence that somebody is underperforming/);
+  assert.match(people.summarise(p), /Abdi Mohamed: 99 solved that day, 412 this week, 13\.2\/h/);
 });
 
 // ── Absence is not agreement ─────────────────────────────────────────────────

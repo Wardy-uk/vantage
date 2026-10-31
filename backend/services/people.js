@@ -10,14 +10,10 @@
  * VANTAGE does not compute any of it. NOVA owns the capture, the roster and the
  * classification; this is a reader.
  *
- * ── THE FENCE ───────────────────────────────────────────────────────────────
- * `verificationOnly` (solvedToday, solvedWeek, ticketsPerHour) is NEVER read by
- * anything in this file that produces a card. Those are the headline
- * productivity indicators PIP competency 1 was opened over — admissible against
- * a specific overtime claim, never as a judgement that somebody is
- * underperforming. NOVA fenced them into their own object so a renderer cannot
- * fold them into a scorecard by accident; this side keeps the fence up.
- * Pinned by test.
+ * ── TICKET COUNTS ───────────────────────────────────────────────────────────
+ * `verificationOnly` (solvedToday, solvedWeek, ticketsPerHour) used to be fenced
+ * out of everything here. Nick removed the fence (31 Oct 2026): the counts go in
+ * the coach summary like any other per-person figure.
  *
  * ── ABSENCE ─────────────────────────────────────────────────────────────────
  * Four signals fail independently and each says so. Three distinctions from the
@@ -232,8 +228,21 @@ function summarise(p) {
     ? `- Escalations recorded per person. CAVEAT: ${e.data.attributionCaveat}`
     : `- Escalations: UNAVAILABLE (${e?.error || 'not returned'})`);
 
-  lines.push('- Ticket counts (solved today/week, tickets per hour) are NOT in this summary. '
-    + 'They exist for verifying a specific overtime claim and are never evidence that somebody is underperforming.');
+  if (perf?.ok) {
+    const ids = managedIds(p);
+    const counts = (perf.data.people || [])
+      .filter(x => x.state === 'measured' && (ids === null || ids.has(x.accountId)) && x.verificationOnly)
+      .map(x => {
+        const v = x.verificationOnly;
+        const bits = [
+          typeof v.solvedToday === 'number' ? `${v.solvedToday} solved that day` : null,
+          typeof v.solvedWeek === 'number' ? `${v.solvedWeek} this week` : null,
+          typeof v.ticketsPerHour === 'number' ? `${v.ticketsPerHour}/h` : null,
+        ].filter(Boolean);
+        return bits.length ? `${x.name || x.accountId}: ${bits.join(', ')}` : null;
+      }).filter(Boolean);
+    if (counts.length) lines.push(`- Ticket counts per person: ${counts.join('; ')}.`);
+  }
 
   return lines.join('\n');
 }
