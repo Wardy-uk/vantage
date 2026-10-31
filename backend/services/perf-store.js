@@ -173,6 +173,10 @@ function evRow(r) {
 
 /** Insert gathered items (`origin` 'neuro' | 'nova'). An existing source_key keeps its state and tags; its text is refreshed. Returns how many were new. */
 function enqueue(items) {
+  // A sent document whose text NEURO has since read (31 Oct 2026) is judged
+  // again: its detail now says what the file is. Only that kind — other sources
+  // restate a changing count every day ("still open N days"), and re-judging
+  // those daily would spend the model budget on nothing new.
   // A re-fetched item REFRESHES its text (title/detail/hint/ref) and keeps its
   // state and tags. The source is authoritative for what it says — and that is
   // how a change to what NEURO or NOVA sends reaches items stored before it.
@@ -180,7 +184,9 @@ function enqueue(items) {
   const ins = db().prepare(`INSERT INTO perf_evidence
     (source_key, origin, kind, hint, occurred_at, title, detail, ref, state, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key) DO UPDATE SET title = excluded.title, detail = excluded.detail, hint = excluded.hint, ref = excluded.ref`);
+    ON CONFLICT(source_key) DO UPDATE SET title = excluded.title, detail = excluded.detail, hint = excluded.hint, ref = excluded.ref,
+      judged_roles = CASE WHEN perf_evidence.kind = 'mail-document' AND perf_evidence.judged_roles IS NOT NULL
+        AND perf_evidence.detail IS NOT excluded.detail THEN 'detail-changed' ELSE perf_evidence.judged_roles END`);
   let added = 0;
   db().transaction(() => {
     for (const it of items) {
