@@ -174,9 +174,14 @@ async function gather({ today = localKey() } = {}) {
       const head = await nova.activity(addDays(today, -6), today);
       if (head.build && head.build !== store.getState('nova_activity_swept_build', null)) {
         let added = 0; let failed = 0;
-        for (let to = today; to > floor; to = addDays(to, -31)) {
-          const from = addDays(to, -30) < floor ? floor : addDays(to, -30);
-          try { added += store.enqueue((await nova.activity(from, to)).items); } catch { failed += 1; }
+        // A WEEK at a time: a month of Nick's Jira replies is past NOVA's 30 s query limit.
+        for (let to = today; to > floor; to = addDays(to, -7)) {
+          const from = addDays(to, -6) < floor ? floor : addDays(to, -6);
+          try {
+            const got = await nova.activity(from, to);
+            if (got.failed.length) failed += 1;
+            added += store.enqueue(got.items);
+          } catch { failed += 1; }
         }
         if (!failed) store.setState('nova_activity_swept_build', head.build);
         report.novaSweep = { build: head.build, added, failed };

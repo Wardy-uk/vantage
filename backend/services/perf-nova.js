@@ -22,7 +22,9 @@
  * is not emitted (a half week reads as a bad week).
  */
 
-const TIMEOUT_MS = 30_000;
+// 90 s: NOVA's slowest source (Nick's Jira replies) reports its OWN 30 s query
+// timeout as a named gap, so the whole answer must be allowed to arrive after it.
+const TIMEOUT_MS = 90_000;
 const ME = /\bnick(\s+ward)?\b/i;
 
 function base() {
@@ -170,7 +172,12 @@ async function candidates({ from, to, today }) {
 /** One window of Nick's NOVA activity alone, with NOVA's build stamp (for the year re-sweep). */
 async function activity(from, to) {
   const d = await get(`/perf-activity?from=${from}&to=${to}`);
-  return { build: d?.build || null, items: (d?.items || []).map((i) => ({ ...i, origin: 'nova', id: `act:${i.id}` })) };
+  return {
+    build: d?.build || null,
+    items: (d?.items || []).map((i) => ({ ...i, origin: 'nova', id: `act:${i.id}` })),
+    // A window where one NOVA source failed is not complete: the sweep retries it next day.
+    failed: Object.entries(d?.sources || {}).filter(([, v]) => v && v.ok === false).map(([k]) => k),
+  };
 }
 
 module.exports = { candidates, activity, isConfigured, _internals: { oneToOneItems, escalationItems, kpiWeekItem, finishedSundays } };
