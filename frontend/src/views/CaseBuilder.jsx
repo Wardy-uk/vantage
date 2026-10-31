@@ -25,11 +25,6 @@ function Pill({ children, color }) {
   return <span className="pill" style={color ? { color, borderColor: color } : undefined}>{children}</span>;
 }
 
-function NameWarn({ names }) {
-  if (!names?.length) return null;
-  return <div className="small" style={{ color: 'var(--bad)', marginTop: 4 }}>Names {names.join(', ')} — use their role instead (e.g. "a direct report").</div>;
-}
-
 function SkillEditor({ slot, s, busyAll, onSaved, onRedraft }) {
   const [argument, setArgument] = useState(s.argument || '');
   const [position, setPosition] = useState(s.position || '');
@@ -93,14 +88,12 @@ function SkillEditor({ slot, s, busyAll, onSaved, onRedraft }) {
             <>
               <label className="small"><b>Where I stand</b> — one honest sentence on what is not shown yet</label>
               <textarea rows={2} style={{ width: '100%' }} value={position} onChange={(e) => edit(() => setPosition(e.target.value))} />
-              <NameWarn names={dirty ? [] : s.positionNames} />
             </>
           )}
           {(!gap || s.rating === 'partly' || argument) && (
             <>
               <label className="small"><b>The argument</b> — what the evidence shows, in your words</label>
               <textarea rows={3} style={{ width: '100%' }} value={argument} onChange={(e) => edit(() => setArgument(e.target.value))} />
-              <NameWarn names={dirty ? [] : s.argumentNames} />
             </>
           )}
           <div className="small" style={{ margin: '10px 0 4px' }}><b>Evidence</b> — ticked items go in the case, as the line shown. Edit any line.</div>
@@ -111,8 +104,6 @@ function SkillEditor({ slot, s, busyAll, onSaved, onRedraft }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="small muted">#{it.id} · {String(it.occurredAt || '').slice(0, 10)}{it.title ? ` · ${it.title}` : ''}{it.gone ? ' · no longer accepted' : ''}{it.fromList ? ' · added from the evidence list' : ''}</div>
                 <input type="text" style={{ width: '100%' }} value={it.line} placeholder="One line on what you did and what came of it" onChange={(e) => edit(() => setItems(items.map((x, j) => (j === i ? { ...x, line: e.target.value } : x))))} />
-                <NameWarn names={dirty ? [] : it.names} />
-                {!dirty && it.personal && it.included && <div className="small" style={{ color: 'var(--warn)', marginTop: 4 }}>Reads as a personal matter (“{it.personal}”) — about someone else’s welfare, health, leaving or pay? Leave it out of a case Chris reads.</div>}
               </div>
             </div>
           ))}
@@ -219,12 +210,11 @@ export default function CaseBuilder({ slot, onClose }) {
         <button className="primary" disabled={!v.reviewedCount || busy === 'word'} onClick={word}>{busy === 'word' ? 'Building…' : 'Download Word'}</button>
         <button onClick={onClose}>Close</button>
       </div>
-      <p className="sub">Written for Chris. VANTAGE drafts each skill from the latest assessment — the strongest evidence, pre-ticked, in one line each. Untick, edit, add more, then press <b>Happy with this skill</b>. Only confirmed skills go in the export{left ? ` (${left} not confirmed yet, so left out)` : ''}. Customers can be named; colleagues never — by role only, and a line naming one cannot be confirmed.</p>
+      <p className="sub">Written for Chris. VANTAGE drafts each skill from the latest assessment — the strongest evidence, pre-ticked, in one line each. Untick, edit, add more, then press <b>Happy with this skill</b>. Only confirmed skills go in the export{left ? ` (${left} not confirmed yet, so left out)` : ''}.</p>
       {err && <div className="banner bad">{err}</div>}
       {!v.assessment && <div className="banner info">Assess this role first — the case is written from the assessment.</div>}
       {v.roleChanged && <div className="banner warn">The latest assessment was made against an earlier version of this role. Reassess, then redraft.</div>}
       {v.stale && <div className="banner warn">There is a newer assessment than the one this case was drafted from. <button className="small" disabled={running} onClick={() => draft()}>Redraft unconfirmed skills</button></div>}
-      {!v.nameCheck.ready && drafted && <div className="banner warn">The colleague-name check has no roster yet (NEURO has not answered) — confirming will wait until it does.</div>}
       {v.run?.running && <div className="banner info">Drafting… {v.run.done} of {v.run.total} done. One call per skill — a minute or two. Confirmed skills are left alone.</div>}
       {!v.run?.running && v.run?.error && <div className="banner warn">Last draft: {v.run.error}</div>}
       {v.assessment && !drafted && !running && (
@@ -244,7 +234,6 @@ export default function CaseBuilder({ slot, onClose }) {
         <>
           <label className="small"><b>Where I stand</b> — the opening</label>
           <textarea rows={4} style={{ width: '100%' }} value={opening} onChange={(e) => { setOpening(e.target.value); setOpeningDirty(true); }} />
-          <NameWarn names={openingDirty ? [] : v.openingNames} />
           <div className="row" style={{ gap: 8, marginBottom: 12 }}>
             {openingDirty && <button disabled={busy === 'opening'} onClick={saveOpening}>{busy === 'opening' ? 'Saving…' : 'Save opening'}</button>}
             {!running && <button className="ghost" disabled={busy === 'draft'} onClick={() => draft()}>Redraft unconfirmed skills</button>}
